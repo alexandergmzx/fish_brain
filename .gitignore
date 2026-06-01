@@ -1,0 +1,14 @@
+# secrets
+.env
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# runtime artifacts
+*.wav
+/tmp_audio/
