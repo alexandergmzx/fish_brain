@@ -1,0 +1,92 @@
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    padding: 20px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #2b6cb0 0%, #1a365d 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #e2e8f0;
+}
+.container {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    padding: 28px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    max-width: 640px;
+    width: 100%;
+    backdrop-filter: blur(6px);
+}
+h1 {
+    margin: 0 0 6px 0;
+    text-align: center;
+    font-size: 22px;
+}
+.stage-wrap {
+    position: relative;
+    margin-top: 8px;
+}
+#stage {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 16px;
+    background: #91b9bc;
+}
+/* connection cue: a small corner dot (replaces the old text status) */
+#conn-dot {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #f6ad55;                /* connecting (amber) */
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.25);
+    transition: background 0.3s;
+}
+#conn-dot.live {
+    background: #48bb78;                /* connected (green) */
+    animation: connPulse 2s ease-in-out infinite;
+}
+#conn-dot.off { background: #f56565; animation: none; }  /* disconnected (red) */
+@keyframes connPulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(0,0,0,0.25), 0 0 6px 2px rgba(72,187,120,0.6); }
+    50%      { box-shadow: 0 0 0 2px rgba(0,0,0,0.25), 0 0 12px 5px rgba(72,187,120,0.9); }
+}
+/* visually-hidden status text kept for screen readers */
+.status { position: absolute; left: -9999px; }
+.controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 18px;
+}
+.slider-container { display: flex; flex-direction: column; gap: 4px; }
+.slider-container label { font-size: 13px; color: #cbd5e0; }
+input[type="range"] { width: 100%; accent-color: #63b3ed; }
+.toggles {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 18px;
+    font-size: 13px;
+    color: #cbd5e0;
+    flex-wrap: wrap;
+}
+.toggles label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.file-row { grid-column: 1 / -1; }
+.file-row label {
+    display: inline-block;
+    padding: 8px 16px;
+    background: #3182ce;
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.file-row label:hover { background: #2b6cb0; }
+.file-row input[type=file] { position: absolute; left: -9999px; }
