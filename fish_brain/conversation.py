@@ -9,7 +9,7 @@ STT model only loads when voice mode actually needs it.
 """
 from __future__ import annotations
 
-from . import ptt, speak as speak_mod
+from . import canned, ptt, speak as speak_mod
 from .conductor import Player, make_player
 from .config import Config
 from .serial_link import BaseLink
@@ -17,11 +17,12 @@ from .serial_link import BaseLink
 
 class FishConversation:
     def __init__(self, cfg: Config, link: BaseLink, *,
-                 text_input: bool = False, play_audio: bool = True):
+                 text_input: bool = False, play_audio: bool = True, viz=None):
         self.cfg = cfg
         self.link = link
         self.text_input = text_input
         self.player: Player = make_player(play_audio)
+        self.viz = viz
         self._llm = None
         self._stt = None
 
@@ -67,15 +68,23 @@ class FishConversation:
         reply = self.llm.reply(user)
         print(f"fish> {reply}")
         if reply:
-            speak_mod.speak(reply, self.link, self.cfg, player=self.player)
+            speak_mod.speak(reply, self.link, self.cfg, player=self.player, viz=self.viz)
         return True
 
     def run(self) -> None:
         print("Conversation ready. (Ctrl-C or 'salir' to quit.)")
-        while True:
-            try:
-                if not self.turn():
+        if self.cfg.canned.enabled and self.cfg.canned.welcome:
+            canned.play(self.cfg.canned.welcome, self.link, self.cfg,
+                        player=self.player, viz=self.viz)
+        try:
+            while True:
+                try:
+                    if not self.turn():
+                        break
+                except KeyboardInterrupt:
+                    print()
                     break
-            except KeyboardInterrupt:
-                print()
-                break
+        finally:
+            if self.cfg.canned.enabled and self.cfg.canned.goodbye:
+                canned.play(self.cfg.canned.goodbye, self.link, self.cfg,
+                            player=self.player, viz=self.viz)

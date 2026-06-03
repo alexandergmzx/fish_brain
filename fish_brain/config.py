@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 def _env(name: str, default: str) -> str:
@@ -112,6 +113,34 @@ class LLMConfig:
 
 
 @dataclass
+class CannedConfig:
+    """Pre-rendered fixed phrases (welcome/goodbye/etc.) cached as WAVs.
+
+    Phrases are synthesized once via `loq` and cached on disk keyed by a hash of the text,
+    so they replay instantly and skip the LLM round-trip. The cache auto-invalidates when a
+    phrase's wording changes.
+    """
+    enabled: bool = True
+    cache_dir: Path = field(default_factory=lambda: Path(
+        os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "fish_brain" / "canned")
+    # Which phrase plays at startup / on exit. Empty string disables that hook.
+    welcome: str = "welcome"
+    goodbye: str = "goodbye"
+    # name -> Spanish text spoken by the fish.
+    phrases: dict[str, str] = field(default_factory=lambda: {
+        "welcome": "¡Hola! Soy el pez parlante. Mantén la tecla para hablar conmigo.",
+        "goodbye": "¡Adiós! Nos vemos en el estanque.",
+    })
+
+
+@dataclass
+class VizConfig:
+    """On-screen browser fish (fallback/debug view). See viz.py + web/."""
+    host: str = "127.0.0.1"
+    port: int = 8723
+
+
+@dataclass
 class PTTConfig:
     # Key held to record. 'space' by default; see ptt.py for the listener.
     hold_key: str = "space"
@@ -129,6 +158,8 @@ class Config:
     stt: STTConfig = field(default_factory=STTConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     ptt: PTTConfig = field(default_factory=PTTConfig)
+    canned: CannedConfig = field(default_factory=CannedConfig)
+    viz: VizConfig = field(default_factory=VizConfig)
 
 
 def load() -> Config:

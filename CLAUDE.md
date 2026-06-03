@@ -66,9 +66,31 @@ fish_brain/
   gestures.py      # gesture_track(dur) -> random neck/tail timed-chain commands
   serial_link.py   # pyserial writer: +\n, rate-limit, ignore inbound, STOP-on-exit; dry-run mock
   conductor.py     # merge mouth+gesture tracks; play audio; stream on one clock
-  speak.py         # speak(text): tts -> envelope+gestures -> conductor
+  speak.py         # speak(text) + perform_wav(wav): tts -> envelope+gestures -> conductor
+  canned.py        # pre-rendered fixed phrases (welcome/goodbye/…), cached WAVs by text-hash
+  viz.py           # VizServer: stdlib HTTP/SSE server for the on-screen browser fish
+  web/             # index.html + fish.js + fish.css — drawn canvas Billy Bass (browser)
   app.py           # entry point: build engine, run conversation loop
 ```
+
+## Canned phrases
+Fixed phrases live in `config.CannedConfig.phrases` (name → Spanish text). `canned.py`
+renders each via `loq` once and caches it under `~/.cache/fish_brain/canned/` keyed by a
+hash of the text, so replays are instant and editing the wording transparently re-renders.
+`welcome` plays at startup and `goodbye` on teardown (incl. Ctrl-C). Playback reuses
+`speak.perform_wav`, so canned phrases drive the mouth/gestures (and the on-screen fish)
+identically to live speech.
+
+## On-screen fish (`--viz`)
+A browser fallback/debug view of what the fish is saying — useful when the physical fish
+misbehaves. `viz.py` runs a stdlib `ThreadingHTTPServer` (daemon thread): it serves `web/`,
+streams a `speak` event per reply over **Server-Sent Events** (`/events`) carrying the audio
+URL + NECK/TAIL gesture timing, and serves the spoken WAV bytes at `/audio/<token>`. The
+browser (`fish.js`) plays + analyzes the audio itself (Web Audio `AnalyserNode`, like the
+original `gui/` sketch) to drive the **mouth**, and tweens **neck/tail** from the gesture
+events — so it animates even in `--dry-run` (no hardware). All motion rides springs
+(overshoot/settle) with idle life (breathing, blinks, eye saccades, bubbles) so it reads as
+a character, not a meter. The host also plays the audio (double audio is intentional).
 
 ## Run
 ```bash
@@ -76,13 +98,17 @@ fish_brain/
 python -m fish_brain.app --dry-run --text   # no fish, no mic: type a turn, prints commands
 python -m fish_brain.app --dry-run          # no fish: push-to-talk, prints commands
 python -m fish_brain.app                     # full: real serial + mic + fish
+python -m fish_brain.app --dry-run --text --viz   # software-only fish in the browser
 ```
 - `--dry-run` — mock serial: prints `MOUTH/NECK/TAIL` instead of driving motors.
 - `--text` — type the user turn instead of using the mic (skips STT).
+- `--viz` / `--viz-port N` — serve the on-screen browser fish (default port 8723).
+- `--say-canned NAME` — speak one canned phrase and exit; `--list-canned` lists names.
 
 ## Dependencies
 `pyserial`, `numpy`, `sounddevice` (needs system `libportaudio2`), `faster-whisper`,
 `openai`, `python-dotenv`. Serial access needs the user in the `dialout` group.
+The on-screen fish (`--viz`) uses only the Python stdlib (`http.server`) — no extra deps.
 
 ## Calibration
 Use the firmware's live tuning over a plain serial monitor — `SET <CH> OPEN|CLOSE|PULSE

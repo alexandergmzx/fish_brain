@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Audio Mouth Animation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            margin: 0 0 30px 0;
+            color: #333;
+            text-align: center;
+        }
+        .face {
+            width: 300px;
+            height: 300px;
+            margin: 30px auto;
+            position: relative;
+            background: #ffeaa7;
+            border-radius: 50%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .eye {
+            width: 30px;
+            height: 30px;
+            background: #2d3436;
+            border-radius: 50%;
+            position: absolute;
+            top: 100px;
+        }
+        .eye-left { left: 80px; }
+        .eye-right { right: 80px; }
+        .mouth-container {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 120px;
+            height: 60px;
+            overflow: hidden;
+        }
+        .mouth {
+            width: 120px;
+            height: 0px;
+            background: #2d3436;
+            border-radius: 0 0 60px 60px;
+            position: absolute;
+            bottom: 0;
+            transition: height 0.05s ease-out;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            width: 100%;
+        }
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+        .file-input-label {
+            display: block;
+            padding: 12px 20px;
+            background: #667eea;
+            color: white;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .file-input-label:hover {
+            background: #5568d3;
+        }
+        button {
+            padding: 12px 20px;
+            background: #00b894;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        button:hover:not(:disabled) {
+            background: #00a183;
+        }
+        button:disabled {
+            background: #b2bec3;
+            cursor: not-allowed;
+        }
+        .info {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #555;
+        }
+        .filename {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .slider-container label {
+            font-size: 14px;
+            color: #555;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Audio Mouth Animation</h1>
+        
+        <div class="face">
+            <div class="eye eye-left"></div>
+            <div class="eye eye-right"></div>
+            <div class="mouth-container">
+                <div class="mouth" id="mouth"></div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="file-input-wrapper">
+                <input type="file" id="audioFile" accept=".wav,audio/wav">
+                <label for="audioFile" class="file-input-label">
+                    Choose WAV File
+                </label>
+            </div>
+            
+            <button id="playBtn" disabled>Play</button>
+            <button id="stopBtn" disabled>Stop</button>
+
+            <div class="slider-container">
+                <label for="sensitivity">Sensitivity: <span id="sensitivityValue">2.5</span></label>
+                <input type="range" id="sensitivity" min="1" max="5" step="0.1" value="2.5">
+            </div>
+
+            <div class="slider-container">
+                <label for="smoothing">Smoothing: <span id="smoothingValue">0.8</span></label>
+                <input type="range" id="smoothing" min="0" max="0.95" step="0.05" value="0.8">
+            </div>
+            
+            <div class="info" id="info">
+                Load a WAV file to begin. The mouth will animate based on the audio amplitude.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const audioFileInput = document.getElementById('audioFile');
+        const playBtn = document.getElementById('playBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const mouth = document.getElementById('mouth');
+        const info = document.getElementById('info');
+        const sensitivitySlider = document.getElementById('sensitivity');
+        const sensitivityValue = document.getElementById('sensitivityValue');
+        const smoothingSlider = document.getElementById('smoothing');
+        const smoothingValue = document.getElementById('smoothingValue');
+
+        let audioContext;
+        let audioBuffer;
+        let source;
+        let analyser;
+        let animationId;
+
+        sensitivitySlider.addEventListener('input', (e) => {
+            sensitivityValue.textContent = e.target.value;
+        });
+
+        smoothingSlider.addEventListener('input', (e) => {
+            smoothingValue.textContent = e.target.value;
+            if (analyser) {
+                analyser.smoothingTimeConstant = parseFloat(e.target.value);
+            }
+        });
+
+        audioFileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                info.innerHTML = `<div class="filename">Loading: ${file.name}</div>Please wait...`;
+                
+                const arrayBuffer = await file.arrayBuffer();
+                
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                
+                audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                
+                playBtn.disabled = false;
+                info.innerHTML = `<div class="filename">${file.name}</div>Duration: ${audioBuffer.duration.toFixed(2)}s<br>Ready to play!`;
+            } catch (error) {
+                info.innerHTML = `<div class="filename">Error</div>${error.message}`;
+                console.error('Error loading audio:', error);
+            }
+        });
+
+        playBtn.addEventListener('click', () => {
+            if (!audioBuffer) return;
+
+            stopAudio();
+
+            source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            analyser.smoothingTimeConstant = parseFloat(smoothingSlider.value);
+
+            source.connect(analyser);
+            analyser.connect(audioContext.destination);
+
+            source.start(0);
+            
+            playBtn.disabled = true;
+            stopBtn.disabled = false;
+            
+            animateMouth();
+
+            source.onended = () => {
+                stopAudio();
+            };
+        });
+
+        stopBtn.addEventListener('click', () => {
+            stopAudio();
+        });
+
+        function stopAudio() {
+            if (source) {
+                source.stop();
+                source.disconnect();
+                source = null;
+            }
+            
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            
+            mouth.style.height = '0px';
+            playBtn.disabled = false;
+            stopBtn.disabled = true;
+        }
+
+        function animateMouth() {
+            if (!analyser) return;
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteFrequencyData(dataArray);
+
+            // Calculate average amplitude
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+            }
+            const average = sum / dataArray.length;
+
+            // Map amplitude to mouth height (0-60px)
+            const sensitivity = parseFloat(sensitivitySlider.value);
+            const mouthHeight = Math.min(60, (average / 255) * 60 * sensitivity);
+            mouth.style.height = mouthHeight + 'px';
+
+            animationId = requestAnimationFrame(animateMouth);
+        }
+    </script>
+</body>
+</html>
