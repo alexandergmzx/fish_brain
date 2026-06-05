@@ -1,33 +1,48 @@
 # On-screen fish sprites (`web/img/`)
 
-Drop your **transparent PNGs** here. They are served at `/img/<name>.png` and composited by
-[`../fish.js`](../fish.js) (see the `LAYERS` array there). All PNGs should be the **same
-dimensions** (full canvas) so the layers line up; they're drawn "contain"-scaled and centered
-on a solid `#91b9bc` background. Missing files are skipped — if none are present the stage
-shows a hint, so you can add them incrementally.
+Drop your **transparent PNGs** here. They are served at `/img/<name>.png` and drawn by
+[`../fish.js`](../fish.js), which runs a small **state machine**: each frame it picks **one
+whole-fish composite PNG** for the current `(neck, mouth, tail)` state. All PNGs should be the
+**same dimensions** (full canvas) so successive poses line up; they're drawn "contain"-scaled
+and centered on a solid `#91b9bc` background.
 
-The fish moves by **swapping frames** (no rotation/scaling):
+We use whole-fish composites (not stacked layers) on purpose: an **open mouth looks different
+when the neck is also out** (the head pose moves the mouth), so each pose is its own image.
 
-| Layer | Type | Files (default names) | When shown |
-|-------|------|------------------------|------------|
-| plaque | static | `plaque.png` | always (optional backdrop: wood + chains + button) |
-| tail | tail | `tail_rest.png`, `tail_flap.png` | `flap` while a **TAIL** gesture fires |
-| body | static | `body.png` | always (optional non-moving body) |
-| head | neck | `head_rest.png`, `head_out.png` | `out` while a **NECK** gesture fires |
-| mouth | mouth | `mouth0.png` … `mouth3.png` | indexed by audio loudness (closed → open) |
+## Naming
 
-## Two ways to use it
+```
+neck{Rest|Out}_mouth{0..3}_tail{Rest|Flap}.png
+```
 
-**A) Simplest — full-composite mouth frames.** Make each `mouthN.png` a *whole fish+plaque*
-in a progressively more open-mouthed pose, and don't provide the other files. Only the mouth
-layer renders; loudness picks the frame. This matches the four poses you pasted (use them as
-`mouth0.png`=closed … `mouth3.png`=widest). Add more frames for smoother talking.
+| Dimension | Values | Driven by |
+|-----------|--------|-----------|
+| `neck` | `Rest`, `Out` | `Out` while a **NECK** gesture fires, else `Rest` |
+| `mouth` | `0` `1` `2` `3` | audio loudness (closed → widest), spring-smoothed |
+| `tail` | `Rest`, `Flap` | `Flap` while a **TAIL** gesture fires, else `Rest` |
 
-**B) Layered — cut parts.** Provide transparent cut-outs (plaque/body/head/tail/mouth) so the
-mouth and tail can move at the same time. Edit the `LAYERS` order in `fish.js` if your art
-stacks differently.
+The full set is 2 × 4 × 2 = **16 sprites**, e.g.:
+
+```
+neckRest_mouth0_tailRest.png   neckRest_mouth1_tailRest.png   …  neckRest_mouth3_tailRest.png
+neckRest_mouth0_tailFlap.png   …
+neckOut_mouth0_tailRest.png    …                              neckOut_mouth3_tailFlap.png
+```
+
+## Add art incrementally (graceful fallback)
+
+You don't need all 16 at once. If the exact sprite for a state is missing, `fish.js` falls back
+to a simpler pose — first dropping the tail flap, then the neck-out, then lowering the mouth —
+so the **mouth openness is preserved as long as possible**. The final fallback is always
+`neckRest_mouth0_tailRest.png`.
+
+So a good order is:
+1. **The four base poses** `neckRest_mouth{0..3}_tailRest.png` — mouth already animates with audio.
+2. `neckOut_mouth{0..3}_tailRest.png` — head-out talking poses.
+3. The `*_tailFlap.png` variants — tail flaps during TAIL gestures.
+
+If **no** PNGs load, the stage shows a hint so the page never looks broken.
 
 ## Notes
-- More/fewer mouth frames? Just edit the `frames: [...]` list in `fish.js`.
-- File names are arbitrary — they only need to match what's in `fish.js`.
-- PNGs are **not** committed to the repo; they're yours to drop in here.
+- More/fewer mouth levels? Change `MOUTH_LEVELS` (and the `NECK`/`TAIL` arrays) in `fish.js`.
+- The default 16-sprite set is committed here; replace any PNG to reskin the fish.

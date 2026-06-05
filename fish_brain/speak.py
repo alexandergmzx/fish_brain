@@ -34,7 +34,7 @@ def perform_wav(
         if cfg.gesture.enabled else []
     )
     if viz is not None:
-        viz.announce_speech(wav, duration_ms, gesture_events)
+        viz.announce_speech(wav, duration_ms, gesture_events, mouth_track=track)
     perform(wav, track, gesture_events, link, cfg, player=player)
 
 
