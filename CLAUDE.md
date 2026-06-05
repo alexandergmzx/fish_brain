@@ -85,12 +85,20 @@ identically to live speech.
 A browser fallback/debug view of what the fish is saying — useful when the physical fish
 misbehaves. `viz.py` runs a stdlib `ThreadingHTTPServer` (daemon thread): it serves `web/`,
 streams a `speak` event per reply over **Server-Sent Events** (`/events`) carrying the audio
-URL + NECK/TAIL gesture timing, and serves the spoken WAV bytes at `/audio/<token>`. The
-browser (`fish.js`) plays + analyzes the audio itself (Web Audio `AnalyserNode`, like the
-original `gui/` sketch) to drive the **mouth**, and tweens **neck/tail** from the gesture
-events — so it animates even in `--dry-run` (no hardware). All motion rides springs
-(overshoot/settle) with idle life (breathing, blinks, eye saccades, bubbles) so it reads as
-a character, not a meter. The host also plays the audio (double audio is intentional).
+URL + the precomputed **mouth loudness envelope** + NECK/TAIL gesture timing, and serves the
+spoken WAV bytes at `/audio/<token>`. The browser (`fish.js`) runs a **sprite state machine**:
+each frame it picks one whole-fish composite PNG for the current `(neck, mouth, tail)` state —
+**mouth** `0..3` played from the sent envelope on the browser's own clock (spring-smoothed),
+**neck** `Rest|Out` and **tail** `Rest|Flap` from whether a NECK/TAIL gesture is firing. Driving
+the mouth from the envelope (not live audio analysis) means it animates even with browser sound
+off / autoplay blocked — including the startup greeting; the manual "probar con un WAV" test
+falls back to a live `AnalyserNode`. Whole-fish composites (not stacked layers) because an open
+mouth looks different when the neck is also out; sprites are named
+`neck{Rest|Out}_mouth{0..3}_tail{Rest|Flap}.png` and missing ones fall back to a simpler pose
+(see `web/img/README.md`). Bubbles draw on top. Because the greeting plays before any browser
+connects, `viz.py` **replays the last `speak` event to a browser that connects within 30 s**, so
+the on-screen fish still performs the greeting. The host also plays the audio when present
+(double audio is intentional) so the fish animates even in `--dry-run` (no hardware).
 
 ## Run
 ```bash

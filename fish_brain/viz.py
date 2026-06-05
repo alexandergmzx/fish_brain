@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import queue
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -31,6 +32,10 @@ _CONTENT_TYPES = {".html": "text/html", ".js": "text/javascript", ".css": "text/
 
 
 class VizServer:
+    # Replay the most recent speak event to a browser that connects within this window, so the
+    # startup greeting (played before any browser subscribes) still animates the on-screen fish.
+    REPLAY_WINDOW_S = 30.0
+
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self._subscribers: set[queue.Queue] = set()
@@ -38,6 +43,8 @@ class VizServer:
         self._audio: dict[str, bytes] = {}   # token -> WAV bytes (keep the last few)
         self._audio_order: list[str] = []
         self._seq = 0
+        self._last_event: str | None = None  # serialized last speak event (for replay-on-connect)
+        self._last_event_ts = 0.0
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -60,14 +67,20 @@ class VizServer:
         q: queue.Queue = queue.Queue(maxsize=64)
         with self._lock:
             self._subscribers.add(q)
+            replay = self._last_event
+            fresh = (time.monotonic() - self._last_event_ts) < self.REPLAY_WINDOW_S
+        if replay is not None and fresh:
+            try:
+                q.put_nowait(replay)  # catch up a just-connected browser (e.g. the greeting)
+            except queue.Full:
+                pass
         return q
 
     def _unsubscribe(self, q: queue.Queue) -> None:
         with self._lock:
             self._subscribers.discard(q)
 
-    def _publish(self, event: dict) -> None:
-        data = json.dumps(event)
+    def _publish(self, data: str) -> None:
         with self._lock:
             subs = list(self._subscribers)
         for q in subs:
@@ -95,20 +108,32 @@ class VizServer:
 
     # --- public API (called from speak.perform_wav) ---
     def announce_speech(self, wav: str | Path, duration_ms: int,
-                        gesture_events: list[tuple[int, str, str]]) -> None:
-        """Snapshot the WAV and tell connected browsers to play + animate it."""
+                        gesture_events: list[tuple[int, str, str]],
+                        mouth_track: list[tuple[int, int]] | None = None) -> None:
+        """Snapshot the WAV and tell connected browsers to play + animate it.
+
+        `mouth_track` is the (t_ms, pwm) mouth schedule; we normalize it to 0..1 levels so the
+        browser can drive the mouth from the same envelope the hardware uses (no audio needed).
+        """
         try:
             token = self._store_audio(wav)
         except Exception as e:
             print(f"[viz] could not snapshot audio: {e}")
             return
-        self._publish({
+        open_pwm = self.cfg.mouth.open_pwm or 1
+        mouth = [[t, round(max(0, pwm) / open_pwm, 3)] for (t, pwm) in (mouth_track or [])]
+        data = json.dumps({
             "type": "speak",
             "audio": f"/audio/{token}",
             "duration_ms": duration_ms,
             "gestures": [[t, ch, body] for (t, ch, body) in gesture_events],
+            "mouth": mouth,
             "open_pwm": self.cfg.mouth.open_pwm,
         })
+        with self._lock:
+            self._last_event = data
+            self._last_event_ts = time.monotonic()
+        self._publish(data)
 
 
 def _make_handler(server: "VizServer"):
