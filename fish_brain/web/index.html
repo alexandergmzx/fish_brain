@@ -16,14 +16,21 @@
             <div class="status" id="status" role="status" aria-live="polite">Conectando…</div>
         </div>
 
+        <button id="pttButton" type="button">🎤 Mantén para hablar <small>(o barra espaciadora)</small></button>
+
         <div class="controls">
             <div class="slider-container">
                 <label for="sensitivity">Sensibilidad: <span id="sensitivityValue">2.5</span></label>
                 <input type="range" id="sensitivity" min="1" max="5" step="0.1" value="2.5">
             </div>
-            <div class="slider-container">
-                <label for="smoothing">Suavizado: <span id="smoothingValue">0.8</span></label>
-                <input type="range" id="smoothing" min="0" max="0.95" step="0.05" value="0.8">
+            <div class="mic-row">
+                <label for="micSelect">Micrófono</label>
+                <select id="micSelect"><option value="">Predeterminado</option></select>
+                <canvas id="micMeter" width="560" height="40"></canvas>
+                <div id="transcript" class="transcript">
+                    <p class="t-user"><span class="t-tag">🗣️</span> <span id="tUser">…</span></p>
+                    <p class="t-fish"><span class="t-tag">🐟</span> <span id="tFish">…</span></p>
+                </div>
             </div>
             <div class="toggles">
                 <label><input type="checkbox" id="toggleBubbles" checked> Burbujas</label>

@@ -146,6 +146,16 @@ class PTTConfig:
     hold_key: str = "space"
     samplerate: int = 16000         # whisper wants 16 kHz mono
     channels: int = 1
+    # Which microphone to record from. Prefer `source`: a PipeWire/PulseAudio source NAME
+    # (e.g. "alsa_input.usb-RedOctane_...mono-fallback"). It's stable across reboots/replug and
+    # records through the sound server (proper gain + 16 kHz resampling), unlike a raw ALSA
+    # device. `device` is a fallback for systems without PipeWire/Pulse: a sounddevice index
+    # (unstable!) or None for the system default. Both are settable live via the web mic picker.
+    source: str | None = None
+    device: int | None = None
+    # Below this RMS a recording is treated as silence and skipped (Whisper hallucinates
+    # phrases like "Subtítulos por la comunidad de Amara.org" on silent input).
+    silence_rms: float = 0.005
 
 
 @dataclass

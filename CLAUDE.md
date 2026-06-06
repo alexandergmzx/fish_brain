@@ -92,13 +92,37 @@ each frame it picks one whole-fish composite PNG for the current `(neck, mouth, 
 **neck** `Rest|Out` and **tail** `Rest|Flap` from whether a NECK/TAIL gesture is firing. Driving
 the mouth from the envelope (not live audio analysis) means it animates even with browser sound
 off / autoplay blocked — including the startup greeting; the manual "probar con un WAV" test
-falls back to a live `AnalyserNode`. Whole-fish composites (not stacked layers) because an open
+falls back to a live `AnalyserNode`. The **Sensibilidad** slider scales the envelope level (how
+wide/easily the mouth opens); mouth smoothing is a fixed critically-damped spring (`mouth.k`).
+Whole-fish composites (not stacked layers) because an open
 mouth looks different when the neck is also out; sprites are named
 `neck{Rest|Out}_mouth{0..3}_tail{Rest|Flap}.png` and missing ones fall back to a simpler pose
 (see `web/img/README.md`). Bubbles draw on top. Because the greeting plays before any browser
 connects, `viz.py` **replays the last `speak` event to a browser that connects within 30 s**, so
 the on-screen fish still performs the greeting. The host also plays the audio when present
 (double audio is intentional) so the fish animates even in `--dry-run` (no hardware).
+
+The page also has a **mic picker + level meter**. Recording is host-side, so the browser can't use
+its own devices; instead `GET /mics` enumerates the host's input devices and `POST /mic
+{"device": <id|null>}` selects one in the shared `Config`. The picker prefers **PipeWire/Pulse
+sources** (via `pactl`): the id is the stable source NAME → `PTTConfig.source`, recorded through the
+`pulse` PCM with `PULSE_SOURCE` set (proper gain + 16 kHz resampling, and stable across reboots/USB
+re-enumeration). On systems without PipeWire/Pulse it falls back to raw `sounddevice` indices →
+`PTTConfig.device` (note: those indices are **unstable** and a raw `hw:` device can capture silence
+— prefer the PipeWire source). Silent recordings (RMS < `PTTConfig.silence_rms`) are skipped before
+STT, and `stt.py` runs Whisper with `vad_filter=True` plus a small phrase blocklist, so it no
+longer emits the silence-hallucination "Subtítulos por la comunidad de Amara.org". A **transcript
+panel** under the meter shows the last STT (`🗣️`) and reply (`🐟`): `conversation` calls
+`viz.push_transcript(text, role)`, sent as `stt` SSE events that `fish.js` renders with a flash. While recording, the recorder streams per-chunk RMS to
+`viz.push_level`, sent as `level` SSE events; `fish.js` draws them as a scrolling waveform + peak
+bar that decays to flat when released (the meter is live **only while recording**).
+
+With `--viz` the turn is triggered by an on-screen **hold-to-talk** button (or the browser
+spacebar) instead of the keyboard: press/release POST `/ptt {"down": bool}` to `viz.set_ptt`, and
+`conversation` records via `ptt.record_web` (which polls `viz.ptt_held`) rather than `record_hold`.
+This avoids terminal focus / `pynput` issues and makes debugging easy. An empty transcription
+(silence / too-short hold) **re-listens** instead of ending the loop — only `salir`/`quit`/`exit`,
+EOF (`--text`), or Ctrl-C quit.
 
 ## Run
 ```bash
@@ -107,9 +131,19 @@ python -m fish_brain.app --dry-run --text   # no fish, no mic: type a turn, prin
 python -m fish_brain.app --dry-run          # no fish: push-to-talk, prints commands
 python -m fish_brain.app                     # full: real serial + mic + fish
 python -m fish_brain.app --dry-run --text --viz   # software-only fish in the browser
+python -m fish_brain.app --echo --dry-run    # echo test (voice): speak, it repeats you, no API key
 ```
+**Voice (the default — speak instead of typing):** omit `--text`. Hold the push-to-talk key
+(`PTTConfig.hold_key`, default space) to record, release to send; capture goes to local
+faster-whisper (`STTConfig.model`, default `small`, **downloads on first use**). Needs system
+`libportaudio2` and the user in `dialout` only for real serial. When no global key listener is
+available (e.g. Wayland), PTT falls back to **Enter-to-toggle** in the terminal. `--echo --dry-run`
+(no `--text`) is the quickest way to try voice end-to-end with no API key and no hardware.
+
 - `--dry-run` — mock serial: prints `MOUTH/NECK/TAIL` instead of driving motors.
 - `--text` — type the user turn instead of using the mic (skips STT).
+- `--echo` — repeat the user's turn back instead of calling the LLM. Exercises the whole
+  STT→TTS→mouth/gesture pipeline (and `--viz`) with **no `OPENAI_API_KEY`** needed.
 - `--viz` / `--viz-port N` — serve the on-screen browser fish (default port 8723).
 - `--say-canned NAME` — speak one canned phrase and exit; `--list-canned` lists names.
 
