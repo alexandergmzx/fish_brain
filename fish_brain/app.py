@@ -20,6 +20,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="mock serial: print MOUTH/NECK/TAIL instead of driving motors")
     parser.add_argument("--text", action="store_true",
                         help="type the user turn instead of using the mic (skips STT)")
+    parser.add_argument("--echo", action="store_true",
+                        help="repeat back what you say (no LLM/API key); test the STT->TTS->mouth pipeline")
     parser.add_argument("--no-audio", action="store_true",
                         help="don't play TTS audio (silent player); still streams motion")
     parser.add_argument("--port", help="override the serial port (e.g. /dev/ttyACM0)")
@@ -28,6 +30,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="speak one canned phrase by name and exit")
     parser.add_argument("--list-canned", action="store_true",
                         help="list available canned phrase names and exit")
+    parser.add_argument("--prefetch-stt", action="store_true",
+                        help="download/load the faster-whisper STT model, then exit "
+                             "(run once after install so the first turn isn't slow)")
     parser.add_argument("--viz", action="store_true",
                         help="serve the on-screen fish (browser fallback/debug view)")
     parser.add_argument("--viz-port", type=int, help="port for --viz (default from config)")
@@ -49,6 +54,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_canned:
         for name in cfg.canned.phrases:
             print(name)
+        return 0
+
+    if args.prefetch_stt:
+        from .stt import Transcriber
+        print(f"Fetching STT model '{cfg.stt.model}' (first run may take a while)…", flush=True)
+        Transcriber(cfg.stt).ensure_loaded()
+        print("STT model ready (cached under ~/.cache/huggingface).")
         return 0
 
     # Warm the loq daemon so the first phrase isn't slow.
@@ -88,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
                     canned.play(args.say_canned, link, cfg, player=player, viz=viz)
                 return 0
             convo = FishConversation(cfg, link, text_input=args.text,
-                                     play_audio=not args.no_audio, viz=viz)
+                                     play_audio=not args.no_audio, viz=viz, echo=args.echo)
             convo.run()
     finally:
         if viz is not None:

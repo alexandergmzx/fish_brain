@@ -25,9 +25,22 @@ sudo apt install libportaudio2
 
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .                 # installs deps from pyproject.toml
+# or, for the exact pinned versions this was built/tested with:
+#   pip install -r requirements.txt
 
 cp .env.example .env             # then put your OPENAI_API_KEY in .env
+
+# optional: fetch the speech model now (~0.5 GB for "small") so the first turn isn't slow
+python -m fish_brain.app --prefetch-stt
 ```
+
+The STT model is cached under `~/.cache/huggingface/` after the first download, so later runs
+reuse it. If you skip `--prefetch-stt`, the very first voice turn downloads it on demand (you'll
+see a Hugging Face progress bar, and a harmless "set a HF_TOKEN" notice — no token is needed).
+
+`pyproject.toml` is the source of truth for dependencies; `requirements.txt` is a pinned
+snapshot (`pip freeze`) for reproducing the exact environment on a fresh clone. Regenerate it
+after changing deps with `pip freeze --exclude-editable > requirements.txt`.
 
 Serial access: your user must be in the `dialout` group (log out/in after adding):
 ```bash
@@ -48,11 +61,17 @@ python -m fish_brain.app --dry-run
 
 # Full system: real serial + mic + fish.
 python -m fish_brain.app
+
+# Easiest voice testing: on-screen fish with a hold-to-talk button in the browser.
+python -m fish_brain.app --echo --dry-run --viz   # open http://127.0.0.1:8723
 ```
 
 Flags: `--dry-run` (mock serial, prints commands), `--text` (type instead of mic),
-`--no-audio` (don't play TTS), `--port /dev/ttyACM0`, `--say "..."` (one-shot).
-In the loop, say/type **`salir`** or hit Ctrl-C to quit. Push-to-talk = hold **space**
+`--echo` (repeat you back, no API key), `--no-audio` (don't play TTS), `--viz` (on-screen fish),
+`--port /dev/ttyACM0`, `--say "..."` (one-shot).
+In the loop, say/type **`salir`** or hit Ctrl-C to quit; an unclear/empty recording just re-listens.
+Push-to-talk: with `--viz`, **hold the on-screen button** (or the browser spacebar) and pick your
+mic from the dropdown — easiest for debugging. Without `--viz`, hold **space** in the terminal
 (falls back to Enter-to-toggle if `pynput`/display is unavailable).
 
 ## Calibration

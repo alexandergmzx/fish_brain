@@ -17,10 +17,12 @@ from .serial_link import BaseLink
 
 class FishConversation:
     def __init__(self, cfg: Config, link: BaseLink, *,
-                 text_input: bool = False, play_audio: bool = True, viz=None):
+                 text_input: bool = False, play_audio: bool = True, viz=None,
+                 echo: bool = False):
         self.cfg = cfg
         self.link = link
         self.text_input = text_input
+        self.echo = echo
         self.player: Player = make_player(play_audio)
         self.viz = viz
         self._llm = None
@@ -41,32 +43,52 @@ class FishConversation:
         return self._stt
 
     def _get_user_text(self) -> str | None:
+        """The user's turn: text, "" if nothing was captured, or None on EOF (quit)."""
         if self.text_input:
             try:
-                text = input("you> ").strip()
+                return input("you> ").strip()
             except EOFError:
                 return None
-            return text or None
-        # Voice: push-to-talk -> transcribe.
-        wav = ptt.record_hold(self.cfg.ptt)
+        # Voice: push-to-talk -> transcribe. Stream the live mic level to the on-screen
+        # fish (if any) so the web GUI draws a meter while recording. With --viz the turn is
+        # triggered by the browser's hold-to-talk button; otherwise by the keyboard.
+        on_level = (lambda lvl: self.viz.push_level(lvl)) if self.viz is not None else None
+        if self.viz is not None:
+            wav = ptt.record_web(self.cfg.ptt, self.viz.ptt_held, on_level=on_level)
+        else:
+            wav = ptt.record_hold(self.cfg.ptt, on_level=on_level)
+        from pathlib import Path
         try:
+            # Skip silent captures: Whisper hallucinates phrases on silence (wrong/muted mic).
+            rms = ptt.wav_rms(wav)
+            if rms < self.cfg.ptt.silence_rms:
+                print(f"you> … (grabación casi en silencio, rms={rms:.4f}; ¿micrófono correcto?)")
+                if self.viz is not None:
+                    self.viz.push_transcript("… (silencio, ¿micrófono correcto?)", "user")
+                return ""
             text = self.stt.transcribe(wav).strip()
         finally:
-            from pathlib import Path
             Path(wav).unlink(missing_ok=True)
-        if text:
-            print(f"you> {text}")
-        return text or None
+        print(f"you> {text}" if text else "you> … (no te entendí, intenta de nuevo)")
+        if self.viz is not None:
+            self.viz.push_transcript(text or "… (no te entendí)", "user")
+        return text
 
     def turn(self) -> bool:
         """Run one turn. Returns False to end the loop (EOF/quit)."""
         user = self._get_user_text()
         if user is None:
-            return False
+            return False                       # EOF (Ctrl-D in --text)
+        user = user.strip()
         if user.lower() in {"salir", "quit", "exit"}:
             return False
-        reply = self.llm.reply(user)
+        if not user:
+            return True                        # nothing captured -> keep listening
+        # Echo mode just speaks the transcription back -> never touches the LLM (no API key).
+        reply = user if self.echo else self.llm.reply(user)
         print(f"fish> {reply}")
+        if self.viz is not None and reply:
+            self.viz.push_transcript(reply, "fish")
         if reply:
             speak_mod.speak(reply, self.link, self.cfg, player=self.player, viz=self.viz)
         return True

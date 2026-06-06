@@ -47,6 +47,7 @@ class VizServer:
         self._last_event_ts = 0.0
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self._ptt_held = False                # browser hold-to-talk button state
 
     # --- lifecycle ---
     def start(self) -> None:
@@ -135,6 +136,93 @@ class VizServer:
             self._last_event_ts = time.monotonic()
         self._publish(data)
 
+    def push_level(self, rms: float) -> None:
+        """Push a live mic level (0..1 RMS) to browsers while recording (best-effort)."""
+        self._publish(json.dumps({"type": "level", "rms": round(float(rms), 4)}))
+
+    def push_transcript(self, text: str, role: str) -> None:
+        """Push a transcript line to the browser. role is "user" (STT) or "fish" (reply)."""
+        self._publish(json.dumps({"type": "stt", "role": role, "text": text}))
+
+    # --- mic device selection ---
+    def list_mics(self) -> dict:
+        """Input devices for the web picker. Prefers PipeWire/Pulse sources (stable names that
+        record through the sound server); falls back to raw sounddevice indices."""
+        sources = _pulse_sources()
+        if sources is not None:
+            return {"devices": sources, "current": self.cfg.ptt.source}
+        try:
+            import sounddevice as sd
+        except Exception as e:
+            return {"devices": [], "current": self.cfg.ptt.device, "error": str(e)}
+        try:
+            default_in = sd.default.device[0] if sd.default.device else None
+        except Exception:
+            default_in = None
+        devices = []
+        for i, d in enumerate(sd.query_devices()):
+            if d.get("max_input_channels", 0) > 0:
+                devices.append({"id": str(i), "name": d.get("name", f"device {i}"),
+                                "default": i == default_in})
+        return {"devices": devices, "current": None if self.cfg.ptt.device is None
+                else str(self.cfg.ptt.device)}
+
+    def set_mic(self, value) -> dict:
+        """Select the mic for the next turn (mutates shared cfg). A PipeWire source name goes to
+        `source`; a numeric string is a sounddevice index; empty/None clears to the default."""
+        if not value:
+            self.cfg.ptt.source = None
+            self.cfg.ptt.device = None
+        elif str(value).isdigit():
+            self.cfg.ptt.device = int(value)
+            self.cfg.ptt.source = None
+        else:
+            self.cfg.ptt.source = str(value)
+            self.cfg.ptt.device = None
+        return {"ok": True, "current": self.cfg.ptt.source or self.cfg.ptt.device}
+
+    # --- browser hold-to-talk (drives push-to-talk from the on-screen fish) ---
+    def set_ptt(self, down: bool) -> dict:
+        """Press/release the web push-to-talk button (the record loop polls `ptt_held`)."""
+        self._ptt_held = bool(down)
+        return {"held": self._ptt_held}
+
+    def ptt_held(self) -> bool:
+        return self._ptt_held
+
+
+def _pulse_sources():
+    """Real (non-monitor) PipeWire/Pulse input sources via `pactl`, or None if unavailable.
+
+    Each entry: {"id": <stable source name>, "name": <friendly description>, "default": bool}.
+    The id is fed to PULSE_SOURCE when recording, so it survives reboots/USB re-enumeration.
+    """
+    import subprocess
+    try:
+        out = subprocess.run(["pactl", "list", "sources"], capture_output=True,
+                             text=True, timeout=3)
+        if out.returncode != 0:
+            return None
+        default = subprocess.run(["pactl", "get-default-source"], capture_output=True,
+                                 text=True, timeout=3).stdout.strip()
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    sources = []
+    for block in out.stdout.split("Source #")[1:]:
+        name = desc = None
+        is_monitor = False
+        for line in block.splitlines():
+            t = line.strip()
+            if t.startswith("Name:"):
+                name = t[len("Name:"):].strip()
+            elif t.startswith("Description:"):
+                desc = t[len("Description:"):].strip()
+            elif t.startswith("Monitor of Sink:"):
+                is_monitor = t.split(":", 1)[1].strip() != "n/a"
+        if name and not is_monitor and not name.endswith(".monitor"):
+            sources.append({"id": name, "name": desc or name, "default": name == default})
+    return sources
+
 
 def _make_handler(server: "VizServer"):
     class Handler(BaseHTTPRequestHandler):
@@ -151,10 +239,36 @@ def _make_handler(server: "VizServer"):
                 self._serve_img(path[len("/img/"):])
             elif path == "/events":
                 self._serve_events()
+            elif path == "/mics":
+                self._send_json(server.list_mics())
             elif path.startswith("/audio/"):
                 self._serve_audio(path[len("/audio/"):])
             else:
                 self.send_error(404)
+
+        def do_POST(self):  # noqa: N802
+            path = self.path.split("?", 1)[0]
+            if path in ("/mic", "/ptt"):
+                try:
+                    length = int(self.headers.get("Content-Length", 0))
+                    body = json.loads(self.rfile.read(length) or b"{}")
+                    if path == "/mic":
+                        self._send_json(server.set_mic(body.get("device")))
+                    else:
+                        self._send_json(server.set_ptt(body.get("down")))
+                except Exception as e:
+                    self._send_json({"ok": False, "error": str(e)}, status=400)
+            else:
+                self.send_error(404)
+
+        def _send_json(self, obj, status: int = 200):
+            body = json.dumps(obj).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
 
         def _serve_file(self, name: str):
             fp = WEB_DIR / name

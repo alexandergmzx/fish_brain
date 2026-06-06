@@ -29,17 +29,116 @@
   const dot = document.getElementById("conn-dot");
   const sens = document.getElementById("sensitivity");
   const sensVal = document.getElementById("sensitivityValue");
-  const smooth = document.getElementById("smoothing");
-  const smoothVal = document.getElementById("smoothingValue");
   const toggleBubbles = document.getElementById("toggleBubbles");
   const toggleAudio = document.getElementById("toggleAudio");
   const fileInput = document.getElementById("audioFile");
+  const micSelect = document.getElementById("micSelect");
+  const micMeter = document.getElementById("micMeter");
+  const pttButton = document.getElementById("pttButton");
+  const tUser = document.getElementById("tUser");
+  const tFish = document.getElementById("tFish");
+
+  // Show STT (what you said) / reply (what the fish says) under the level meter.
+  function setTranscript(role, text) {
+    const span = role === "fish" ? tFish : tUser;
+    span.textContent = text || "…";
+    const p = span.parentElement;
+    p.classList.remove("updated");
+    void p.offsetWidth;                 // restart the flash animation
+    p.classList.add("updated");
+  }
 
   sens.addEventListener("input", () => (sensVal.textContent = sens.value));
-  smooth.addEventListener("input", () => {
-    smoothVal.textContent = smooth.value;
-    if (analyser) analyser.smoothingTimeConstant = parseFloat(smooth.value);
+
+  // ---- hold-to-talk: drive the host's push-to-talk from the browser ----
+  // POST /ptt {down} on press/release edges; the host records while held. Works with the
+  // button (mouse/touch) or the spacebar, so you don't need terminal focus or pynput.
+  let pttDown = false;
+  function setPtt(down) {
+    if (down === pttDown) return;              // edges only (keydown auto-repeats)
+    pttDown = down;
+    pttButton.classList.toggle("recording", down);
+    fetch("/ptt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ down }),
+    }).catch(() => {});
+  }
+  pttButton.addEventListener("mousedown", (e) => { e.preventDefault(); setPtt(true); });
+  pttButton.addEventListener("touchstart", (e) => { e.preventDefault(); setPtt(true); }, { passive: false });
+  pttButton.addEventListener("touchend", (e) => { e.preventDefault(); setPtt(false); });
+  pttButton.addEventListener("touchcancel", () => setPtt(false));
+  window.addEventListener("mouseup", () => setPtt(false));   // release anywhere, not just on the button
+  const typingTag = (t) => t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName);
+  // X11/Linux auto-repeat fires keyup+keydown PAIRS while a key is held, which would flap the
+  // recording on/off. Debounce the release: a keyup schedules stop, but the auto-repeat keydown
+  // right after cancels it — so the hold stays continuous; a real release has no following keydown.
+  let spaceUpTimer = null;
+  window.addEventListener("keydown", (e) => {
+    if (e.code !== "Space" || typingTag(e.target)) return;
+    e.preventDefault();
+    if (spaceUpTimer) { clearTimeout(spaceUpTimer); spaceUpTimer = null; }
+    setPtt(true);
   });
+  window.addEventListener("keyup", (e) => {
+    if (e.code !== "Space" || typingTag(e.target)) return;
+    e.preventDefault();
+    if (spaceUpTimer) clearTimeout(spaceUpTimer);
+    spaceUpTimer = setTimeout(() => { spaceUpTimer = null; setPtt(false); }, 80);
+  });
+
+  // ---- mic picker + live level meter (only fed while the host is recording) ----
+  // The host enumerates its own input devices (sounddevice) and records from the chosen
+  // one; we just list/select them and draw the RMS levels it streams over SSE.
+  async function loadMics() {
+    try {
+      const r = await fetch("/mics");
+      const { devices = [], current = null, error } = await r.json();
+      if (error) return;                       // host can't enumerate mics; keep "Predeterminado"
+      micSelect.innerHTML = '<option value="">Predeterminado</option>';
+      for (const d of devices) {
+        const o = document.createElement("option");
+        o.value = d.id;                        // stable PipeWire source name (or sounddevice index)
+        o.textContent = d.name + (d.default ? " (predeterminado)" : "");
+        if (current !== null && String(current) === d.id) o.selected = true;
+        micSelect.appendChild(o);
+      }
+    } catch (e) { /* offline: leave the default option */ }
+  }
+  micSelect.addEventListener("change", () => {
+    fetch("/mic", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device: micSelect.value || null }),
+    }).catch(() => {});
+  });
+
+  const mctx = micMeter.getContext("2d");
+  const MW = micMeter.width, MH = micMeter.height;
+  const MIC_GAIN = 4.0;                         // RMS is small; scale for display
+  const micHist = new Array(140).fill(0);       // scrolling loudness history
+  let micPeak = 0;                              // eased peak for the level bar
+  function pushMicLevel(rms) {
+    const v = Math.min(1, rms * MIC_GAIN);
+    micHist.push(v); micHist.shift();
+  }
+  function drawMicMeter() {
+    // Decay toward silence so the meter settles after the key is released.
+    micHist[micHist.length - 1] *= 0.92;
+    let cur = micHist[micHist.length - 1];
+    micPeak += ((cur > micPeak ? cur : micPeak * 0.9) - micPeak) * 0.35;  // snappy up, soft down
+    mctx.clearRect(0, 0, MW, MH);
+    // scrolling waveform (centered bars)
+    const n = micHist.length, bw = MW / n, mid = MH / 2;
+    for (let i = 0; i < n; i++) {
+      const h = micHist[i] * (MH - 4);
+      mctx.fillStyle = `rgba(99,179,237,${0.25 + 0.6 * micHist[i]})`;
+      mctx.fillRect(i * bw, mid - h / 2, Math.max(1, bw - 1), h);
+    }
+    // peak level bar along the bottom
+    mctx.fillStyle = micPeak > 0.85 ? "#f56565" : "#48bb78";
+    mctx.fillRect(0, MH - 3, micPeak * MW, 3);
+  }
 
   // ---- sprite state machine (edit to match your PNGs) --------------------
   // Whole-fish composites named by the (neck, mouth, tail) state. Drop the PNGs in web/img/.
@@ -69,7 +168,10 @@
       for (let t = 0; t < TAIL.length; t++) load(stateName(n, m, t));
 
   // ---- spring (eases the mouth level so frames don't chatter) ------------
-  const mouth = { value: 0, vel: 0, k: 320, d: 22 };
+  // Critically damped (d = 2*sqrt(k)) so it never overshoots or chatters. Smooths every path
+  // (envelope replies + the manual WAV test), since both feed mouthTarget through step().
+  // Tune k for snappier/softer mouth; raise -> snappier, lower -> smoother.
+  const mouth = { value: 0, vel: 0, k: 104, d: 20 };
   function step(s, target, dt) {
     const f = -s.k * (s.value - target) - s.d * s.vel;
     s.vel += f * dt;
@@ -93,7 +195,6 @@
     if (currentSource) { try { currentSource.stop(); } catch (e) {} }
     analyser = actx.createAnalyser();
     analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = parseFloat(smooth.value);
     freqData = new Uint8Array(analyser.frequencyBinCount);
     const src = actx.createBufferSource();
     src.buffer = buf;
@@ -243,7 +344,7 @@
     if (activeGestures.length) activeGestures = activeGestures.filter((g) => now < g.end + 50);
     updateBubbles(dt);
 
-    try { draw(now); } catch (e) { console.error("draw frame error:", e); }
+    try { draw(now); drawMicMeter(); } catch (e) { console.error("draw frame error:", e); }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
@@ -261,9 +362,12 @@
       let ev;
       try { ev = JSON.parse(e.data); } catch (_) { return; }
       if (ev.type === "speak") handleSpeak(ev);
+      else if (ev.type === "level") pushMicLevel(ev.rms);
+      else if (ev.type === "stt") setTranscript(ev.role, ev.text);
     };
   }
   connect();
+  loadMics();
 
   // offline test: load a WAV by hand
   fileInput.addEventListener("change", async (e) => {
