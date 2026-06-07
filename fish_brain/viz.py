@@ -48,6 +48,8 @@ class VizServer:
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._ptt_held = False                # browser hold-to-talk button state
+        self._wait = False                    # "wait to speak" checkbox: gate auto-speak of replies
+        self._speaker = None                  # speak.Speaker, registered by app.py (text box -> /speak)
 
     # --- lifecycle ---
     def start(self) -> None:
@@ -143,6 +145,10 @@ class VizServer:
         """Push a transcript line to the browser. role is "user" (STT) or "fish" (reply)."""
         self._publish(json.dumps({"type": "stt", "role": role, "text": text}))
 
+    def push_draft(self, text: str) -> None:
+        """Drop a reply into the browser's editable text box (for "wait to speak" mode)."""
+        self._publish(json.dumps({"type": "draft", "text": text}))
+
     # --- mic device selection ---
     def list_mics(self) -> dict:
         """Input devices for the web picker. Prefers PipeWire/Pulse sources (stable names that
@@ -188,6 +194,28 @@ class VizServer:
 
     def ptt_held(self) -> bool:
         return self._ptt_held
+
+    # --- text box -> speak verbatim, and the "wait to speak" gate ---
+    def register_speaker(self, speaker) -> None:
+        """Wire in the shared speak.Speaker so the text box can drive the fish."""
+        self._speaker = speaker
+
+    def speak_text(self, text) -> dict:
+        """Speak typed text verbatim. Runs on a daemon thread so the HTTP request returns at
+        once (Speaker.speak blocks for the whole phrase); Speaker's lock drops overlaps."""
+        if self._speaker is None:
+            return {"ok": False, "error": "no speaker"}
+        threading.Thread(target=self._speaker.speak, args=(str(text or ""),),
+                         daemon=True).start()
+        return {"ok": True}
+
+    def set_wait(self, on: bool) -> dict:
+        """Toggle "wait to speak": when on, replies fill the text box instead of auto-playing."""
+        self._wait = bool(on)
+        return {"wait": self._wait}
+
+    def wait_enabled(self) -> bool:
+        return self._wait
 
 
 def _pulse_sources():
@@ -247,14 +275,18 @@ def _make_handler(server: "VizServer"):
 
         def do_POST(self):  # noqa: N802
             path = self.path.split("?", 1)[0]
-            if path in ("/mic", "/ptt"):
+            if path in ("/mic", "/ptt", "/speak", "/wait"):
                 try:
                     length = int(self.headers.get("Content-Length", 0))
                     body = json.loads(self.rfile.read(length) or b"{}")
                     if path == "/mic":
                         self._send_json(server.set_mic(body.get("device")))
-                    else:
+                    elif path == "/ptt":
                         self._send_json(server.set_ptt(body.get("down")))
+                    elif path == "/speak":
+                        self._send_json(server.speak_text(body.get("text")))
+                    else:
+                        self._send_json(server.set_wait(body.get("on")))
                 except Exception as e:
                     self._send_json({"ok": False, "error": str(e)}, status=400)
             else:

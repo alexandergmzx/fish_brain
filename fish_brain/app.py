@@ -101,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             convo = FishConversation(cfg, link, text_input=args.text,
                                      play_audio=not args.no_audio, viz=viz, echo=args.echo)
+            if viz is not None:
+                viz.register_speaker(convo.speaker)   # let the on-screen text box drive the fish
             convo.run()
     finally:
         if viz is not None:
