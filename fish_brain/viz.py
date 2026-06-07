@@ -110,19 +110,18 @@ class VizServer:
     # --- public API (called from speak.perform_wav) ---
     def announce_speech(self, wav: str | Path, duration_ms: int,
                         gesture_events: list[tuple[int, str, str]],
-                        mouth_track: list[tuple[int, int]] | None = None) -> None:
+                        mouth_track: list[tuple[int, float]] | None = None) -> None:
         """Snapshot the WAV and tell connected browsers to play + animate it.
 
-        `mouth_track` is the (t_ms, pwm) mouth schedule; we normalize it to 0..1 levels so the
-        browser can drive the mouth from the same envelope the hardware uses (no audio needed).
+        `mouth_track` is the (t_ms, level) openness schedule (0..1) — the same intent the
+        hardware realizes via timed pulses — so the browser animates from it directly.
         """
         try:
             token = self._store_audio(wav)
         except Exception as e:
             print(f"[viz] could not snapshot audio: {e}")
             return
-        open_pwm = self.cfg.mouth.open_pwm or 1
-        mouth = [[t, round(max(0, pwm) / open_pwm, 3)] for (t, pwm) in (mouth_track or [])]
+        mouth = [[t, round(float(level), 3)] for (t, level) in (mouth_track or [])]
         data = json.dumps({
             "type": "speak",
             "audio": f"/audio/{token}",

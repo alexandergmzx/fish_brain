@@ -34,15 +34,17 @@ audio and stream commands together — robust sync, simple code.
 - **TTS**: local `loq -o FILE.wav "texto"` — rendered **silently**; we own playback for
   sync (do NOT use `loq -p`). Warm daemon ≈ 50 ms.
 - **Turn trigger**: push-to-talk (hold a key to record, release to send).
-- **Mouth sync**: **proportional loudness** → immediate `MOUTH <n>` PWM.
+- **Mouth sync**: loudness → openness fraction (0..1) → **attack-time `MOUTH <pwm> <ms>` pulses**
+  (driven by time, not held PWM; see Calibration).
 - **Language**: Spanish (matches the Jorge voice) for STT + the LLM persona.
 
 ## Serial protocol (the firmware is the executor)
 Commands are **`\n`-terminated, case-insensitive (firmware upper-cases), 115200 baud**,
 PWM range **−255..255**. Convention: **+ = open/out, − = close/return.**
-- `MOUTH <n>` — immediate signed PWM, **holds until the next command**. This is what we
-  stream for live mouth sync. (Do NOT use `MOUTH OPEN`/`CLOSE`: those fire a one-shot
-  `pulseMs` then auto-stop — wrong for streaming.)
+- `MOUTH <pwm> <ms>` — single **timed pulse** (drive `pwm` for `ms`, then auto-stop). This is
+  what we stream for mouth sync: openness is set by *how long* the motor runs at full drive.
+- `MOUTH <n>` — immediate signed PWM, holds until the next command. Used for manual calibration
+  (`MOUTH 238` to find full-open travel); not streamed during speech.
 - `MOUTH 0` — rest/closed.
 - `NECK 180 500 -180 400`, `TAIL 200 300 -200 300` — **timed gesture chains** the firmware
   sequences and auto-stops; used for random neck/tail motion.
@@ -55,14 +57,14 @@ The firmware **echoes every command** back — the host **ignores inbound serial
 ## Code layout
 ```
 fish_brain/
-  config.py        # serial port+baud, mouth PWM range, threshold, smoothing, rate cap,
+  config.py        # serial port+baud, mouth drive PWMs + attack-time curves, threshold, smoothing, rate cap,
                    #   SYNC_OFFSET_MS, gesture params, STT model+language, LLM model+prompt
   ptt.py           # push-to-talk: hold key -> record mic (sounddevice input)
   stt.py           # transcribe WAV -> text (faster-whisper)
   llm.py           # OpenAI chat client + bounded history + fish persona
   conversation.py  # turn loop: PTT -> STT -> LLM -> speak; clean teardown
   tts.py           # synthesize(text) -> Path  (wraps `loq -o`)
-  envelope.py      # WAV -> RMS frames -> normalized proportional MOUTH <n> track
+  envelope.py      # WAV -> RMS frames -> openness level track + attack-time MOUTH <pwm> <ms> pulses
   gestures.py      # gesture_track(dur) -> random neck/tail timed-chain commands
   serial_link.py   # pyserial writer: +\n, rate-limit, ignore inbound, STOP-on-exit; dry-run mock
   conductor.py     # merge mouth+gesture tracks; play audio; stream on one clock
@@ -153,9 +155,14 @@ available (e.g. Wayland), PTT falls back to **Enter-to-toggle** in the terminal.
 The on-screen fish (`--viz`) uses only the Python stdlib (`http.server`) — no extra deps.
 
 ## Calibration
-Use the firmware's live tuning over a plain serial monitor — `SET <CH> OPEN|CLOSE|PULSE
-<value>` and manual `MOUTH <n>` — to find good PWM ranges, then copy them into `config.py`.
-Tune `SYNC_OFFSET_MS` by ear (covers audio output latency + motor mechanical lag).
+The mouth is driven by **time, not held PWM**: loudness → openness fraction (0..1) → a pulse
+duration via measured attack-time curves (`MouthConfig.open_curve` / `close_curve`). Calibrate
+over a plain serial monitor: find `open_pwm`/`close_pwm` (raise PWM until no extra travel),
+then, **starting from closed each time**, fire `MOUTH 238 <ms>` / `MOUTH -200 <ms>` pulses and
+record `(openness_fraction, ms)` anchors. Copy anchors + PWMs into `config.py`. The host streams
+raw `MOUTH <pwm> <ms>` timed pulses, so the firmware's `SET MOUTH OPEN|CLOSE|PULSE` presets no
+longer affect the mouth (still used for neck/tail). Tune `SYNC_OFFSET_MS` by ear (audio output
+latency + motor mechanical lag).
 
 ## Build order (incremental, each step testable)
 1. Scaffold + `config.py` + `serial_link.py` (with `--dry-run`); manual `MOUTH 180`/`MOUTH 0`.

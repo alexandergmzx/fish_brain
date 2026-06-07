@@ -10,7 +10,7 @@ from pathlib import Path
 from . import gestures, tts
 from .conductor import Player, perform
 from .config import Config
-from .envelope import mouth_track
+from .envelope import mouth_pulses, mouth_track
 from .serial_link import BaseLink
 
 
@@ -27,15 +27,16 @@ def perform_wav(
     Shared by `speak()` (fresh TTS) and `canned.play()` (cached WAV). If `viz` is given
     (a VizServer), announce the speech to the on-screen fish before performing.
     """
-    track = mouth_track(wav, cfg.mouth, cfg.serial.max_cmd_hz)
-    duration_ms = track[-1][0] if track else 0
+    level_track = mouth_track(wav, cfg.mouth, cfg.serial.max_cmd_hz)
+    pulses = mouth_pulses(level_track, cfg.mouth)
+    duration_ms = level_track[-1][0] if level_track else 0
     gesture_events = (
         gestures.gesture_track(duration_ms, cfg.gesture)
         if cfg.gesture.enabled else []
     )
     if viz is not None:
-        viz.announce_speech(wav, duration_ms, gesture_events, mouth_track=track)
-    perform(wav, track, gesture_events, link, cfg, player=player)
+        viz.announce_speech(wav, duration_ms, gesture_events, mouth_track=level_track)
+    perform(wav, pulses, gesture_events, link, cfg, player=player)
 
 
 def speak(

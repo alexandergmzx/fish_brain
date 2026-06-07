@@ -110,7 +110,7 @@ def make_player(play_audio: bool = True) -> Player:
 
 def perform(
     wav_path: str | Path,
-    mouth_track: list[tuple[int, int]],
+    mouth_pulses: list[tuple[int, int, int]],
     gesture_events: list[tuple[int, str, str]],
     link: BaseLink,
     cfg: Config,
@@ -118,6 +118,7 @@ def perform(
 ) -> None:
     """Play `wav_path` while streaming mouth + gesture commands in sync.
 
+    mouth_pulses: list of (t_ms, pwm, ms) timed motor pulses (see envelope.mouth_pulses).
     gesture_events: list of (t_ms, channel, chain_body).
     """
     if player is None:
@@ -125,8 +126,8 @@ def perform(
 
     # Merge into one time-sorted event stream. kind: 0=mouth, 1=gesture.
     events: list[tuple[int, int, object]] = []
-    for t_ms, pwm in mouth_track:
-        events.append((t_ms, 0, pwm))
+    for t_ms, pwm, ms in mouth_pulses:
+        events.append((t_ms, 0, (pwm, ms)))
     for t_ms, channel, body in gesture_events:
         events.append((t_ms, 1, (channel, body)))
     events.sort(key=lambda e: e[0])
@@ -142,11 +143,13 @@ def perform(
             if dt > 0:
                 time.sleep(dt)
             if kind == 0:
-                link.mouth(int(payload))             # type: ignore[arg-type]
+                pwm, ms = payload                   # type: ignore[misc]
+                link.mouth_pulse(int(pwm), int(ms))
             else:
                 channel, body = payload              # type: ignore[misc]
                 link.gesture(channel, body)
         player.wait()
     finally:
-        # Always close the mouth when the utterance ends or is interrupted.
-        link.mouth(cfg.mouth.rest_pwm)
+        # Always close the mouth when the utterance ends or is interrupted: a full close
+        # pulse (the jaw may hold open between pulses, so coasting to 0 isn't enough).
+        link.mouth_pulse(cfg.mouth.close_pwm, cfg.mouth.close_curve[-1][1])

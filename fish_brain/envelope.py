@@ -1,12 +1,15 @@
 """Turn a speech WAV into a mouth-motion track.
 
-Output: a list of (t_ms, pwm) events — the signed PWM to send to `MOUTH <n>` at time
-t_ms relative to playback start. Loudness maps proportionally to how far the mouth opens
-(per the user's "proportional loudness" choice). Silence -> rest_pwm (closed).
+Two stages:
+- `mouth_track` -> a list of (t_ms, level) events: the openness fraction (0..1) the mouth
+  should have at time t_ms relative to playback start. Loudness maps proportionally to how
+  far the mouth opens. This is the shared "intent" — the on-screen fish renders it directly.
+- `mouth_pulses` -> a list of (t_ms, pwm, ms) timed motor pulses realizing that intent on
+  hardware: the mouth is driven by *time* (attack-time calibration), not held PWM magnitude.
 
-Pipeline: mono float samples -> per-frame RMS -> per-clip normalize -> noise floor ->
-attack/release smoothing -> map to PWM -> decimate to the serial command-rate cap ->
-dedup consecutive identical values.
+Level pipeline: mono float samples -> per-frame RMS -> per-clip normalize -> noise floor ->
+attack/release smoothing -> decimate to the serial command-rate cap -> dedup consecutive
+identical values.
 """
 from __future__ import annotations
 
@@ -48,11 +51,11 @@ def _frame_rms(data: np.ndarray, sr: int, frame_ms: float) -> tuple[np.ndarray, 
     return rms, hop / sr
 
 
-def mouth_track(path: str | Path, cfg: MouthConfig, max_cmd_hz: float) -> list[tuple[int, int]]:
-    """Compute the (t_ms, pwm) mouth track for a WAV."""
+def mouth_track(path: str | Path, cfg: MouthConfig, max_cmd_hz: float) -> list[tuple[int, float]]:
+    """Compute the (t_ms, level) openness track for a WAV (level in 0..1)."""
     data, sr = load_wav_mono(path)
     if len(data) == 0:
-        return [(0, cfg.rest_pwm)]
+        return [(0, 0.0)]
 
     rms, frame_dt = _frame_rms(data, sr, cfg.frame_ms)
 
@@ -71,29 +74,62 @@ def mouth_track(path: str | Path, cfg: MouthConfig, max_cmd_hz: float) -> list[t
         prev = prev + a * (x - prev)
         smoothed[i] = prev
 
-    # Map level -> PWM. Silence -> rest; else min_open..open scaled by level.
-    span = cfg.open_pwm - cfg.min_open_pwm
-    pwm = np.where(
-        smoothed <= 1e-3,
-        float(cfg.rest_pwm),
-        cfg.min_open_pwm + smoothed * span,
-    ).round().astype(int)
-
     # Decimate to the command-rate cap: sample the fine track onto a coarse grid.
     grid_dt = 1.0 / max_cmd_hz if max_cmd_hz > 0 else frame_dt
-    total_s = len(pwm) * frame_dt
-    track: list[tuple[int, int]] = []
+    total_s = len(smoothed) * frame_dt
+    track: list[tuple[int, float]] = []
     last_val = None
     t = 0.0
     while t < total_s:
-        idx = min(len(pwm) - 1, int(t / frame_dt))
-        val = int(pwm[idx])
+        idx = min(len(smoothed) - 1, int(t / frame_dt))
+        val = round(float(smoothed[idx]), 3)
         if val != last_val:
             track.append((int(t * 1000), val))
             last_val = val
         t += grid_dt
 
     # Always end closed, just after the audio ends.
-    if not track or track[-1][1] != cfg.rest_pwm:
-        track.append((int(total_s * 1000), cfg.rest_pwm))
+    if not track or track[-1][1] != 0.0:
+        track.append((int(total_s * 1000), 0.0))
     return track
+
+
+def _interp_ms(curve: tuple[tuple[float, int], ...], openness: float) -> float:
+    """Linear-interpolate drive-ms for an openness fraction over the calibration anchors."""
+    o = min(1.0, max(0.0, openness))
+    prev_x, prev_y = curve[0]
+    if o <= prev_x:
+        return float(prev_y)
+    for x, y in curve[1:]:
+        if o <= x:
+            span = x - prev_x
+            frac = (o - prev_x) / span if span > 1e-9 else 0.0
+            return prev_y + frac * (y - prev_y)
+        prev_x, prev_y = x, y
+    return float(curve[-1][1])
+
+
+def mouth_pulses(level_track: list[tuple[int, float]],
+                 cfg: MouthConfig) -> list[tuple[int, int, int]]:
+    """Convert an openness `level_track` into (t_ms, pwm, ms) timed motor pulses.
+
+    Treats the open attack-time curve as a position-in-time axis: moving the jaw between two
+    openness levels costs the difference of their drive-ms. Opens at +open_pwm, closes at
+    close_pwm (its own faster curve). Pulses rounding to <1 ms are skipped, and the skipped
+    delta accumulates (o_cur only advances when a pulse is actually emitted).
+    """
+    pulses: list[tuple[int, int, int]] = []
+    o_cur = 0.0
+    for t_ms, level in level_track:
+        if level > o_cur:
+            ms = round(_interp_ms(cfg.open_curve, level) - _interp_ms(cfg.open_curve, o_cur))
+            pwm = cfg.open_pwm
+        elif level < o_cur:
+            ms = round(_interp_ms(cfg.close_curve, o_cur) - _interp_ms(cfg.close_curve, level))
+            pwm = cfg.close_pwm
+        else:
+            continue
+        if ms >= 1:
+            pulses.append((t_ms, pwm, int(ms)))
+            o_cur = level
+    return pulses
