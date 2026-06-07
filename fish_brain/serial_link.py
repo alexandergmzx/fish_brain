@@ -51,6 +51,13 @@ class BaseLink:
         self._last_mouth = pwm
         self.send(f"MOUTH {pwm}")
 
+    def mouth_pulse(self, pwm: int, ms: int) -> None:
+        """Fire a single timed mouth pulse (`MOUTH <pwm> <ms>`). No dedup: each pulse is a
+        discrete move, so repeats are meaningful. Still rate-limited via send()'s throttle."""
+        pwm = max(-255, min(255, int(pwm)))
+        self._last_mouth = None  # a timed pulse invalidates the held-value dedup state
+        self.send(f"MOUTH {pwm} {int(ms)}")
+
     def gesture(self, channel: str, chain_body: str) -> None:
         """Send a neck/tail timed-chain gesture, e.g. channel='NECK', body='180 450 -180 350'."""
         # Gestures are not throttled against the mouth stream cadence — they're rare.

@@ -76,21 +76,40 @@ mic from the dropdown — easiest for debugging. Without `--viz`, hold **space**
 
 ## Calibration
 
-All tunables live in `fish_brain/config.py`. To find good motor values, talk to the
-firmware directly over a serial monitor (115200 baud) and use its live tuning:
+All tunables live in `fish_brain/config.py`. The mouth is driven by **time, not held PWM**:
+loudness → openness fraction (0..1) → a motor *pulse duration* via measured attack-time
+curves. Calibrate by measuring those curves over a serial monitor (115200 baud).
+
+**1. Drive PWMs.** From closed, raise the PWM until more gives no extra travel — that is
+`open_pwm` (the firmware also caps there). Pick a close drive for `close_pwm`:
 
 ```
-MOUTH 180            # immediate signed PWM, holds until next command
 MOUTH 0              # rest / closed
-SET MOUTH OPEN 220   # adjust a preset live, no reflash
+MOUTH 238            # raise until the jaw stops opening further -> open_pwm
 ```
 
-Then copy what feels right into `config.py`:
-- `MouthConfig.open_pwm` / `min_open_pwm` — how wide the mouth opens at loud / threshold.
+**2. Opening curve.** From fully closed each time, fire single timed pulses at `open_pwm`
+and note the resulting openness — these are your `(openness_fraction, ms)` anchors:
+
+```
+MOUTH 0 ; MOUTH 238 14     # -> ~0.15 open
+MOUTH 0 ; MOUTH 238 104    # -> ~1.0 open
+```
+
+Always start from closed: the model uses cumulative drive-time-from-closed as the position
+axis. **3. Closing curve:** the same, from fully open with `MOUTH -200 <ms>` (closing is
+faster — spring/gravity assist).
+
+Then copy into `config.py`:
+- `MouthConfig.open_curve` / `close_curve` — the `(openness, ms)` anchors above; interpolated.
+- `MouthConfig.open_pwm` / `close_pwm` — the open/close drive magnitudes.
 - `MouthConfig.noise_floor`, `attack`, `release` — sensitivity and snappiness.
 - `ConductorConfig.sync_offset_ms` — shift commands vs audio (covers output latency +
   motor lag). Tune by ear; positive sends commands earlier.
 - `GestureConfig` — how often/which neck & tail gestures fire.
+
+> The firmware's `SET MOUTH OPEN|CLOSE|PULSE` presets no longer affect the mouth — the host
+> streams raw `MOUTH <pwm> <ms>` timed pulses directly. They still apply to neck/tail gestures.
 
 ## Safety
 

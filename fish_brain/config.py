@@ -35,17 +35,31 @@ class SerialConfig:
 
 @dataclass
 class MouthConfig:
-    """Proportional loudness -> signed PWM mapping for the mouth.
+    """Loudness -> openness fraction -> attack-time motor pulses for the mouth.
 
-    Polarity (firmware): + = open, - = close, 0 = rest. We stream immediate `MOUTH <n>`
-    which holds until the next command, so silence -> `MOUTH 0`.
+    The mouth is driven by *time*, not by held PWM magnitude: a DC motor's travel ≈ how
+    long it runs at a fixed drive speed. So loudness maps to an openness fraction (0..1,
+    the same value the on-screen fish renders), and that fraction maps to a drive duration
+    via the measured attack-time curves below. We emit firmware `MOUTH <pwm> <ms>` timed
+    pulses at full drive. Polarity (firmware): + = open, - = close, 0 = rest.
+
+    Calibration (measured on the real fish, openness_fraction -> ms to reach it under drive):
+    opening saturates at open_pwm and takes longer than closing (spring/gravity assist close).
+    Mid-range anchors are interpolated linearly; refine on hardware.
     """
-    # PWM applied at peak loudness (fully open). Mirror Big_mouth Config.h (~220).
-    open_pwm: int = 220
-    # PWM at/just above the speech threshold (mouth barely cracks open).
-    min_open_pwm: int = 70
-    # Below the loudness threshold we send rest_pwm (closed). 0 = coast closed.
+    # Drive magnitudes. open_pwm = the PWM that reaches full mechanical travel (255 gives
+    # no more and is no faster). close_pwm = the close-stroke drive the close_curve was timed at.
+    open_pwm: int = 238
+    close_pwm: int = -200
+    # Below the loudness threshold the jaw returns to rest (fully closed).
     rest_pwm: int = 0
+    # Attack-time calibration: (openness_fraction, ms) anchors, ascending by openness.
+    open_curve: tuple[tuple[float, int], ...] = (
+        (0.00, 0), (0.01, 1), (0.05, 2), (0.08, 4), (0.15, 14), (1.00, 104),
+    )
+    close_curve: tuple[tuple[float, int], ...] = (
+        (0.00, 0), (0.05, 4), (0.08, 14), (1.00, 74),
+    )
     # Frame analysis
     frame_ms: float = 15.0          # envelope hop size
     noise_floor: float = 0.04       # normalized RMS below this counts as silence
@@ -128,8 +142,8 @@ class CannedConfig:
     goodbye: str = "goodbye"
     # name -> Spanish text spoken by the fish.
     phrases: dict[str, str] = field(default_factory=lambda: {
-        "welcome": "¡Hola! Soy el pez parlante. Mantén la tecla para hablar conmigo.",
-        "goodbye": "¡Adiós! Nos vemos en el estanque.",
+        "welcome": "¡Hola pendejos! Llevenme al río y ponganme algo en el ojo, no sean culero",
+        "goodbye": "¡Adiós! Me voy a la verga!",
     })
 
 
