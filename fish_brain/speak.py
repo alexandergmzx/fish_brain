@@ -5,6 +5,7 @@ conductor (audio playback + synced serial streaming).
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from . import gestures, tts
@@ -55,3 +56,34 @@ def speak(
     finally:
         if not keep_wav:
             Path(wav).unlink(missing_ok=True)
+
+
+class Speaker:
+    """Serialized owner of the speak path: synthesize + perform text on the fish.
+
+    Both the conversation loop (main thread) and the on-screen text box (a viz HTTP-handler
+    thread) can ask the fish to speak; they share the same serial link + audio player, so a
+    lock guards against overlapping speech. The lock is non-blocking: if a phrase is already
+    being spoken, a second request is dropped rather than garbling the link/audio.
+    """
+
+    def __init__(self, link: BaseLink, cfg: Config, *,
+                 player: Player | None = None, viz=None):
+        self.link = link
+        self.cfg = cfg
+        self.player = player
+        self.viz = viz
+        self._lock = threading.Lock()
+
+    def speak(self, text: str, *, role: str = "fish") -> bool:
+        """Speak `text` verbatim. Returns False if empty or already speaking (dropped)."""
+        text = (text or "").strip()
+        if not text or not self._lock.acquire(blocking=False):
+            return False
+        try:
+            if self.viz is not None:
+                self.viz.push_transcript(text, role)   # show what was actually spoken
+            speak(text, self.link, self.cfg, player=self.player, viz=self.viz)
+            return True
+        finally:
+            self._lock.release()

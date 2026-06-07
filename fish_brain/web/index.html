@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Pez Parlante</title>
+    <title>Pez Pendejo</title>
     <link rel="stylesheet" href="/fish.css">
 </head>
 <body>
     <div class="container">
-        <h1>🐟 Pez Parlante</h1>
+        <h1>🐟 Pez pendejo</h1>
 
         <div class="stage-wrap">
             <canvas id="stage" width="600" height="500"></canvas>
@@ -32,9 +32,15 @@
                     <p class="t-fish"><span class="t-tag">🐟</span> <span id="tFish">…</span></p>
                 </div>
             </div>
+            <div class="speak-row">
+                <label for="speakText">Hacer que el pez diga…</label>
+                <textarea id="speakText" rows="2" placeholder="Escribe aquí y pulsa Hablar (Enter para enviar, Mayús+Enter salto de línea)"></textarea>
+                <button id="speakBtn" type="button">🗣️ Hablar</button>
+            </div>
             <div class="toggles">
                 <label><input type="checkbox" id="toggleBubbles" checked> Burbujas</label>
                 <label><input type="checkbox" id="toggleAudio"> Sonido en navegador</label>
+                <label><input type="checkbox" id="toggleWait"> Esperar para hablar</label>
             </div>
             <div class="file-row">
                 <label for="audioFile">Probar con un WAV…</label>

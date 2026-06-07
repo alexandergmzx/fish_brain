@@ -25,6 +25,8 @@ class FishConversation:
         self.echo = echo
         self.player: Player = make_player(play_audio)
         self.viz = viz
+        # Serialized speak path, shared with the on-screen text box (registered into viz by app.py).
+        self.speaker = speak_mod.Speaker(link, cfg, player=self.player, viz=viz)
         self._llm = None
         self._stt = None
 
@@ -87,10 +89,15 @@ class FishConversation:
         # Echo mode just speaks the transcription back -> never touches the LLM (no API key).
         reply = user if self.echo else self.llm.reply(user)
         print(f"fish> {reply}")
-        if self.viz is not None and reply:
+        if not reply:
+            return True
+        if self.viz is not None and self.viz.wait_enabled():
+            # "Wait to speak": show the reply and drop it into the editable box; the user tweaks
+            # it and presses Speak (-> /speak) to make the fish say it.
             self.viz.push_transcript(reply, "fish")
-        if reply:
-            speak_mod.speak(reply, self.link, self.cfg, player=self.player, viz=self.viz)
+            self.viz.push_draft(reply)
+        else:
+            self.speaker.speak(reply)          # Speaker pushes the "fish" transcript + speaks
         return True
 
     def run(self) -> None:

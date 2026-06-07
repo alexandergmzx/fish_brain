@@ -37,6 +37,9 @@
   const pttButton = document.getElementById("pttButton");
   const tUser = document.getElementById("tUser");
   const tFish = document.getElementById("tFish");
+  const speakText = document.getElementById("speakText");
+  const speakBtn = document.getElementById("speakBtn");
+  const toggleWait = document.getElementById("toggleWait");
 
   // Show STT (what you said) / reply (what the fish says) under the level meter.
   function setTranscript(role, text) {
@@ -110,6 +113,31 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ device: micSelect.value || null }),
+    }).catch(() => {});
+  });
+
+  // ---- text box: make the fish say typed text verbatim (POST /speak) ----
+  function sendSpeak() {
+    const text = speakText.value.trim();
+    if (!text) return;
+    fetch("/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }).catch(() => {});
+    speakText.value = "";
+  }
+  speakBtn.addEventListener("click", sendSpeak);
+  speakText.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendSpeak(); }
+  });
+
+  // ---- "esperar para hablar": gate auto-speak of replies (POST /wait) ----
+  toggleWait.addEventListener("change", () => {
+    fetch("/wait", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on: toggleWait.checked }),
     }).catch(() => {});
   });
 
@@ -364,6 +392,7 @@
       if (ev.type === "speak") handleSpeak(ev);
       else if (ev.type === "level") pushMicLevel(ev.rms);
       else if (ev.type === "stt") setTranscript(ev.role, ev.text);
+      else if (ev.type === "draft") { speakText.value = ev.text || ""; speakText.focus(); }
     };
   }
   connect();
