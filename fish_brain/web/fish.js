@@ -275,26 +275,53 @@
   }
 
   // ---- gestures (NECK / TAIL) -------------------------------------------
-  // Body "v1 ms1 v2 ms2 ..."; we only need WHEN the channel is firing to pick a pose frame.
-  let activeGestures = [];
+  // Body "v1 ms1 v2 ms2 ..."; + = out, - = return. We only need WHEN a channel is "out".
+  // TAIL (and any self-contained out+return chain) is a transient window = sum of its ms.
+  // NECK in speech mode comes as single-direction strokes: a pure-positive body means "swing
+  // out and HOLD" (the head stays out, motor off) until a pure-negative "return" stroke — so
+  // the head can stay open across words/sentences. We track those as a baseline timeline.
+  let activeGestures = [];          // {channel, start, end} transient windows
+  let neckBaseline = [];            // {start, out} hold/return transitions (sorted by start)
   function scheduleGestures(list) {
     const now = performance.now();
+    pruneNeckBaseline(now);
     for (const [tMs, channel, body] of list) {
+      const ch = String(channel).toUpperCase();
       const nums = String(body).trim().split(/\s+/).map(Number);
-      let total = 0;
-      for (let i = 1; i < nums.length; i += 2) total += nums[i] || 0;
-      activeGestures.push({
-        channel: channel.toUpperCase(),
-        start: now + tMs,
-        end: now + tMs + total,
-      });
+      let total = 0, hasPos = false, hasNeg = false;
+      for (let i = 0; i + 1 < nums.length; i += 2) {
+        total += nums[i + 1] || 0;
+        if (nums[i] > 0) hasPos = true; else if (nums[i] < 0) hasNeg = true;
+      }
+      const start = now + tMs;
+      if (ch === "NECK" && hasPos !== hasNeg) {
+        // single-direction stroke -> hold-open / return baseline transition
+        neckBaseline.push({ start, out: hasPos });
+      } else {
+        // self-contained chain (out+return) or tail flap -> transient window
+        activeGestures.push({ channel: ch, start, end: start + total });
+      }
     }
+    neckBaseline.sort((a, b) => a.start - b.start);
+  }
+  function pruneNeckBaseline(now) {
+    // Drop already-applied transitions but keep the most recent one (it holds current state).
+    let lastPast = -1;
+    for (let i = 0; i < neckBaseline.length; i++) {
+      if (neckBaseline[i].start <= now) lastPast = i; else break;
+    }
+    if (lastPast > 0) neckBaseline = neckBaseline.slice(lastPast);
   }
   function gestureActive(channel, now) {
     for (const g of activeGestures) {
       if (g.channel === channel && now >= g.start && now < g.end) return true;
     }
     return false;
+  }
+  function neckOut(now) {
+    let out = false;
+    for (const e of neckBaseline) { if (e.start <= now) out = e.out; else break; }
+    return out || gestureActive("NECK", now);   // baseline hold OR a transient out chain
   }
 
   // ---- bubbles -----------------------------------------------------------
@@ -329,7 +356,7 @@
   // keep mouth openness as long as possible, then shed neck/tail nuance. Final fallback is
   // neckRest_mouth0_tailRest, so the four base poses alone already animate the mouth.
   function currentSprite(now) {
-    const neck = gestureActive("NECK", now) ? 1 : 0;
+    const neck = neckOut(now) ? 1 : 0;
     const tail = gestureActive("TAIL", now) ? 1 : 0;
     const mouth0 = Math.max(0, Math.min(MOUTH_LEVELS - 1, Math.round(mouth.value * (MOUTH_LEVELS - 1))));
     for (let m = mouth0; m >= 0; m--) {
