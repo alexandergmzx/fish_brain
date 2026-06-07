@@ -70,24 +70,47 @@ class MouthConfig:
 
 @dataclass
 class GestureConfig:
-    """Random neck/tail motion while the fish talks (firmware timed chains)."""
+    """Neck/tail motion while the fish talks (firmware timed chains).
+
+    Text-driven when the spoken text is known (the normal speech path): the head swings OUT
+    near the start of each spoken clause and HOLDS there (motor off, no return pair) — for
+    eloquence it sometimes stays out across a sentence boundary — then RETURNS home on
+    sentence-ending punctuation and always at the end of the phrase. The tail flaps on word
+    boundaries for liveliness. Character position is mapped linearly to audio time (we have no
+    word-level timing from the TTS). Falls back to random Poisson gestures when no text is
+    available (e.g. performing a raw WAV).
+
+    Command bodies are firmware "<pwm> <ms> [<pwm> <ms> ...]" chains; + = out, - = return.
+    """
     enabled: bool = True
-    # Mean seconds between gestures on each channel (Poisson-ish).
+
+    # --- text-driven (preferred path) ---
+    # NECK is split into separate out/return strokes so the head can hold out between them.
+    # Bigger pwm/ms => more travel ("move more").
+    neck_out: str = "230 650"            # swing out and hold (no return pair)
+    neck_return: str = "-200 560"        # bring the head home
+    neck_nudge: str = "180 240"          # small extra out-push on some in-clause words
+    neck_nudge_prob: float = 0.3         # chance an in-clause word boundary gets a nudge
+    neck_hold_over_prob: float = 0.45    # chance the head stays out past a sentence end
+    tail_flap: str = "210 230 -210 210"  # a quick flap (out+back) on word boundaries
+    tail_flap_prob: float = 0.7          # chance a given word boundary triggers a flap
+    sentence_end: str = ".!?…"           # characters that bring the head home
+    text_min_gap_s: float = 0.32         # per-channel rate cap for nudges/flaps (keeps motors sane)
+
+    # --- random fallback (no text available) ---
     neck_mean_gap_s: float = 3.0
     tail_mean_gap_s: float = 2.2
-    # Minimum gap so gestures don't pile up.
-    min_gap_s: float = 1.2
-    # Candidate chains; one is picked at random. Each is a firmware command body
-    # (channel is prepended by the generator): "<pwm> <ms> <pwm> <ms> ...".
+    min_gap_s: float = 1.2               # minimum gap so random gestures don't pile up
+    # Candidate self-contained chains (out+return); one is picked at random.
     neck_chains: tuple[str, ...] = (
-        "180 450 -180 350",
-        "150 600 -160 400",
-        "200 300 -180 300",
+        "230 650 -200 560",
+        "190 720 -190 520",
+        "240 480 -210 460",
     )
     tail_chains: tuple[str, ...] = (
-        "200 250 -200 250",
+        "210 230 -210 210",
         "220 200 -200 200 200 200 -200 200",
-        "180 300 -180 300",
+        "190 320 -190 300",
     )
 
 

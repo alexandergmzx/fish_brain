@@ -54,7 +54,9 @@ def play(
         print(f"[canned] could not play {name!r}: {e}")
         return
     # keep_wav is implicit: perform_wav never deletes; we just don't unlink the cache file.
-    speak_mod.perform_wav(wav, link, cfg, player=player, viz=viz)
+    # Pass the phrase text so the neck/tail gestures track the words too.
+    text = cfg.canned.phrases.get(name)
+    speak_mod.perform_wav(wav, link, cfg, player=player, viz=viz, text=text)
 
 
 def prerender_all(cfg: Config) -> None:

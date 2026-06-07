@@ -22,17 +22,19 @@ def perform_wav(
     *,
     player: Player | None = None,
     viz=None,
+    text: str | None = None,
 ) -> None:
     """Perform an already-rendered WAV on the fish: mouth track + gestures + playback.
 
     Shared by `speak()` (fresh TTS) and `canned.play()` (cached WAV). If `viz` is given
-    (a VizServer), announce the speech to the on-screen fish before performing.
+    (a VizServer), announce the speech to the on-screen fish before performing. `text`, when
+    known, drives the neck/tail gestures off the words (out on spaces, home on sentence ends).
     """
     level_track = mouth_track(wav, cfg.mouth, cfg.serial.max_cmd_hz)
     pulses = mouth_pulses(level_track, cfg.mouth)
     duration_ms = level_track[-1][0] if level_track else 0
     gesture_events = (
-        gestures.gesture_track(duration_ms, cfg.gesture)
+        gestures.gesture_track(duration_ms, cfg.gesture, text=text)
         if cfg.gesture.enabled else []
     )
     if viz is not None:
@@ -52,7 +54,7 @@ def speak(
     """Synthesize `text` and perform it on the fish via `link`."""
     wav = tts.synthesize(text, cfg.tts)
     try:
-        perform_wav(wav, link, cfg, player=player, viz=viz)
+        perform_wav(wav, link, cfg, player=player, viz=viz, text=text)
     finally:
         if not keep_wav:
             Path(wav).unlink(missing_ok=True)
