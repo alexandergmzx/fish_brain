@@ -163,9 +163,12 @@ class PTTConfig:
     # Which microphone to record from. Prefer `source`: a PipeWire/PulseAudio source NAME
     # (e.g. "alsa_input.usb-RedOctane_...mono-fallback"). It's stable across reboots/replug and
     # records through the sound server (proper gain + 16 kHz resampling), unlike a raw ALSA
-    # device. `device` is a fallback for systems without PipeWire/Pulse: a sounddevice index
-    # (unstable!) or None for the system default. Both are settable live via the web mic picker.
-    source: str | None = None
+    # device. Set it code-free via FISH_MIC_SOURCE (.env) or --mic: a full source name OR a
+    # substring (e.g. "lavalier"), resolved against the live sources at record time (see
+    # ptt._resolve_input). `device` is a fallback for systems without PipeWire/Pulse: a
+    # sounddevice index (unstable!) or None for the system default. Both are also settable live
+    # via the web mic picker. Unset / None = system default.
+    source: str | None = field(default_factory=lambda: _env("FISH_MIC_SOURCE", "") or None)
     device: int | None = None
     # Below this RMS a recording is treated as silence and skipped (Whisper hallucinates
     # phrases like "Subtítulos por la comunidad de Amara.org" on silent input).

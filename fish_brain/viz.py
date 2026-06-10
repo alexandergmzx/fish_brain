@@ -24,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .config import Config
+from .ptt import _pulse_sources
 
 WEB_DIR = Path(__file__).parent / "web"
 IMG_DIR = WEB_DIR / "img"
@@ -216,39 +217,6 @@ class VizServer:
 
     def wait_enabled(self) -> bool:
         return self._wait
-
-
-def _pulse_sources():
-    """Real (non-monitor) PipeWire/Pulse input sources via `pactl`, or None if unavailable.
-
-    Each entry: {"id": <stable source name>, "name": <friendly description>, "default": bool}.
-    The id is fed to PULSE_SOURCE when recording, so it survives reboots/USB re-enumeration.
-    """
-    import subprocess
-    try:
-        out = subprocess.run(["pactl", "list", "sources"], capture_output=True,
-                             text=True, timeout=3)
-        if out.returncode != 0:
-            return None
-        default = subprocess.run(["pactl", "get-default-source"], capture_output=True,
-                                 text=True, timeout=3).stdout.strip()
-    except (FileNotFoundError, subprocess.SubprocessError):
-        return None
-    sources = []
-    for block in out.stdout.split("Source #")[1:]:
-        name = desc = None
-        is_monitor = False
-        for line in block.splitlines():
-            t = line.strip()
-            if t.startswith("Name:"):
-                name = t[len("Name:"):].strip()
-            elif t.startswith("Description:"):
-                desc = t[len("Description:"):].strip()
-            elif t.startswith("Monitor of Sink:"):
-                is_monitor = t.split(":", 1)[1].strip() != "n/a"
-        if name and not is_monitor and not name.endswith(".monitor"):
-            sources.append({"id": name, "name": desc or name, "default": name == default})
-    return sources
 
 
 def _make_handler(server: "VizServer"):

@@ -56,6 +56,65 @@ def _pulse_device(sd):
     return None
 
 
+def _pulse_sources():
+    """Real (non-monitor) PipeWire/Pulse input sources via `pactl`, or None if unavailable.
+
+    Each entry: {"id": <stable source name>, "name": <friendly description>, "default": bool}.
+    The id is fed to PULSE_SOURCE when recording, so it survives reboots/USB re-enumeration.
+    """
+    import subprocess
+    try:
+        out = subprocess.run(["pactl", "list", "sources"], capture_output=True,
+                             text=True, timeout=3)
+        if out.returncode != 0:
+            return None
+        default = subprocess.run(["pactl", "get-default-source"], capture_output=True,
+                                 text=True, timeout=3).stdout.strip()
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    sources = []
+    for block in out.stdout.split("Source #")[1:]:
+        name = desc = None
+        is_monitor = False
+        for line in block.splitlines():
+            t = line.strip()
+            if t.startswith("Name:"):
+                name = t[len("Name:"):].strip()
+            elif t.startswith("Description:"):
+                desc = t[len("Description:"):].strip()
+            elif t.startswith("Monitor of Sink:"):
+                is_monitor = t.split(":", 1)[1].strip() != "n/a"
+        if name and not is_monitor and not name.endswith(".monitor"):
+            sources.append({"id": name, "name": desc or name, "default": name == default})
+    return sources
+
+
+def _resolve_source_name(want: str) -> str:
+    """Resolve a user-supplied source string to a real PipeWire/Pulse source name.
+
+    `want` may be a full source name or a convenience substring (e.g. "lavalier"). An exact
+    name/description match wins; otherwise a unique case-insensitive substring match (against
+    either the id or the friendly name) is used. If `pactl` is unavailable or the match is
+    missing/ambiguous, `want` is returned unchanged so a real source name still works.
+    """
+    sources = _pulse_sources()
+    if not sources:
+        return want
+    for s in sources:  # exact match on the stable id or the friendly description
+        if want == s["id"] or want == s["name"]:
+            return s["id"]
+    w = want.lower()
+    hits = [s for s in sources if w in s["id"].lower() or w in s["name"].lower()]
+    if len(hits) == 1:
+        return hits[0]["id"]
+    if not hits:
+        print(f"[ptt] no mic source matches {want!r}; using it as-is", flush=True)
+    else:
+        names = ", ".join(s["id"] for s in hits)
+        print(f"[ptt] mic source {want!r} is ambiguous ({names}); using it as-is", flush=True)
+    return want
+
+
 def _resolve_input(sd, cfg: PTTConfig):
     """Pick (device, samplerate) for the InputStream.
 
@@ -65,7 +124,7 @@ def _resolve_input(sd, cfg: PTTConfig):
     (-9997) — faster-whisper resamples to 16 kHz internally, so any rate is fine.
     """
     if cfg.source:
-        os.environ["PULSE_SOURCE"] = cfg.source
+        os.environ["PULSE_SOURCE"] = _resolve_source_name(cfg.source)
         pulse = _pulse_device(sd)
         if pulse is not None:
             return pulse, cfg.samplerate

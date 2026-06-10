@@ -33,6 +33,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prefetch-stt", action="store_true",
                         help="download/load the faster-whisper STT model, then exit "
                              "(run once after install so the first turn isn't slow)")
+    parser.add_argument("--mic", metavar="NAME",
+                        help="mic to record from: 'default', or a PipeWire source name/"
+                             "substring (e.g. 'lavalier'). Overrides FISH_MIC_SOURCE.")
     parser.add_argument("--viz", action="store_true",
                         help="serve the on-screen fish (browser fallback/debug view)")
     parser.add_argument("--viz-port", type=int, help="port for --viz (default from config)")
@@ -50,6 +53,10 @@ def main(argv: list[str] | None = None) -> int:
         cfg.serial.port = args.port
     if args.viz_port:
         cfg.viz.port = args.viz_port
+    if args.mic is not None:
+        # 'default' clears any env/config selection; anything else is a source name/substring.
+        cfg.ptt.source = None if args.mic.lower() == "default" else args.mic
+        cfg.ptt.device = None
 
     if args.list_canned:
         for name in cfg.canned.phrases:
