@@ -4,15 +4,20 @@
 
 ## Context
 
-The laptop transcribes locally (faster-whisper) and speaks with Loquendo through `loq`. The
-board's four A53 cores are estimated at 20 to 45 s per clip for the `small` model, and
-Loquendo there depends on x86 emulation that has not been tried.
+The laptop transcribes locally (faster-whisper) and speaks with Loquendo through `loq`. On
+the board the `small` model takes 20 to 23 s per turn, `base` about 8 s and `tiny` about 4 s
+([results](../results/2026-10-10-unoq-local-stt.md)). Loquendo there runs under x86
+emulation.
 
 ## Decision
 
 `FISH_STT_BACKEND` (`local`, `openai`, `groq`) and `FISH_TTS_BACKEND` (`loq`, `openai`). The
 defaults are the laptop's. The board's `.env` selects the cloud ones. Every backend returns
 the same thing to the rest of the program: text, or a plain WAV file.
+
+Amendment, 2026-10-10: Loquendo was measured on the board at about 0.75 s per short sentence
+with its daemon warm ([results](../results/2026-10-10-unoq-audio-and-loq.md)), so the board's
+`.env` uses `loq` for the voice. Speech-to-text there stays on a cloud backend.
 
 ## Consequences
 

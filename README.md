@@ -119,8 +119,9 @@ The board runs the same program with a different `.env`. Full steps, and which o
 `sudo`, are in [`deploy/README.md`](deploy/README.md).
 
 **Status (2026-10-10).** Checked on the board: USB speaker and microphone, Loquendo, flashing
-the MCU, and the raw link to it. Not run there yet: fish_brain itself (the Python environment
-needs an `apt` step first), the service, and anything with motors. Measurements are in
+the MCU, the raw link to it, installing fish_brain, and local speech-to-text speed. Not run
+there yet: a whole conversation (no API key on the board), the service, and anything with
+motors. Measurements are in
 [`docs/results/`](docs/results/).
 
 ### Hardware
@@ -142,7 +143,7 @@ the microphone to hear; at 100 % it was loud and clear.
 git clone https://github.com/alexandergmzx/fish_brain ~/fish_brain && cd ~/fish_brain
 git checkout braintip
 sudo apt update                   # always before installing anything
-deploy/unoq_setup.sh install      # prints the apt line to run; makes the venv; stops until .env has a key
+deploy/unoq_setup.sh install      # prints the apt line to run; makes the venv (about 3 minutes); stops until .env has a key
 deploy/unoq_setup.sh service      # start at boot as a user service
 tools/unoq_checks.sh              # what the board sees: USB, audio, input devices, router
 journalctl --user -u fish-brain -f
@@ -158,8 +159,17 @@ daemon is warm (`loq --start`), about 8 s without the daemon. The board's exampl
 uses it (`FISH_TTS_BACKEND=loq`, `FISH_LOQ_BIN` with the full path, because a service does
 not have `~/.local/bin` on its path). `FISH_TTS_BACKEND=openai` is the alternative.
 
-Speech-to-text on the board is set to a cloud backend: the local `small` model is expected
-to be far too slow on this CPU (not measured).
+Speech-to-text on the board is set to a cloud backend, because the local models are slow on
+this CPU. Measured per turn, whatever the length of the recording:
+
+| Local model | Time | Quality on the test sentence |
+|---|---|---|
+| `tiny` | 3.5 to 4.8 s | Spelling-level mistakes |
+| `base` | about 8 s | Correct |
+| `small` (the laptop default) | about 20 to 23 s | Correct |
+
+For a board with no internet, `FISH_STT_BACKEND=local` with `FISH_STT_MODEL=tiny` is the
+only local choice that is close to usable.
 
 ### The motor MCU
 

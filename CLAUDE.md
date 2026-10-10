@@ -32,8 +32,12 @@ data when warranted.
 | Item | State |
 |---|---|
 | Laptop fish (Billy Bass #1, Uno R4) | Working since June 2026 |
-| `braintip`: software for the UNO Q | Written 2026-10-10; not yet run on the board |
-| Board: USB hub, speaker, remote | Not attached yet; Braintip Phase 1 checks wait for them |
+| `braintip`: software for the UNO Q | Written 2026-10-10. Installed on the board (`~/fish_brain`, venv); no conversation run there yet: the board's `.env` has no key |
+| Board: hub, USB speaker, RedOctane microphone | Working on a power bank. Speaker to microphone loop checked |
+| Board: Loquendo | Works; about 0.75 s per short sentence with the daemon warm |
+| Board: link to the MCU | `uart_echo` flashed; 100 of 100 lines answered. Its LEDs not yet looked at |
+| Board: local speech-to-text | Slow: `tiny` 3.5 to 4.8 s, `base` 8 s, `small` 20 to 23 s per turn |
+| Board: push-to-talk | No remote. Candidates: the speaker's play/pause key, or the page from a phone |
 | MCU firmware for the UNO Q, motors | Braintip Phases 4 and 5; not started, not in this repo |
 | Fair | **2026-10-17**. Billy Bass #2 first; the Sorting Hat only if it arrives |
 
@@ -102,8 +106,8 @@ Other repos. **They stay untouched; this repo only calls them.**
 | Motor board | Uno R4 WiFi on `/dev/ttyACM0` | STM32U585 on `/dev/ttyHS1` (`root:dialout`), owned by `arduino-router` 0.10.0 |
 | MCU core | — | `arduino:zephyr` 0.55.2: the Linux link is `Serial2` |
 | Audio | PipeWire with `pactl` | PipeWire as user services, no `pactl` (`wpctl`, `pw-dump`); own sound card besides USB |
-| Voice | `loq` under Wine. **Wine does not work on this desktop (NVIDIA): never run `loq` or any `.exe` here** | Hangover Wine + Loquendo installed, untested |
-| USB | — | Needs a hub with its own power input; none attached yet |
+| Voice | `loq` under Wine. **Wine does not work on this desktop (NVIDIA): never run `loq` or any `.exe` here** | Hangover Wine + Loquendo: works, 0.75 s warm. Running `loq` on the board is fine |
+| USB | — | Power bank into a hub, hub into the board. Speaker: Jieli "UACDemoV1.0". Microphone: RedOctane. PipeWire makes them the defaults |
 
 Bodies: Billy Bass #1 (laptop, calibrated June 2026), Billy Bass #2 (fair, not calibrated),
 Sorting Hat (maybe). Full board notes:
@@ -126,8 +130,9 @@ Changed only by a record in [`docs/adr/`](docs/adr/). Do not reopen without new 
 | LLM | Profiles; `groq` in code, `luna` on the board (ADR 0004) | 2026-10-10 |
 | `master` | Untouched. On `braintip` the laptop must still run with no environment set | 2026-10-10 |
 
-Not decided: the fair voice; whether `loq` runs on the board; the remote and its key; a tamer
-set of canned phrases and the generated-voice notice; local STT when offline.
+Not decided: what triggers a turn at the fair (no remote yet); which cloud speech-to-text;
+a tamer set of canned phrases; local STT when offline. Decided 2026-10-10: the board's voice
+is Loquendo (`FISH_TTS_BACKEND=loq`).
 
 ## Serial protocol — the contract
 
@@ -271,6 +276,7 @@ python -m fish_brain.app
 python tools/uart_check.py --port /dev/ttyACM0 --expect any --count 300
 
 # board, as arduino in ~/fish_brain
+deploy/unoq_setup.sh sync         # from the laptop: copy this tree to the board without pushing
 deploy/unoq_setup.sh install      # prints the sudo lines for him; venv, canned phrases, link check
 deploy/unoq_setup.sh service      # install and start the user unit
 deploy/unoq_setup.sh status
@@ -328,6 +334,17 @@ Machine and tool facts only, each dated.
   2027-02-26 (announced; read 2026-10-10).
 
 **UNO Q** (2026-10-10, router 0.10.0, core 0.55.2)
+
+- **The USB-C cable decides whether the board becomes the USB host.** With one cable it
+  stayed in device mode and `lsusb` was empty; with a newer one it worked at once. Check
+  `/sys/class/typec/port0/data_role`.
+- **Loquendo runs under Hangover Wine**: 8 s one-shot, 0.75 s with the daemon warm.
+- **`arduino-cli upload` on the board needs no port and no password**, with the router up.
+- **An unpinned `pip install` pulled PyAV 19, which breaks faster-whisper 1.2.1**, and the
+  OpenAI SDK 3.x; both are now bounded in `pyproject.toml`.
+- **Local speech-to-text takes the same time for a 3 s and a 6 s recording** (fixed 30 s
+  window): `tiny` about 4 s, `base` 8 s, `small` 20 s or more.
+- **The tested speaker at 40 % was inaudible to the microphone; at 100 % it was loud.**
 
 - **`systemctl mask` fails for the router**: its units are real files in `/etc/systemd/system`.
 - **Stopping the router resets the MCU and leaves it in the boot animation**: the loader

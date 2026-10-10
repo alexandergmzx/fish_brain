@@ -155,14 +155,14 @@ Then time a full battery run with the loop above to estimate fair runtime.
 
 | Check | Result | Notes |
 |---|---|---|
-| Speaker card id | | |
-| Mic card id | | |
-| Mic works without holding the button? | | |
-| Remote input device + KEY code | | |
-| PipeWire/Pulse present? | | |
-| 10 min load test passed? | | |
-| Voltage at meter under load | | |
-| Battery runtime (power bank model) | | |
+| Speaker card id | `UACDemoV10` | Jieli "UACDemoV1.0", playback only, 48 kHz stereo (2026-10-10) |
+| Mic card id | `Microphone` | RedOctane USB Microphone, mono 48 kHz. Not a remote: it has no button |
+| Mic works without holding the button? | yes | It is a plain microphone, always live |
+| Remote input device + KEY code | no remote | The speaker has media keys on `/dev/input/by-id/usb-Jieli_Technology_UACDemoV1.0_...-event-if02`; which button sends which key is not checked |
+| PipeWire/Pulse present? | yes | PipeWire 1.4.2; `pactl` after installing `pulseaudio-utils` |
+| 10 min load test passed? | not run | `tools/unoq_checks.sh --stress` |
+| Voltage at meter under load | not measured | |
+| Battery runtime (power bank model) | not measured | |
 
 ## Phase 2 — native UART, Linux ↔ STM32
 
@@ -379,9 +379,13 @@ the text above disagree, this section is right.
 | Headless push-to-talk | `pynput` falls back to Enter | Without a display `pynput` cannot load, and without a terminal the Enter fallback cannot work. Use the remote (`FISH_PTT_DEVICE`) or `--viz` |
 | Remote device path | `/dev/input/by-id/...-event-kbd` | The voice key is often on a separate node (`...-event-ifNN`). `FISH_PTT_DEVICE=auto` finds it by key code |
 | STT model (3.2) | `gpt-4o-mini-transcribe` also works | Deprecated 2026-08-26, shut down 2027-02-26, with `whisper-1`, `gpt-4o-transcribe` and `gpt-4o-transcribe-diarize`. Use `gpt-transcribe`; it takes `languages=["es"]` (a list) |
-| Local STT speed (3.2) | Try `small` | Expect 20 to 45 s per clip on these cores (estimate). `tiny` or a cloud backend |
+| Local STT speed (3.2) | Try `small` | Measured: `small` 20 to 23 s, `base` 8 s, `tiny` 3.5 to 4.8 s per turn. A cloud backend, or `tiny` |
 | TTS as WAV (3.3) | Save `response_format="wav"` | Ask for `pcm` and write the WAV header locally: the streamed WAV can carry a placeholder length |
 | TTS model (3.3) | `gpt-4o-mini-tts` | Fine for the fair. All `/v1/audio/speech` models shut down 2027-01-06 |
-| `loq` on the board (3.3) | Unknown | Hangover Wine 11.9 and Loquendo are installed, `loqd.exe` is built; synthesis is untested |
+| `loq` on the board (3.3) | Unknown | Works under Hangover Wine 11.9: 0.75 s per short sentence with the daemon warm, 8 s without |
+| Power (target hardware) | A PD dongle and a 3 A cable | Confirmed the hard way: with one cable the port stayed in device mode; a newer cable fixed it |
+| Flashing (2.3) | May need the router down | `arduino-cli upload -b arduino:zephyr:unoq <sketch>` on the board works with the router up, no password |
+| Echo test (2.4) | To do | Done: 100 of 100 lines answered, 3.75 ms each |
+| Install (3.1) | `pip install -e .` | Works after `apt update` and the apt line; PyAV and the OpenAI SDK are bounded in `pyproject.toml` because the newest versions break it |
 | Unit (3.6) | System unit, `Restart=on-failure` | User unit with linger (PipeWire is per user), `Restart=always`, `KillSignal=SIGINT`; see `deploy/` |
 | LLM | OpenAI chat, no change | Profiles: `groq` (GPT-OSS-20B) or `luna` (GPT-6 Luna); `FISH_LLM_PROFILE` |
