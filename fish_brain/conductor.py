@@ -75,17 +75,18 @@ class SubprocessPlayer(Player):
 class SounddevicePlayer(Player):
     """Play via sounddevice (tightest clock; needs libportaudio2)."""
 
-    def __init__(self):
+    def __init__(self, device: int | str | None = None):
         import sounddevice as sd  # noqa: F401  (validate availability early)
         self._sd = sd
         self._dur = 0.0
+        self._device = device       # index or name substring; None = system default
 
     def play(self, wav_path):
         import numpy as np
         from .envelope import load_wav_mono
         data, sr = load_wav_mono(wav_path)
         self._dur = len(data) / float(sr)
-        self._sd.play(data, sr)
+        self._sd.play(data, sr, device=self._device)
 
     def wait(self):
         self._sd.wait()
@@ -94,15 +95,20 @@ class SounddevicePlayer(Player):
         self._sd.stop()
 
 
-def make_player(play_audio: bool = True) -> Player:
-    """Pick the best available player. `play_audio=False` -> silent."""
+def make_player(play_audio: bool = True, device: int | str | None = None) -> Player:
+    """Pick the best available player. `play_audio=False` -> silent.
+
+    `device` (a sounddevice index or name substring) picks the speaker; None = default.
+    """
     if not play_audio:
         return SilentPlayer()
+    if isinstance(device, str) and device.strip().isdigit():
+        device = int(device)
     try:
-        return SounddevicePlayer()
+        return SounddevicePlayer(device)
     except Exception:
         pass
-    for exe in ("paplay", "aplay"):
+    for exe in ("paplay", "pw-play", "aplay"):
         if shutil.which(exe):
             return SubprocessPlayer(exe)
     return SilentPlayer()
@@ -115,8 +121,10 @@ def perform(
     link: BaseLink,
     cfg: Config,
     player: Player | None = None,
-) -> None:
+) -> float:
     """Play `wav_path` while streaming mouth + gesture commands in sync.
+
+    Returns the monotonic time at which playback started (for per-turn timing).
 
     mouth_pulses: list of (t_ms, pwm, ms) timed motor pulses (see envelope.mouth_pulses).
     gesture_events: list of (t_ms, channel, chain_body).
@@ -153,3 +161,4 @@ def perform(
         # Always close the mouth when the utterance ends or is interrupted: a full close
         # pulse (the jaw may hold open between pulses, so coasting to 0 isn't enough).
         link.mouth_pulse(cfg.mouth.close_pwm, cfg.mouth.close_curve[-1][1])
+    return t0

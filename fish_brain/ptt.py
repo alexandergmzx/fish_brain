@@ -4,13 +4,17 @@ Hold a key to record from the mic; release to stop. Writes a mono WAV and return
 We prefer 16 kHz (what faster-whisper uses), but fall back to the device's native rate if it
 rejects 16 kHz — faster-whisper resamples to 16 kHz internally, so any WAV rate works.
 
-Key handling uses `pynput` (no root on X11). If pynput isn't available or no display is
-present, falls back to Enter-to-toggle: press Enter to start recording, Enter to stop.
+Three ways to say "talk now":
+- `record_hold`: a keyboard key via `pynput` (needs a display), else Enter-to-toggle in a
+  terminal (never without a TTY: a service has no stdin to read).
+- `record_multi`: any number of button-like sources (the browser's hold-to-talk button, a
+  remote's button via evdev). Recording starts on a fresh press of any of them.
 """
 from __future__ import annotations
 
 import os
 import queue
+import sys
 import tempfile
 import time
 import wave
@@ -23,6 +27,38 @@ from .config import PTTConfig
 
 # How often to report the live mic level (Hz). Throttled so we don't flood the viz SSE.
 _LEVEL_HZ = 25.0
+
+
+class MicError(RuntimeError):
+    """The microphone could not be opened or read (unplugged, wrong name, busy)."""
+
+
+class PTTUnavailable(Exception):
+    """There is no way to trigger a recording (no TTY, no button). Not a per-turn error."""
+
+
+class ButtonSource:
+    """A push-to-talk source: something that is held or not, and can be forced back to idle."""
+
+    def __init__(self, is_held: Callable[[], bool], reset: Callable[[], None] | None = None,
+                 arm: Callable[[bool], None] | None = None, name: str = "button"):
+        self.is_held = is_held
+        self._reset = reset
+        self._arm = arm
+        self.name = name
+
+    def reset(self) -> None:
+        if self._reset is not None:
+            self._reset()
+
+    def arm(self, on: bool) -> None:
+        if self._arm is not None:
+            self._arm(on)
+
+
+def wav_duration_s(path: str | Path) -> float:
+    with wave.open(str(path), "rb") as w:
+        return w.getnframes() / float(w.getframerate() or 1)
 
 
 def _write_wav(path: Path, frames: list[np.ndarray], samplerate: int) -> None:
@@ -56,6 +92,20 @@ def _pulse_device(sd):
     return None
 
 
+def _named_device(sd, device, kind: str):
+    """Turn a configured device (index, digit string, or name substring) into an index."""
+    if device is None or isinstance(device, int):
+        return device
+    text = str(device).strip()
+    if text.isdigit():
+        return int(text)
+    key = "max_input_channels" if kind == "input" else "max_output_channels"
+    for i, d in enumerate(sd.query_devices()):
+        if d[key] > 0 and text.lower() in d["name"].lower():
+            return i
+    raise MicError(f"no {kind} audio device matches {text!r}")
+
+
 def _resolve_input(sd, cfg: PTTConfig):
     """Pick (device, samplerate) for the InputStream.
 
@@ -72,7 +122,7 @@ def _resolve_input(sd, cfg: PTTConfig):
         print("[ptt] no PipeWire/Pulse PCM found; falling back to the default device", flush=True)
     else:
         os.environ.pop("PULSE_SOURCE", None)  # don't leak a previous selection
-    device = cfg.device
+    device = _named_device(sd, cfg.device, "input")
     try:
         sd.check_input_settings(device=device, channels=cfg.channels, samplerate=cfg.samplerate)
         return device, cfg.samplerate
@@ -89,9 +139,13 @@ def _record_until(stop_predicate, cfg: PTTConfig,
     If `on_level` is given, it's called with the per-chunk RMS (0..1) at ~`_LEVEL_HZ`
     so the web GUI can draw a live level meter while recording.
     """
-    import sounddevice as sd
-
-    device, samplerate = _resolve_input(sd, cfg)
+    try:
+        import sounddevice as sd
+        device, samplerate = _resolve_input(sd, cfg)
+    except MicError:
+        raise
+    except Exception as e:      # PortAudio missing, no input device, bad index...
+        raise MicError(f"microphone unavailable: {e}") from e
     q: "queue.Queue[np.ndarray]" = queue.Queue()
 
     def callback(indata, _frames, _time, _status):
@@ -101,8 +155,12 @@ def _record_until(stop_predicate, cfg: PTTConfig,
     frames: list[np.ndarray] = []
     last_level = 0.0
     min_dt = 1.0 / _LEVEL_HZ
-    with sd.InputStream(samplerate=samplerate, channels=cfg.channels,
-                        dtype="float32", device=device, callback=callback):
+    try:
+        stream = sd.InputStream(samplerate=samplerate, channels=cfg.channels,
+                                dtype="float32", device=device, callback=callback)
+    except Exception as e:
+        raise MicError(f"could not open the microphone: {e}") from e
+    with stream:
         while not stop_predicate():
             try:
                 chunk = q.get(timeout=0.1)
@@ -120,7 +178,6 @@ def _record_until(stop_predicate, cfg: PTTConfig,
         frames.append(q.get())
 
     fd, name = tempfile.mkstemp(suffix=".wav", prefix="fish_in_")
-    import os
     os.close(fd)
     out = Path(name)
     _write_wav(out, frames, samplerate)
@@ -154,30 +211,74 @@ def record_hold(cfg: PTTConfig,
     listener.start()
     # Wait for the key to actually go down before we start recording.
     while not state["held"] and listener.running:
-        pass
+        time.sleep(0.005)
     path = _record_until(lambda: not state["armed"], cfg, on_level)
     listener.stop()
     return path
 
 
+_cut_last = False   # the previous recording hit max_record_s; wait for a release first
+
+
+def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
+                 on_level: Callable[[float], None] | None = None) -> Path:
+    """Record while any of `sources` is held; returns the WAV path.
+
+    Starts only on a fresh press: a source that already reads "held" when we begin waiting
+    (a lost release, a tap while the fish was talking) must be released first. A recording
+    longer than `cfg.max_record_s` is cut, and every source is then reset so a stuck button
+    cannot start one recording after another.
+    """
+    global _cut_last
+    if not sources:
+        raise PTTUnavailable("no push-to-talk source configured")
+
+    def any_held() -> bool:
+        return any(s.is_held() for s in sources)
+
+    for s in sources:
+        s.arm(True)
+    try:
+        # Whatever is held right now is stale: clear it, then wait for idle.
+        if _cut_last or any_held():
+            for s in sources:
+                s.reset()
+            while any_held():
+                time.sleep(0.02)
+        _cut_last = False
+        while not any_held():
+            time.sleep(0.02)
+        t0 = time.monotonic()
+
+        def stop() -> bool:
+            return not any_held() or time.monotonic() - t0 >= cfg.max_record_s
+
+        path = _record_until(stop, cfg, on_level)
+        if time.monotonic() - t0 >= cfg.max_record_s:
+            _cut_last = True
+            print(f"[ptt] {cfg.max_record_s:.0f} s limit reached; release and press again",
+                  flush=True)
+            for s in sources:
+                s.reset()
+        return path
+    finally:
+        for s in sources:
+            s.arm(False)
+
+
 def record_web(cfg: PTTConfig, is_held: Callable[[], bool],
                on_level: Callable[[float], None] | None = None) -> Path:
-    """Record while the browser's hold-to-talk button is held (`is_held()` is True).
-
-    Used in --viz mode: the on-screen fish drives push-to-talk instead of the keyboard, which
-    is easier to use and to debug. Blocks until the button is first pressed, then records until
-    it's released; Ctrl-C still interrupts the wait.
-    """
-    print("[viz] mantén pulsado 'Hablar' en el navegador para grabar…", flush=True)
-    while not is_held():
-        time.sleep(0.02)
-    return _record_until(lambda: not is_held(), cfg, on_level)
+    """Record while one button-like predicate is true (kept for callers with a bare predicate)."""
+    return record_multi(cfg, [ButtonSource(is_held, name="web")], on_level)
 
 
 def _record_enter_toggle(cfg: PTTConfig,
                          on_level: Callable[[float], None] | None = None) -> Path:
     import threading
 
+    if not sys.stdin.isatty():
+        # A service has no keyboard: input() would fail forever. Say what to configure.
+        raise PTTUnavailable("no terminal for Enter-to-talk: set FISH_PTT_DEVICE or use --viz")
     input("[press Enter to START recording] ")
     done = threading.Event()
 

@@ -7,7 +7,10 @@
 from __future__ import annotations
 
 import argparse
+import os
+import signal
 import sys
+import threading
 
 from .config import load as load_config
 from .conversation import FishConversation
@@ -36,6 +39,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--viz", action="store_true",
                         help="serve the on-screen fish (browser fallback/debug view)")
     parser.add_argument("--viz-port", type=int, help="port for --viz (default from config)")
+    parser.add_argument("--viz-host", help="address --viz listens on (0.0.0.0 = reachable "
+                                           "from other devices)")
+    parser.add_argument("--stt", choices=["local", "openai", "groq"],
+                        help="speech-to-text backend (default: FISH_STT_BACKEND or local)")
+    parser.add_argument("--tts", choices=["loq", "openai"],
+                        help="text-to-speech backend (default: FISH_TTS_BACKEND or loq)")
+    parser.add_argument("--llm", metavar="PROFILE",
+                        help="LLM profile, e.g. groq or luna (default: FISH_LLM_PROFILE)")
+    parser.add_argument("--transport", choices=["serial", "bridge"],
+                        help="how commands reach the motor board (default: serial)")
+    parser.add_argument("--check-link", action="store_true",
+                        help="open the motor link, send STOP, report, and exit")
+    parser.add_argument("--prerender-canned", action="store_true",
+                        help="render every canned phrase with the current TTS backend, then exit")
     args = parser.parse_args(argv)
 
     # Load .env so OPENAI_API_KEY (and optional overrides) are available.
@@ -45,11 +62,48 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:
         pass
 
-    cfg = load_config()
+    if args.llm:
+        os.environ["FISH_LLM_PROFILE"] = args.llm      # read when the config is built
+    try:
+        cfg = load_config()
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 78
     if args.port:
         cfg.serial.port = args.port
     if args.viz_port:
         cfg.viz.port = args.viz_port
+    if args.viz_host:
+        cfg.viz.host = args.viz_host
+    if args.stt:
+        cfg.stt.backend = args.stt
+    if args.tts:
+        cfg.tts.backend = args.tts
+    if args.transport:
+        cfg.serial.transport = args.transport
+
+    # A stop request from a service manager should end like Ctrl-C: goodbye, then STOP.
+    def _on_sigterm(_signum, _frame):
+        raise KeyboardInterrupt
+    try:
+        signal.signal(signal.SIGTERM, _on_sigterm)
+    except ValueError:
+        pass                                            # not the main thread
+
+    from . import cloud
+    from .config import STT_PROFILES
+    cloud.configure(cfg.cloud)
+    cloud_keys: set[str] = set()
+    if cfg.tts.backend == "openai":
+        cloud_keys.add("OPENAI_API_KEY")
+    if cfg.stt.backend in STT_PROFILES and not args.text:
+        cloud_keys.add(STT_PROFILES[cfg.stt.backend]["api_key_env"])
+    if not args.echo:
+        cloud_keys.add(cfg.llm.api_key_env)
+    one_shot = (args.list_canned or args.prefetch_stt or args.check_link)
+    if cloud_keys and not one_shot:
+        # Know whether the internet is there without ever blocking a turn on it.
+        cloud.start_probe(wait_s=3.0)
 
     if args.list_canned:
         for name in cfg.canned.phrases:
@@ -57,21 +111,64 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.prefetch_stt:
+        if cfg.stt.backend != "local":
+            print(f"STT backend '{cfg.stt.backend}' runs in the cloud: nothing to fetch.")
+            return 0
         from .stt import Transcriber
         print(f"Fetching STT model '{cfg.stt.model}' (first run may take a while)…", flush=True)
         Transcriber(cfg.stt).ensure_loaded()
         print("STT model ready (cached under ~/.cache/huggingface).")
         return 0
 
-    # Warm the loq daemon so the first phrase isn't slow.
+    if args.prerender_canned:
+        from . import canned, tts
+        tts.warm(cfg.tts)
+        failed = canned.prerender_all(cfg)
+        for name in cfg.canned.phrases:
+            print(f"  {name}: {'FAILED' if name in failed else 'ok'}")
+        return 1 if failed else 0
+
+    if args.check_link:
+        try:
+            with open_link(cfg.serial, dry_run=args.dry_run) as link:
+                link.all_stop()
+                ok = link.attached
+                print(f"link {'ok' if ok else 'NOT ATTACHED'}: {link.describe()}")
+            return 0 if ok else 1
+        except Exception as e:
+            print(f"link FAILED ({cfg.serial.transport} {cfg.serial.port}): {e}", file=sys.stderr)
+            return 1
+
+    missing = cloud.missing_keys(cloud_keys)
+    if missing:
+        # Keep going: the fish says its "no signal" line instead of restarting in a loop.
+        print(f"[cloud] WARNING: {', '.join(missing)} not set; the stages that need it will fail",
+              file=sys.stderr, flush=True)
+
+    # Warm the loq daemon so the first phrase isn't slow (does nothing for other backends).
     if cfg.tts.warm_on_start:
         from . import tts
         tts.warm(cfg.tts)
 
-    # Pre-render canned phrases so the first welcome/goodbye is instant.
+    # Pre-render canned phrases so the first welcome/goodbye is instant. With a cloud voice
+    # this must not hold up listening: the welcome falls back to an older rendering meanwhile.
     if cfg.canned.enabled:
         from . import canned
-        canned.prerender_all(cfg)
+        if cfg.tts.backend == "loq":
+            canned.prerender_all(cfg)
+        else:
+            threading.Thread(target=canned.prerender_all, args=(cfg,), name="prerender",
+                             daemon=True).start()
+
+    # Voice mode needs some way to say "talk now". Without a screen or a terminal that is
+    # the browser button or a remote; say so instead of failing on every turn.
+    conversing = args.say is None and args.say_canned is None
+    if (conversing and not args.text and not args.viz and not cfg.ptt.evdev_device
+            and not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY")
+            and not sys.stdin.isatty()):
+        print("No push-to-talk input: no terminal, no display, no --viz and FISH_PTT_DEVICE "
+              "is unset. Add --viz or set FISH_PTT_DEVICE.", file=sys.stderr)
+        return 78                                       # EX_CONFIG: restarting won't help
 
     # On-screen fish (browser fallback/debug view), optional.
     viz = None
@@ -84,26 +181,47 @@ def main(argv: list[str] | None = None) -> int:
         try:
             link_cm = open_link(cfg.serial, dry_run=args.dry_run)
         except Exception as e:
-            print(f"Could not open serial port {cfg.serial.port}: {e}\n"
-                  f"Tip: use --dry-run to test without hardware, or pass --port.", file=sys.stderr)
+            print(f"Could not open the motor link ({cfg.serial.transport} {cfg.serial.port}): "
+                  f"{e}\nTip: use --dry-run to test without hardware, pass --port, or set "
+                  f"FISH_SERIAL_REQUIRED=false to talk without motors.", file=sys.stderr)
             return 1
 
         with link_cm as link:
             if args.say is not None or args.say_canned is not None:
                 from .conductor import make_player
-                player = make_player(not args.no_audio)
+                player = make_player(not args.no_audio, cfg.ptt.speaker)
                 if args.say is not None:
                     from .speak import speak
-                    speak(args.say, link, cfg, player=player, viz=viz)
+                    try:
+                        speak(args.say, link, cfg, player=player, viz=viz)
+                    except RuntimeError as e:      # TTS or cloud problem: say why, no traceback
+                        print(f"Could not speak: {e}", file=sys.stderr)
+                        return 1
                 else:
                     from . import canned
                     canned.play(args.say_canned, link, cfg, player=player, viz=viz)
                 return 0
-            convo = FishConversation(cfg, link, text_input=args.text,
-                                     play_audio=not args.no_audio, viz=viz, echo=args.echo)
+            try:
+                convo = FishConversation(cfg, link, text_input=args.text,
+                                         play_audio=not args.no_audio, viz=viz, echo=args.echo)
+                if not args.text:
+                    from .stt import make_transcriber
+                    make_transcriber(cfg.stt)       # a wrong backend name is a setup error
+            except (ValueError, RuntimeError) as e:
+                print(f"Configuration problem: {e}", file=sys.stderr)
+                return 78
             if viz is not None:
                 viz.register_speaker(convo.speaker)   # let the on-screen text box drive the fish
-            convo.run()
+            stt = "-" if args.text else cfg.stt.backend
+            llm = "echo" if args.echo else f"{cfg.llm.profile}:{cfg.llm.model}"
+            print(f"[fish] link={link.describe()} stt={stt} llm={llm} tts={cfg.tts.backend} "
+                  f"ptt={convo.ptt_summary()}", flush=True)
+            from .ptt import PTTUnavailable
+            try:
+                convo.run()
+            except PTTUnavailable as e:
+                print(f"No push-to-talk input: {e}", file=sys.stderr)
+                return 78
     finally:
         if viz is not None:
             viz.stop()

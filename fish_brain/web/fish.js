@@ -56,14 +56,45 @@
   // ---- hold-to-talk: drive the host's push-to-talk from the browser ----
   // POST /ptt {down} on press/release edges; the host records while held. Works with the
   // button (mouse/touch) or the spacebar, so you don't need terminal focus or pynput.
+  // When the host sets FISH_VIZ_TOKEN, open the page as /?token=... and every POST carries it.
+  const TOKEN = new URLSearchParams(location.search).get("token") || "";
+  function jsonHeaders() {
+    const h = { "Content-Type": "application/json" };
+    if (TOKEN) h["X-Fish-Token"] = TOKEN;
+    return h;
+  }
   let pttDown = false;
+  // Leaving the page while holding (phone locks, tab switch) must still release: a normal
+  // fetch can be cancelled as the page hides, a beacon is not.
+  function releasePttNow() {
+    if (!pttDown) return;
+    pttDown = false;
+    pttButton.classList.remove("recording");
+    const url = "/ptt" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : "");
+    const body = new Blob([JSON.stringify({ down: false })], { type: "application/json" });
+    if (!(navigator.sendBeacon && navigator.sendBeacon(url, body))) {
+      fetch(url, { method: "POST", headers: jsonHeaders(), body: JSON.stringify({ down: false }),
+                   keepalive: true }).catch(() => {});
+    }
+  }
+  window.addEventListener("pagehide", releasePttNow);
+  window.addEventListener("blur", releasePttNow);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") releasePttNow();
+  });
+  // The host can end a press itself (recording limit reached): follow it, or the next
+  // press would be ignored as "already down".
+  function hostReleasedPtt() {
+    pttDown = false;
+    pttButton.classList.remove("recording");
+  }
   function setPtt(down) {
     if (down === pttDown) return;              // edges only (keydown auto-repeats)
     pttDown = down;
     pttButton.classList.toggle("recording", down);
     fetch("/ptt", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ down }),
     }).catch(() => {});
   }
@@ -111,7 +142,7 @@
   micSelect.addEventListener("change", () => {
     fetch("/mic", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ device: micSelect.value || null }),
     }).catch(() => {});
   });
@@ -122,7 +153,7 @@
     if (!text) return;
     fetch("/speak", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ text }),
     }).catch(() => {});
     speakText.value = "";
@@ -136,7 +167,7 @@
   toggleWait.addEventListener("change", () => {
     fetch("/wait", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({ on: toggleWait.checked }),
     }).catch(() => {});
   });
@@ -419,6 +450,7 @@
       if (ev.type === "speak") handleSpeak(ev);
       else if (ev.type === "level") pushMicLevel(ev.rms);
       else if (ev.type === "stt") setTranscript(ev.role, ev.text);
+      else if (ev.type === "ptt" && !ev.held) hostReleasedPtt();
       else if (ev.type === "draft") { speakText.value = ev.text || ""; speakText.focus(); }
     };
   }

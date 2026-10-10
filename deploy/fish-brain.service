@@ -1,0 +1,31 @@
+# fish_brain as a systemd USER unit (installed to ~/.config/systemd/user/ by
+# `deploy/unoq_setup.sh service`). It runs in the user session so it shares the user's
+# PipeWire; `loginctl enable-linger` makes that session start at boot without a login.
+#
+# No EnvironmentFile on purpose: the app reads ~/fish_brain/.env itself, and systemd would
+# reject `export` lines and keep inline comments inside the values.
+
+[Unit]
+Description=fish_brain - talking Big Mouth Billy Bass
+After=pipewire.service wireplumber.service
+# Never give up restarting (the fair runs unattended).
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+WorkingDirectory=%h/fish_brain
+ExecStart=%h/fish_brain/.venv/bin/python -u -m fish_brain.app --viz
+Environment=PYTHONUNBUFFERED=1 PYTHONFAULTHANDLER=1
+# always, not on-failure: a clean exit (spoken "salir", a stray SIGTERM) must not leave
+# the fish off.
+Restart=always
+RestartSec=3
+# 78 = configuration error (no push-to-talk source). Restarting would not fix it.
+RestartPreventExitStatus=78
+# SIGINT is Python's KeyboardInterrupt: the goodbye phrase and STOP run on `systemctl stop`.
+KillSignal=SIGINT
+TimeoutStopSec=15
+SyslogIdentifier=fish-brain
+
+[Install]
+WantedBy=default.target

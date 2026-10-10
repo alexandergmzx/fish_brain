@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git commit --no-verify*)",
+      "Bash(git commit * --no-verify*)",
+      "Bash(git push --no-verify*)",
+      "Bash(git push * --no-verify*)",
+      "Bash(git push --force*)",
+      "Bash(git push * --force*)",
+      "Bash(git clean *)"
+    ],
+    "allow": [
+      "Bash(.venv/bin/python -m compileall -q fish_brain)",
+      "Bash(git --no-pager log --oneline *)",
+      "Bash(git --no-pager diff --stat)"
+    ]
+  }
+}

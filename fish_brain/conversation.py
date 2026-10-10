@@ -1,18 +1,32 @@
 """The conversation turn loop: input -> STT -> LLM -> fish speaks -> repeat.
 
 Two input modes:
-  - voice (default): push-to-talk mic capture -> local STT
+  - voice (default): push-to-talk mic capture -> speech-to-text
   - text  (--text):  type the user turn (skips mic + STT)
+
+Push-to-talk can come from the browser button (--viz), a remote's button (FISH_PTT_DEVICE),
+or the keyboard; the first two can be active together.
+
+Nothing that goes wrong inside a turn ends the loop: a failed cloud call, a missing
+microphone or a bad audio file makes the fish say a short canned line and listen again.
+Only quitting (Ctrl-C, a stop signal, "salir", end of input) ends it.
 
 Components are built lazily so `--text --dry-run` works without a mic, and so the heavy
 STT model only loads when voice mode actually needs it.
 """
 from __future__ import annotations
 
-from . import canned, ptt, speak as speak_mod
+import os
+import time
+import traceback
+from pathlib import Path
+
+from . import canned, cloud, ptt, speak as speak_mod
 from .conductor import Player, make_player
 from .config import Config
 from .serial_link import BaseLink
+
+_QUIT_WORDS = {"salir", "quit", "exit"}
 
 
 class FishConversation:
@@ -23,12 +37,37 @@ class FishConversation:
         self.link = link
         self.text_input = text_input
         self.echo = echo
-        self.player: Player = make_player(play_audio)
+        self.player: Player = make_player(play_audio, cfg.ptt.speaker)
         self.viz = viz
         # Serialized speak path, shared with the on-screen text box (registered into viz by app.py).
         self.speaker = speak_mod.Speaker(link, cfg, player=self.player, viz=viz)
         self._llm = None
         self._stt = None
+        self._errors = 0                  # consecutive failed turns (for the back-off)
+        self._last_apology = 0.0          # when a canned error line was last spoken
+        # Button-like push-to-talk sources (browser button, remote). Empty -> keyboard.
+        self.button = None
+        self.sources: list[ptt.ButtonSource] = []
+        if not text_input:
+            if viz is not None:
+                self.sources.append(viz.ptt_source())
+            if cfg.ptt.evdev_device:
+                from .evdev_button import EvdevButton   # lazy: needs python-evdev
+                self.button = EvdevButton(cfg.ptt)
+                self.sources.append(ptt.ButtonSource(
+                    self.button.is_held, reset=self.button.reset, arm=self.button.arm,
+                    name="remote"))
+
+    def ptt_summary(self) -> str:
+        """How a turn is triggered, for the startup line."""
+        if self.text_input:
+            return "text"
+        if not self.sources:
+            return "keyboard"
+        parts = [s.name for s in self.sources]
+        if self.button is not None:
+            parts[-1] = self.button.describe()
+        return "+".join(parts)
 
     @property
     def llm(self):
@@ -40,55 +79,86 @@ class FishConversation:
     @property
     def stt(self):
         if self._stt is None:
-            from .stt import Transcriber
-            self._stt = Transcriber(self.cfg.stt)
+            from .stt import make_transcriber
+            self._stt = make_transcriber(self.cfg.stt)
         return self._stt
 
-    def _get_user_text(self) -> str | None:
-        """The user's turn: text, "" if nothing was captured, or None on EOF (quit)."""
-        if self.text_input:
-            try:
-                return input("you> ").strip()
-            except EOFError:
-                return None
-        # Voice: push-to-talk -> transcribe. Stream the live mic level to the on-screen
-        # fish (if any) so the web GUI draws a meter while recording. With --viz the turn is
-        # triggered by the browser's hold-to-talk button; otherwise by the keyboard.
+    # --- one turn, in stages ---------------------------------------------------------
+    def _record(self) -> Path:
+        """Wait for push-to-talk and record. Raises ptt.MicError / ptt.PTTUnavailable."""
+        # Stream the live mic level to the on-screen fish (if any) while recording.
         on_level = (lambda lvl: self.viz.push_level(lvl)) if self.viz is not None else None
-        if self.viz is not None:
-            wav = ptt.record_web(self.cfg.ptt, self.viz.ptt_held, on_level=on_level)
-        else:
-            wav = ptt.record_hold(self.cfg.ptt, on_level=on_level)
-        from pathlib import Path
+        if self.sources:
+            if self.viz is not None:
+                print("[ptt] mantén pulsado 'Hablar' (navegador o control) para grabar…",
+                      flush=True)
+            return ptt.record_multi(self.cfg.ptt, self.sources, on_level=on_level)
+        return ptt.record_hold(self.cfg.ptt, on_level=on_level)
+
+    def _transcribe(self, wav: Path) -> str:
+        """Recording -> text ("" when there is nothing usable in it)."""
         try:
+            if ptt.wav_duration_s(wav) < self.cfg.stt.min_clip_s:
+                return ""                          # a tap, not a sentence
             # Skip silent captures: Whisper hallucinates phrases on silence (wrong/muted mic).
             rms = ptt.wav_rms(wav)
             if rms < self.cfg.ptt.silence_rms:
-                print(f"you> … (grabación casi en silencio, rms={rms:.4f}; ¿micrófono correcto?)")
+                print(f"you> … (grabación casi en silencio, rms={rms:.4f}; ¿micrófono correcto?)",
+                      flush=True)
                 if self.viz is not None:
                     self.viz.push_transcript("… (silencio, ¿micrófono correcto?)", "user")
                 return ""
             text = self.stt.transcribe(wav).strip()
         finally:
             Path(wav).unlink(missing_ok=True)
-        print(f"you> {text}" if text else "you> … (no te entendí, intenta de nuevo)")
+        print(f"you> {text}" if text else "you> … (no te entendí, intenta de nuevo)", flush=True)
         if self.viz is not None:
             self.viz.push_transcript(text or "… (no te entendí)", "user")
         return text
 
-    def turn(self) -> bool:
-        """Run one turn. Returns False to end the loop (EOF/quit)."""
-        user = self._get_user_text()
-        if user is None:
-            return False                       # EOF (Ctrl-D in --text)
-        user = user.strip()
-        if user.lower() in {"salir", "quit", "exit"}:
+    def _apologize(self, phrase: str, *, min_gap_s: float = 0.0) -> None:
+        """Say a canned error line (best effort), at most once per `min_gap_s`."""
+        now = time.monotonic()
+        if not phrase or now - self._last_apology < min_gap_s:
+            return
+        self._last_apology = now
+        try:
+            canned.play(phrase, self.link, self.cfg, player=self.player, viz=self.viz)
+        except Exception as e:                      # the apology must never be the problem
+            print(f"[turn] could not say {phrase!r}: {e}", flush=True)
+
+    def _turn(self) -> bool:
+        times: dict[str, float] = {}
+        if self.text_input:
+            try:
+                user = input("you> ").strip()
+            except EOFError:
+                return False                       # Ctrl-D
+        else:
+            t0 = time.monotonic()
+            wav = self._record()
+            times["rec"] = time.monotonic() - t0
+            t0 = time.monotonic()
+            user = self._transcribe(wav)
+            times["stt"] = time.monotonic() - t0
+
+        if user.lower().strip(" .!¡") in _QUIT_WORDS and (
+                self.text_input or self.cfg.ptt.voice_quit):
             return False
         if not user:
-            return True                        # nothing captured -> keep listening
+            return True                            # nothing captured -> keep listening
+
         # Echo mode just speaks the transcription back -> never touches the LLM (no API key).
-        reply = user if self.echo else self.llm.reply(user)
-        print(f"fish> {reply}")
+        if self.echo:
+            reply = user
+        else:
+            t0 = time.monotonic()
+            reply = self.llm.reply(user)
+            times["llm"] = time.monotonic() - t0
+            if self.llm.last_error and self.cfg.tts.backend != "loq":
+                # The LLM is unreachable and so, most likely, is cloud TTS: use the cached line.
+                raise cloud.CloudUnavailable(self.llm.last_error)
+        print(f"fish> {reply}", flush=True)
         if not reply:
             return True
         if self.viz is not None and self.viz.wait_enabled():
@@ -97,23 +167,78 @@ class FishConversation:
             self.viz.push_transcript(reply, "fish")
             self.viz.push_draft(reply)
         else:
-            self.speaker.speak(reply)          # Speaker pushes the "fish" transcript + speaks
+            self.speaker.speak(reply)              # Speaker pushes the "fish" transcript + speaks
+            times.update(self.speaker.last_timing)
+        if times:
+            print("[turn] " + " ".join(f"{k}={v:.1f}s" for k, v in times.items()), flush=True)
+        return True
+
+    def turn(self) -> bool:
+        """Run one turn. Returns False to end the loop (EOF/quit). Never raises for a
+        problem inside the turn; see the module docstring."""
+        try:
+            keep_going = self._turn()
+            self._errors = 0
+            return keep_going
+        except ptt.PTTUnavailable:
+            raise                                  # a setup problem, not a bad turn
+        except cloud.CloudUnavailable as e:
+            print(f"[turn] sin señal: {e}", flush=True)
+            self._apologize(self.cfg.canned.no_signal)
+        except cloud.CloudMisconfigured as e:
+            print(f"[turn] cloud setup problem: {e}", flush=True)
+            self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
+            time.sleep(2.0)
+        except ptt.MicError as e:
+            print(f"[turn] {e}", flush=True)
+            self._apologize(self.cfg.canned.no_mic, min_gap_s=30.0)
+            time.sleep(2.0)
+        except Exception as e:
+            print(f"[turn] error {type(e).__name__}: {e}", flush=True)
+            traceback.print_exc()
+            self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
+        # A failing turn that returns at once must not spin: pause, longer if it keeps failing.
+        self._errors += 1
+        time.sleep(5.0 if self._errors >= 5 else 1.0)
+        return True
+
+    # --- the loop --------------------------------------------------------------------
+    def _should_welcome(self) -> bool:
+        c = self.cfg.canned
+        if not (c.enabled and c.welcome):
+            return False
+        if not c.welcome_once:
+            return True
+        # Once per boot: the runtime dir is cleared at reboot, a service restart keeps it.
+        marker = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "fish_brain.welcomed"
+        if marker.exists():
+            return False
+        try:
+            marker.touch()
+        except OSError:
+            pass
         return True
 
     def run(self) -> None:
-        print("Conversation ready. (Ctrl-C or 'salir' to quit.)")
-        if self.cfg.canned.enabled and self.cfg.canned.welcome:
+        print("Conversation ready. (Ctrl-C or 'salir' to quit.)", flush=True)
+        if self._should_welcome():
             canned.play(self.cfg.canned.welcome, self.link, self.cfg,
                         player=self.player, viz=self.viz)
+        clean = False
         try:
             while True:
                 try:
                     if not self.turn():
+                        clean = True
                         break
                 except KeyboardInterrupt:
                     print()
+                    clean = True
                     break
         finally:
-            if self.cfg.canned.enabled and self.cfg.canned.goodbye:
+            if self.button is not None:
+                self.button.close()
+            # Say goodbye when asked to stop, not when something broke on the way out.
+            if clean and self.cfg.canned.enabled and self.cfg.canned.goodbye:
                 canned.play(self.cfg.canned.goodbye, self.link, self.cfg,
                             player=self.player, viz=self.viz)

@@ -1,0 +1,21 @@
+# SYSTEM unit, only for the optional "router off" setup (see deploy/README.md and
+# `deploy/unoq_setup.sh router off`). Not needed for the default "router release" setup.
+#
+# With arduino-router stopped nobody raises gpiochip1 line 70, and the MCU loader (default
+# "Wait for Linux" mode) loops the boot animation forever instead of starting the sketch.
+# This does at boot what the router's own drop-in does: line 37 low, then line 70 high.
+
+[Unit]
+Description=Tell the UNO Q MCU that Linux is ready (arduino-router is off)
+ConditionPathExists=/etc/fish_brain/router-off
+Conflicts=arduino-router.service
+After=arduino-router.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/gpioset -c /dev/gpiochip1 -t0 37=0
+ExecStart=/usr/bin/gpioset -c /dev/gpiochip1 -t0 70=1
+
+[Install]
+WantedBy=multi-user.target

@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import json
 import queue
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 
 from .config import Config
 
@@ -48,6 +50,7 @@ class VizServer:
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._ptt_held = False                # browser hold-to-talk button state
+        self._ptt_since = 0.0                 # when it was pressed (stale presses expire)
         self._wait = False                    # "wait to speak" checkbox: gate auto-speak of replies
         self._speaker = None                  # speak.Speaker, registered by app.py (text box -> /speak)
 
@@ -57,7 +60,13 @@ class VizServer:
         self._httpd = ThreadingHTTPServer((self.cfg.viz.host, self.cfg.viz.port), handler)
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
-        print(f"[viz] on-screen fish at http://{self.cfg.viz.host}:{self.cfg.viz.port}")
+        host, port = self.cfg.viz.host, self.cfg.viz.port
+        query = "/?token=…" if self.cfg.viz.token else ""
+        print(f"[viz] on-screen fish at http://{host}:{port}{query}", flush=True)
+        if host in ("0.0.0.0", "::"):
+            name = socket.gethostname()
+            print(f"[viz] from another device: http://{name}.local:{port}{query}"
+                  f"  (or http://{_lan_ip()}:{port}{query})", flush=True)
 
     def stop(self) -> None:
         if self._httpd is not None:
@@ -190,10 +199,26 @@ class VizServer:
     def set_ptt(self, down: bool) -> dict:
         """Press/release the web push-to-talk button (the record loop polls `ptt_held`)."""
         self._ptt_held = bool(down)
+        if self._ptt_held:
+            self._ptt_since = time.monotonic()
         return {"held": self._ptt_held}
 
     def ptt_held(self) -> bool:
+        # A press older than the recording limit is a lost release (phone locked, page gone).
+        if self._ptt_held and (time.monotonic() - self._ptt_since
+                               > self.cfg.ptt.max_record_s + 1.0):
+            self.reset_ptt()
         return self._ptt_held
+
+    def reset_ptt(self) -> None:
+        """End the press from the host side and tell the page, so its button follows."""
+        self._ptt_held = False
+        self._publish(json.dumps({"type": "ptt", "held": False}))
+
+    def ptt_source(self):
+        """The web button as a push-to-talk source for `ptt.record_multi`."""
+        from .ptt import ButtonSource
+        return ButtonSource(self.ptt_held, reset=self.reset_ptt, name="web")
 
     # --- text box -> speak verbatim, and the "wait to speak" gate ---
     def register_speaker(self, speaker) -> None:
@@ -229,11 +254,11 @@ def _pulse_sources():
         out = subprocess.run(["pactl", "list", "sources"], capture_output=True,
                              text=True, timeout=3)
         if out.returncode != 0:
-            return None
+            return _pipewire_sources()
         default = subprocess.run(["pactl", "get-default-source"], capture_output=True,
                                  text=True, timeout=3).stdout.strip()
     except (FileNotFoundError, subprocess.SubprocessError):
-        return None
+        return _pipewire_sources()
     sources = []
     for block in out.stdout.split("Source #")[1:]:
         name = desc = None
@@ -249,6 +274,36 @@ def _pulse_sources():
         if name and not is_monitor and not name.endswith(".monitor"):
             sources.append({"id": name, "name": desc or name, "default": name == default})
     return sources
+
+
+def _pipewire_sources():
+    """The same list from `pw-dump`, for systems with PipeWire but no `pactl`. None if absent."""
+    import subprocess
+    try:
+        out = subprocess.run(["pw-dump"], capture_output=True, text=True, timeout=3)
+        if out.returncode != 0:
+            return None
+        nodes = json.loads(out.stdout)
+    except (FileNotFoundError, subprocess.SubprocessError, ValueError):
+        return None
+    sources = []
+    for node in nodes:
+        props = (node.get("info") or {}).get("props") or {}
+        if props.get("media.class") == "Audio/Source" and props.get("node.name"):
+            sources.append({"id": props["node.name"],
+                            "name": props.get("node.description") or props["node.name"],
+                            "default": False})
+    return sources
+
+
+def _lan_ip() -> str:
+    """This machine's address on the local network (no packet is sent)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))
+            return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
 
 
 def _make_handler(server: "VizServer"):
@@ -274,8 +329,13 @@ def _make_handler(server: "VizServer"):
                 self.send_error(404)
 
         def do_POST(self):  # noqa: N802
-            path = self.path.split("?", 1)[0]
+            path, _, query = self.path.partition("?")
             if path in ("/mic", "/ptt", "/speak", "/wait"):
+                token = server.cfg.viz.token
+                if token and token not in (self.headers.get("X-Fish-Token"),
+                                           parse_qs(query).get("token", [""])[0]):
+                    self._send_json({"ok": False, "error": "bad token"}, status=403)
+                    return
                 try:
                     length = int(self.headers.get("Content-Length", 0))
                     body = json.loads(self.rfile.read(length) or b"{}")

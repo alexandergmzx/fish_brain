@@ -1,7 +1,7 @@
 [project]
 name = "fish_brain"
 version = "0.1.0"
-description = "Conversational Big Mouth Billy Bass: push-to-talk -> local STT -> cloud LLM -> loq TTS -> animated fish"
+description = "Conversational Big Mouth Billy Bass: push-to-talk -> speech-to-text -> LLM -> text-to-speech -> animated fish"
 requires-python = ">=3.10"
 dependencies = [
     "pyserial>=3.5",
@@ -12,6 +12,11 @@ dependencies = [
     "openai>=1.0",
     "python-dotenv>=1.0",
 ]
+
+[project.optional-dependencies]
+# Arduino UNO Q: remote-button push-to-talk and the router RPC (port release, Bridge transport).
+unoq = ["evdev>=1.9", "msgpack>=1.0"]
+dev = ["pytest>=8", "msgpack>=1.0"]
 
 [project.scripts]
 fish-brain = "fish_brain.app:main"

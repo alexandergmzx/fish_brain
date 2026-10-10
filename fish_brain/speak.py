@@ -6,6 +6,7 @@ conductor (audio playback + synced serial streaming).
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 
 from . import gestures, tts
@@ -23,8 +24,9 @@ def perform_wav(
     player: Player | None = None,
     viz=None,
     text: str | None = None,
-) -> None:
+) -> float:
     """Perform an already-rendered WAV on the fish: mouth track + gestures + playback.
+    Returns the monotonic time playback started.
 
     Shared by `speak()` (fresh TTS) and `canned.play()` (cached WAV). If `viz` is given
     (a VizServer), announce the speech to the on-screen fish before performing. `text`, when
@@ -39,7 +41,7 @@ def perform_wav(
     )
     if viz is not None:
         viz.announce_speech(wav, duration_ms, gesture_events, mouth_track=level_track)
-    perform(wav, pulses, gesture_events, link, cfg, player=player)
+    return perform(wav, pulses, gesture_events, link, cfg, player=player)
 
 
 def speak(
@@ -50,11 +52,21 @@ def speak(
     player: Player | None = None,
     keep_wav: bool = False,
     viz=None,
+    timing: dict | None = None,
 ) -> None:
-    """Synthesize `text` and perform it on the fish via `link`."""
+    """Synthesize `text` and perform it on the fish via `link`.
+
+    `timing`, when given, receives "tts" (seconds to synthesize) and "play_start" (seconds
+    from the call to the first sample).
+    """
+    t0 = time.monotonic()
     wav = tts.synthesize(text, cfg.tts)
+    if timing is not None:
+        timing["tts"] = time.monotonic() - t0
     try:
-        perform_wav(wav, link, cfg, player=player, viz=viz, text=text)
+        started = perform_wav(wav, link, cfg, player=player, viz=viz, text=text)
+        if timing is not None:
+            timing["play_start"] = started - t0
     finally:
         if not keep_wav:
             Path(wav).unlink(missing_ok=True)
@@ -76,6 +88,7 @@ class Speaker:
         self.player = player
         self.viz = viz
         self._lock = threading.Lock()
+        self.last_timing: dict = {}
 
     def speak(self, text: str, *, role: str = "fish") -> bool:
         """Speak `text` verbatim. Returns False if empty or already speaking (dropped)."""
@@ -85,7 +98,13 @@ class Speaker:
         try:
             if self.viz is not None:
                 self.viz.push_transcript(text, role)   # show what was actually spoken
-            speak(text, self.link, self.cfg, player=self.player, viz=self.viz)
+            self.last_timing = {}
+            # A link that is allowed to be absent gets a chance to come back before we talk.
+            retry = getattr(self.link, "try_attach", None)
+            if retry is not None and not self.link.attached:
+                threading.Thread(target=retry, name="link-retry", daemon=True).start()
+            speak(text, self.link, self.cfg, player=self.player, viz=self.viz,
+                  timing=self.last_timing)
             return True
         finally:
             self._lock.release()
