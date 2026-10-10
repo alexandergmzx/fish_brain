@@ -1,5 +1,7 @@
 # Running fish_brain on the Arduino UNO Q
 
+Always run `sudo apt update` before any `sudo apt install` on the board.
+
 Everything needed to run the fish standalone on the board (`segunda`, `arduino@segunda.local`):
 no laptop, phone hotspot, USB speaker, USB voice remote.
 

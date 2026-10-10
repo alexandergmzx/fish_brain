@@ -138,7 +138,7 @@ print_owner_steps() {
         say
     elif (( ${#optional[@]} )); then
         say "  Optional packages not installed (tools only, nothing blocks on them):"
-        say "    sudo apt install -y ${optional[*]}"
+        say "    sudo apt update && sudo apt install -y ${optional[*]}"
     else
         ok "system packages present"
     fi

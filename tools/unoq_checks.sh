@@ -343,7 +343,7 @@ keys_mode() {
     R_KEY="see output"; N_KEY="read the device and KEY name from the lines above"
   else
     echo "  n/a: neither evtest nor python-evdev is available"
-    R_KEY="n/a"; N_KEY="install evtest (sudo apt install evtest)"
+    R_KEY="n/a"; N_KEY="install evtest (sudo apt update && sudo apt install evtest)"
   fi
 }
 

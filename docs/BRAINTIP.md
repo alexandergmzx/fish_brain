@@ -87,7 +87,7 @@ Nothing in `lsusb` → the power path is wrong (board not powered through the PD
 **1.3 Speaker**
 
 ```bash
-sudo apt install alsa-utils
+sudo apt update && sudo apt install alsa-utils
 aplay -l                                   # note the speaker's card id, e.g. [Speaker]
 speaker-test -D plughw:CARD=<id>,DEV=0 -c 2 -t wav -l 1
 alsamixer -c <id>                          # set a sane volume
@@ -117,7 +117,7 @@ ctl.!default { type hw card <id> }
 **1.6 Remote button (for push-to-talk)**
 
 ```bash
-sudo apt install evtest
+sudo apt update && sudo apt install evtest
 ls -l /dev/input/by-id/        # stable path for the remote's keyboard device
 sudo evtest                    # pick the remote, press the voice/mic button
 ```
@@ -138,7 +138,7 @@ Use an inline USB-C meter between the power bank and the dongle.
 
 ```bash
 uptime -s                                  # boot time before
-sudo apt install stress-ng
+sudo apt update && sudo apt install stress-ng
 stress-ng --cpu 4 --timeout 600s &         # 10 min CPU load
 # meanwhile, loop audio out + in:
 for i in $(seq 1 60); do aplay /tmp/mic.wav; arecord -d 5 -f S16_LE -r 16000 -c 1 /tmp/loop.wav; done
@@ -237,7 +237,7 @@ Notes from the developer's approach: _(fill in)_
 **3.1 Install**
 
 ```bash
-sudo apt install python3-venv libportaudio2 alsa-utils git
+sudo apt update && sudo apt install python3-venv libportaudio2 alsa-utils git
 git clone <repo> ~/fish_brain && cd ~/fish_brain && git checkout braintip
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .

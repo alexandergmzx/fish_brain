@@ -149,7 +149,7 @@ def _evdev():
     except ImportError as e:
         raise RuntimeError(
             "push-to-talk from an input device needs python-evdev: "
-            "pip install evdev (or apt install python3-evdev)"
+            "pip install evdev (or apt update && apt install python3-evdev)"
         ) from e
     return evdev
 

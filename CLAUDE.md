@@ -205,6 +205,10 @@ without `evdev` or `msgpack`.
 - Alexander runs every `sudo` step, flashes the MCU, changes router units and Wi-Fi profiles,
   and pushes. Give him the command and what it changes.
 - Claude runs everything else, including read-only checks on the board over ssh, and reports.
+- **`apt update` always comes before `apt install`**, in commands handed to him and in every
+  doc and script (his word, 2026-10-10).
+- When he is installing or changing something on the board himself, wait: do not start
+  installs there at the same time.
 
 ### Evidence
 

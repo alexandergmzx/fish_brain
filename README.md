@@ -23,7 +23,7 @@ It uses two other repos without modifying them: the motor firmware
 cd ~/Development/fish_brain
 
 # system audio lib for the mic + playback
-sudo apt install libportaudio2
+sudo apt update && sudo apt install libportaudio2
 
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .                 # installs deps from pyproject.toml
@@ -141,6 +141,7 @@ the microphone to hear; at 100 % it was loud and clear.
 ```bash
 git clone https://github.com/alexandergmzx/fish_brain ~/fish_brain && cd ~/fish_brain
 git checkout braintip
+sudo apt update                   # always before installing anything
 deploy/unoq_setup.sh install      # prints the apt line to run; makes the venv; stops until .env has a key
 deploy/unoq_setup.sh service      # start at boot as a user service
 tools/unoq_checks.sh              # what the board sees: USB, audio, input devices, router
