@@ -129,3 +129,9 @@ ssh -N -L 127.0.0.1:7600:/var/run/arduino-router.sock \
 
 `uart_check.py --self-test` checks the tool itself against a pty pair and a fake router,
 with no board at all.
+
+## Checked on the board (2026-10-10)
+
+`arduino-cli upload -b arduino:zephyr:unoq <sketch>` run on the board itself needs no port
+and no password: it flashes through OpenOCD over SWD, with the router running. `uart_echo`
+answered 100 of 100 lines. See `docs/results/2026-10-10-unoq-uart-echo.md`.
