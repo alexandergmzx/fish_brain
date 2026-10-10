@@ -1,20 +1,29 @@
-"""Text-to-speech via the local `loq` engine (Loquendo "Jorge", MX Spanish).
+"""Text-to-speech: render text to a WAV file with the configured backend.
 
-We render to a WAV file *silently* (`loq -o`, no playback) because the conductor owns
-playback so it can stay in sync with the streamed motor commands. The loq daemon stays
-warm (~50 ms/phrase) once started.
+- `loq` (default): the local Loquendo "Jorge" engine. The loq daemon stays warm once started.
+- `openai`: OpenAI speech. Requested as raw PCM and wrapped into a WAV here, because the
+  service's own streamed WAV header can carry a placeholder length.
+
+Either way the result is a plain integer-PCM WAV on disk and nothing is played: the
+conductor owns playback so it stays in sync with the streamed motor commands.
 """
 from __future__ import annotations
 
+import hashlib
+import os
 import subprocess
 import tempfile
+import wave
 from pathlib import Path
 
+from . import cloud
 from .config import TTSConfig
 
 
 def warm(cfg: TTSConfig) -> None:
-    """Start/warm the loq daemon so the first phrase isn't slow. Best-effort."""
+    """Start/warm the loq daemon so the first phrase isn't slow. Best-effort; loq only."""
+    if cfg.backend != "loq":
+        return
     try:
         subprocess.run([cfg.loq_bin, "--start"], check=False,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -22,22 +31,74 @@ def warm(cfg: TTSConfig) -> None:
         pass
 
 
-def synthesize(text: str, cfg: TTSConfig, out_path: str | Path | None = None) -> Path:
-    """Render `text` to a WAV and return its path. Raises on loq failure."""
-    text = text.strip()
-    if not text:
-        raise ValueError("synthesize(): empty text")
-    if out_path is None:
-        fd, name = tempfile.mkstemp(suffix=".wav", prefix="fish_")
-        Path(name).unlink(missing_ok=True)  # loq writes it; we just want the name
-        import os
-        os.close(fd)
-        out_path = name
-    out_path = Path(out_path)
-    cmd = [cfg.loq_bin, "-o", str(out_path), "-r", str(cfg.sample_rate), text]
+def fingerprint(cfg: TTSConfig) -> str:
+    """What makes two renderings of the same text differ (used in the canned cache key)."""
+    if cfg.backend == "loq":
+        return str(cfg.sample_rate)
+    how = hashlib.sha1(cfg.openai_instructions.encode("utf-8")).hexdigest()[:8]
+    return f"{cfg.backend}|{cfg.openai_model}|{cfg.openai_voice}|{how}"
+
+
+def _validate_wav(path: Path) -> None:
+    """Refuse a file the envelope/conductor can't use, before any motor command is sent."""
+    try:
+        with wave.open(str(path), "rb") as w:
+            frames, rate, width = w.getnframes(), w.getframerate(), w.getsampwidth()
+        ok = width in (1, 2, 4) and rate > 0 and 0.05 <= frames / rate <= 600
+    except (wave.Error, EOFError, OSError, ZeroDivisionError):
+        ok = False
+    if not ok:
+        path.unlink(missing_ok=True)
+        raise RuntimeError(f"TTS produced an unusable WAV ({path.name})")
+
+
+def _synthesize_loq(text: str, cfg: TTSConfig, out_path: Path) -> None:
+    # "--" so a reply starting with "-" is not read as an option.
+    cmd = [cfg.loq_bin, "-o", str(out_path), "-r", str(cfg.sample_rate), "--", text]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0 or not out_path.exists():
         raise RuntimeError(
             f"loq failed (rc={proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}"
         )
+
+
+def _synthesize_openai(text: str, cfg: TTSConfig, out_path: Path) -> None:
+    if not cloud.is_online():
+        raise cloud.CloudUnavailable("offline")
+    with cloud.guard():
+        with cloud.client().audio.speech.with_streaming_response.create(
+            model=cfg.openai_model,
+            voice=cfg.openai_voice,
+            input=text[:4096],
+            instructions=cfg.openai_instructions,
+            response_format="pcm",          # 24 kHz, 16-bit little-endian, mono, no header
+        ) as resp:
+            pcm = resp.read()
+    part = out_path.with_name(out_path.name + ".part")
+    with wave.open(str(part), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(cfg.openai_pcm_rate)
+        w.writeframes(pcm)
+    os.replace(part, out_path)
+
+
+def synthesize(text: str, cfg: TTSConfig, out_path: str | Path | None = None) -> Path:
+    """Render `text` to a WAV and return its path. Raises on failure."""
+    text = text.strip()
+    if not text:
+        raise ValueError("synthesize(): empty text")
+    if out_path is None:
+        fd, name = tempfile.mkstemp(suffix=".wav", prefix="fish_")
+        os.close(fd)
+        Path(name).unlink(missing_ok=True)  # the backend writes it; we just want the name
+        out_path = name
+    out_path = Path(out_path)
+    if cfg.backend == "loq":
+        _synthesize_loq(text, cfg, out_path)
+    elif cfg.backend == "openai":
+        _synthesize_openai(text, cfg, out_path)
+    else:
+        raise ValueError(f"FISH_TTS_BACKEND={cfg.backend!r}; choose loq or openai")
+    _validate_wav(out_path)
     return out_path
