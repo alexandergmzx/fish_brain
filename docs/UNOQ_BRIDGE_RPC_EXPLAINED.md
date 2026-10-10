@@ -356,3 +356,25 @@ sudo fuser -v /dev/ttyHS1
 - [ ] Schematic confirmation that line 38 = STM32 nRST, line 37 = BOOT0 —
       `ABX00162-schematics.pdf` on docs.arduino.cc
 - [ ] Measured round-trip latency of `call()` vs `notify()` at 115200, to quantify §3
+
+---
+
+## 11. Corrections (2026-10-10)
+
+Checked on the board and against arduino-router 0.10.0, ArduinoCore-zephyr 0.55.2 and
+Arduino_RouterBridge 0.4.3. Where this section and the text above disagree, this one is right.
+
+| Section | Above says | What is true |
+|---|---|---|
+| Header | Companion to `UNOQ_PORT_ROADMAP.md` | That file is not in this repo |
+| §1, §7, §8 | Link object is `Serial2` on older cores, `Serial` on 0.90.0+ | The raw link is `Serial2` on every core from 0.55.0. Since 0.55.0 `Serial` is an alias of the Bridge `Monitor`; its calls wait for the router with no timeout, which is the "hang" |
+| §4 | Router command line | The unit's own `ExecStart` has only `--unix-port`. The serial arguments, the GPIO 37 step and `--after-ready ... 70=1` come from a generated drop-in, `/run/systemd/generator/arduino-router.service.d/10-imola.conf`. A drop-in that adds `--verbose` must repeat that full line and sort after it |
+| §4, §10 | `$/serial/open` and `$/serial/close` are undocumented | Both are in the router's README. `$/serial/close ["/dev/ttyHS1"]` releases the port and returns once it is free; the daemon keeps running |
+| §5 | Stopping the router does not strand the MCU | It does for a default build: the stop action sets line 70 low and resets the MCU, and the loader waits for line 70 before starting the sketch. Line 38 is the MCU reset (confirmed by the OpenOCD config) |
+| §6 | Mask the units | `mask` fails on router 0.10.0 because the units are real files in `/etc/systemd/system`. From 0.11 they move to `/usr/lib` and can be masked |
+| §7 route C | Mask, then own the port | Release the port with `$/serial/close` instead. While it is released, methods the MCU provides are unregistered, and a Bridge sketch that starts meanwhile waits forever in `Bridge.begin()`; `$/serial/open` plus an MCU reset brings them back |
+| §7 route C | — | A router restart reopens the port while another process holds it, and the other process sees no error. Watch the router socket, not the writes |
+| §7 step 3, §8 | Flashing uses `arduino-debug.service` over SPI | `remoteocd` runs OpenOCD on the board, bit-banging SWD on gpiochip1 lines 25/26 with reset on 38. No such service exists. Flashing does work with the router down |
+| §4 | `provide_safe` always runs in `loop()` | With Arduino_RPClite 0.3.0 the background thread can also run it, on a 500-byte stack. Keep handlers to "copy and return" |
+| §7 route A | — | A notification to a method nobody registered is dropped without an error; a call returns error code 2. Bridge sketches must use the default "Wait for Linux" start mode |
+| §4 | Socket is world-writable | True for 0.10.0. From 0.11 it is `0660 root:arduino-router` |

@@ -353,3 +353,35 @@ TB6612FNG, measure each motor: under 1 A running and 3 A stall. Then the README 
 - [OpenAI speech-to-text](https://developers.openai.com/docs/guides/speech-to-text)
 - [OpenAI text-to-speech](https://developers.openai.com/docs/guides/text-to-speech)
 - [TB6612FNG carrier specs](https://shop.pimoroni.com/en-nz/products/tb6612fng-dual-motor-driver-carrier)
+
+## Corrections (2026-10-10)
+
+Checked on the board (`arduino@segunda`) and against current sources. Where this section and
+the text above disagree, this section is right.
+
+| Topic | Above says | What is true |
+|---|---|---|
+| Branch | "the `braintip` branch" exists | Created 2026-10-10 from `text-driven-gestures` |
+| Serial protocol pointer | README "Serial protocol" | That section does not exist; the contract is in `CLAUDE.md` |
+| After each utterance | `MOUTH 0` | A full close pulse (`MOUTH <close_pwm> <ms>`), sent by the conductor |
+| Router units (2.1) | `arduino-router.service arduino-router-serial.service arduino-r.service` | `arduino-router.service`, `arduino-router-serial.service`, `arduino-router-serial.path`; `arduino-app-cli.service` only `Wants=` the router. There is no `arduino-r.service` |
+| `systemctl mask` (2.1) | Works | Fails on arduino-router 0.10.0: its units are real files in `/etc/systemd/system`. Works from 0.11 |
+| Freeing `/dev/ttyHS1` | Stop and mask the router | Ask the router to let go: `arduino-router-cli '$/serial/close' /dev/ttyHS1` (undo: `'$/serial/open' /dev/ttyHS1`). fish_brain does this itself. The router keeps running, so the MCU keeps its "Linux is ready" signal |
+| Stopping the router | Harmless | Its stop action drives GPIO line 70 low and resets the MCU; the sketch then waits in the boot animation until line 70 is high again |
+| udev rule (2.1) | Needed | Not needed: `/dev/ttyHS1` is `root:dialout 0660` and `arduino` is in `dialout` |
+| Link object (2.2, 2.3, Phase 4) | `Serial1` now, `Serial2` on newer cores | `Serial2` on every core from 0.55.0 (the board has 0.55.2). `Serial1` is D0/D1. `Serial` is the Bridge monitor: never use it in a raw-UART sketch |
+| Boot banner (2.2) | May appear on the link | Zephyr's console is USART1 (D0/D1), not the Linux link. Still tolerate a stray byte around resets |
+| Firmware replies (2.4, Phase 4) | `ACK ...` | The firmware echoes each character, prints a `> ` prompt, and has no ACK. Only the echo sketch answers `ACK <line>` |
+| Groups (1.1) | `usermod -aG audio,input,dialout` | `arduino` is already in all three |
+| `alsa-utils`, `evtest` (1.3, 1.6) | Install them | Already installed. Missing instead: `python3-venv python3-pip python3-dev gcc libportaudio2` |
+| Sound server (1.7) | `pactl info` decides | PipeWire 1.4.2 + WirePlumber run as user services; `pactl` is not installed. Check with `wpctl status` |
+| Default audio device | The USB speaker | The board has its own sound card. Pick the USB devices with `wpctl set-default` |
+| Headless push-to-talk | `pynput` falls back to Enter | Without a display `pynput` cannot load, and without a terminal the Enter fallback cannot work. Use the remote (`FISH_PTT_DEVICE`) or `--viz` |
+| Remote device path | `/dev/input/by-id/...-event-kbd` | The voice key is often on a separate node (`...-event-ifNN`). `FISH_PTT_DEVICE=auto` finds it by key code |
+| STT model (3.2) | `gpt-4o-mini-transcribe` also works | Deprecated 2026-08-26, shut down 2027-02-26, with `whisper-1`, `gpt-4o-transcribe` and `gpt-4o-transcribe-diarize`. Use `gpt-transcribe`; it takes `languages=["es"]` (a list) |
+| Local STT speed (3.2) | Try `small` | Expect 20 to 45 s per clip on these cores (estimate). `tiny` or a cloud backend |
+| TTS as WAV (3.3) | Save `response_format="wav"` | Ask for `pcm` and write the WAV header locally: the streamed WAV can carry a placeholder length |
+| TTS model (3.3) | `gpt-4o-mini-tts` | Fine for the fair. All `/v1/audio/speech` models shut down 2027-01-06 |
+| `loq` on the board (3.3) | Unknown | Hangover Wine 11.9 and Loquendo are installed, `loqd.exe` is built; synthesis is untested |
+| Unit (3.6) | System unit, `Restart=on-failure` | User unit with linger (PipeWire is per user), `Restart=always`, `KillSignal=SIGINT`; see `deploy/` |
+| LLM | OpenAI chat, no change | Profiles: `groq` (GPT-OSS-20B) or `luna` (GPT-6 Luna); `FISH_LLM_PROFILE` |
