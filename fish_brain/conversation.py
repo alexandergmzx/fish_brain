@@ -222,8 +222,7 @@ class FishConversation:
     def run(self) -> None:
         print("Conversation ready. (Ctrl-C or 'salir' to quit.)", flush=True)
         if self._should_welcome():
-            canned.play(self.cfg.canned.welcome, self.link, self.cfg,
-                        player=self.player, viz=self.viz)
+            self._apologize(self.cfg.canned.welcome)   # guarded: a dead speaker must not end us
         clean = False
         try:
             while True:
@@ -240,5 +239,4 @@ class FishConversation:
                 self.button.close()
             # Say goodbye when asked to stop, not when something broke on the way out.
             if clean and self.cfg.canned.enabled and self.cfg.canned.goodbye:
-                canned.play(self.cfg.canned.goodbye, self.link, self.cfg,
-                            player=self.player, viz=self.viz)
+                self._apologize(self.cfg.canned.goodbye)

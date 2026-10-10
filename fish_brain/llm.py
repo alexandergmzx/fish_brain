@@ -17,9 +17,14 @@ class Conversation:
     def __init__(self, cfg: LLMConfig):
         self.cfg = cfg
         import openai  # lazy import so --text/--dry-run without the key is fine
+        # Never let the SDK pick a key by itself: with none given it would fall back to
+        # OPENAI_API_KEY and send it to whichever service this profile points at.
+        key = os.environ.get(cfg.api_key_env or "", "").strip()
+        if not key:
+            raise cloud.CloudMisconfigured(f"{cfg.api_key_env} is not set (put it in .env)")
         self._client = openai.OpenAI(
             base_url=cfg.base_url or None,           # None -> api.openai.com
-            api_key=os.environ.get(cfg.api_key_env),
+            api_key=key,
             # A bare float would also stretch the connect timeout; keep that one short so a
             # dead hotspot fails in seconds.
             timeout=openai.Timeout(cfg.timeout_s, connect=3.0),
@@ -70,8 +75,9 @@ class Conversation:
         from openai import APIError, BadRequestError  # APIError: connection/timeout/status
         self.last_error, self.last_usage = None, None
         t0 = time.monotonic()
-        if not cloud.is_online():
-            # Known offline: answer at once instead of waiting out the timeout.
+        if not self.cfg.base_url and not cloud.is_online():
+            # Known offline: answer at once instead of waiting out the timeout. The probe
+            # watches api.openai.com, so it only speaks for profiles hosted there.
             self.last_error = "offline"
             print(f"[llm] {self.cfg.profile} offline", file=sys.stderr)
             return self.cfg.fallback_reply

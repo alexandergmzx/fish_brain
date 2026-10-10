@@ -67,6 +67,7 @@
   // Leaving the page while holding (phone locks, tab switch) must still release: a normal
   // fetch can be cancelled as the page hides, a beacon is not.
   function releasePttNow() {
+    needRelease = false;
     if (!pttDown) return;
     pttDown = false;
     pttButton.classList.remove("recording");
@@ -84,11 +85,17 @@
   });
   // The host can end a press itself (recording limit reached): follow it, or the next
   // press would be ignored as "already down".
+  // After the host ends a press, a key that is still physically down keeps auto-repeating;
+  // those repeats must not count as a new press until the key has really been released.
+  let needRelease = false;
   function hostReleasedPtt() {
+    if (pttDown) needRelease = true;
     pttDown = false;
     pttButton.classList.remove("recording");
   }
   function setPtt(down) {
+    if (!down) needRelease = false;            // a real release (before the edge check)
+    else if (needRelease) return;
     if (down === pttDown) return;              // edges only (keydown auto-repeats)
     pttDown = down;
     pttButton.classList.toggle("recording", down);

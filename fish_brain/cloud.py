@@ -146,6 +146,10 @@ def guard():
             raise e
         if isinstance(e, openai.OpenAIError):
             raise classify(e) from e
+        import httpx
+        if isinstance(e, httpx.TransportError):     # the connection died while reading a body
+            mark_offline()
+            raise CloudUnavailable(f"{type(e).__name__}: {e}") from e
         raise
 
 

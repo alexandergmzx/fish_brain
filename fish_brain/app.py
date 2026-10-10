@@ -81,6 +81,14 @@ def main(argv: list[str] | None = None) -> int:
         cfg.tts.backend = args.tts
     if args.transport:
         cfg.serial.transport = args.transport
+    if cfg.serial.transport.strip().lower() not in ("serial", "bridge"):
+        print(f"Configuration problem: unknown transport {cfg.serial.transport!r} "
+              f"(FISH_SERIAL_TRANSPORT: serial or bridge)", file=sys.stderr)
+        return 78
+    if cfg.tts.backend not in ("loq", "openai"):
+        print(f"Configuration problem: unknown TTS backend {cfg.tts.backend!r} "
+              f"(FISH_TTS_BACKEND: loq or openai)", file=sys.stderr)
+        return 78
 
     # A stop request from a service manager should end like Ctrl-C: goodbye, then STOP.
     def _on_sigterm(_signum, _frame):
