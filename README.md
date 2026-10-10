@@ -116,7 +116,27 @@ To find a remote's device and key: `python -m fish_brain.evdev_button --list`, t
 ## Run on the UNO Q
 
 The board runs the same program with a different `.env`. Full steps, and which of them need
-`sudo`, are in [`deploy/README.md`](deploy/README.md). In short, on the board:
+`sudo`, are in [`deploy/README.md`](deploy/README.md).
+
+**Status (2026-10-10).** Checked on the board: USB speaker and microphone, Loquendo, flashing
+the MCU, and the raw link to it. Not run there yet: fish_brain itself (the Python environment
+needs an `apt` step first), the service, and anything with motors. Measurements are in
+[`docs/results/`](docs/results/).
+
+### Hardware
+
+| Part | Notes |
+|---|---|
+| Power | A power bank into the hub's power input, the hub's cable into the board. **The cable matters**: with one cable the board stayed in USB device mode and saw nothing on the hub; with a newer one it became the host at once. Check with `cat /sys/class/typec/port0/data_role` (want `[host]`) and `lsusb` |
+| Speaker | Any USB speaker. The one tested is playback-only and also has media keys |
+| Microphone | Any USB microphone (tested: RedOctane USB Microphone) |
+| Push-to-talk | A button on an input device (`FISH_PTT_DEVICE`), or the page opened from a phone |
+
+PipeWire picks a USB speaker and microphone as the defaults by itself. Volume:
+`wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0`. At 40 % the tested speaker was too quiet for
+the microphone to hear; at 100 % it was loud and clear.
+
+### Install and run
 
 ```bash
 git clone https://github.com/alexandergmzx/fish_brain ~/fish_brain && cd ~/fish_brain
@@ -127,12 +147,47 @@ tools/unoq_checks.sh              # what the board sees: USB, audio, input devic
 journalctl --user -u fish-brain -f
 ```
 
-- The motor MCU is on `/dev/ttyHS1`, which the board's `arduino-router` holds. The program
-  asks the router to release it and gives it back on exit. No udev rule is needed.
-- `tools/sketches/` has two small MCU test sketches and `tools/uart_check.py` measures the
-  link with them. They are not the fish firmware.
-- Without a screen, a turn is triggered by a remote's button (`FISH_PTT_DEVICE`) or the page
-  opened from a phone (`--viz` with `FISH_VIZ_HOST=0.0.0.0`).
+`tools/unoq_checks.sh --mic CARD --speaker CARD` records and plays back; `--keys` finds a
+button's device and key name; `--stress` is a 10-minute load test.
+
+### Voice
+
+Loquendo runs on the board under Hangover Wine: about 0.75 s for a short sentence once its
+daemon is warm (`loq --start`), about 8 s without the daemon. The board's example `.env`
+uses it (`FISH_TTS_BACKEND=loq`, `FISH_LOQ_BIN` with the full path, because a service does
+not have `~/.local/bin` on its path). `FISH_TTS_BACKEND=openai` is the alternative.
+
+Speech-to-text on the board is set to a cloud backend: the local `small` model is expected
+to be far too slow on this CPU (not measured).
+
+### The motor MCU
+
+- The MCU is on `/dev/ttyHS1`, which the board's `arduino-router` holds. The program asks
+  the router to release it and gives it back on exit; the router keeps running. No udev
+  rule is needed. By hand:
+  `arduino-router-cli '$/serial/close' /dev/ttyHS1` and `'$/serial/open' /dev/ttyHS1`.
+- Sketches are compiled and flashed on the board itself, with the router running and no
+  password:
+
+  ```bash
+  arduino-cli compile -b arduino:zephyr:unoq tools/sketches/uart_echo   # about a minute
+  arduino-cli upload  -b arduino:zephyr:unoq tools/sketches/uart_echo
+  ```
+
+- [`tools/sketches/`](tools/sketches/) has two test sketches; they are **not** the fish
+  firmware. `uart_echo` answers every line with `ACK <line>`, blinks the MCU's blue LED once
+  a second and flips the green one on each line. It answered 100 of 100 lines at about
+  4 ms each. `bridge_echo` is the same idea through the router (`FISH_SERIAL_TRANSPORT=bridge`)
+  and has not been flashed.
+- `tools/uart_check.py --release-router` runs a longer test at the fish's line rate.
+- Firmware that drives motors from this MCU does not exist yet.
+
+### No screen
+
+A turn is triggered by a button on an input device (`FISH_PTT_DEVICE`, `FISH_PTT_KEY`,
+`FISH_PTT_MODE`) or by the page opened from a phone (`--viz` with `FISH_VIZ_HOST=0.0.0.0`
+and a `FISH_VIZ_TOKEN`). With neither, the program stops with exit status 78 instead of
+restarting forever.
 
 ## Calibration
 
