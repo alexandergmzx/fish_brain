@@ -101,6 +101,9 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_MIC_SOURCE`, `FISH_MIC_DEVICE`, `FISH_SPEAKER_DEVICE` | system default | PipeWire source name; or a device number or part of its name |
 | `FISH_VIZ_HOST`, `FISH_VIZ_PORT`, `FISH_VIZ_TOKEN` | `127.0.0.1`, `8723`, none | Where the page listens; with a token, open it as `/?token=...` |
 | `FISH_VIZ_TRUST_LOCAL` | `false` | `true`: requests from the machine itself need no token (the board's own display) |
+| `FISH_VIZ_TLS_CERT`, `FISH_VIZ_TLS_KEY` | empty | Plain http only. Both set: a second, HTTPS listener for the same page (the phone's microphone needs https); a bad path exits 78 |
+| `FISH_VIZ_TLS_PORT` | `8724` | Port of the HTTPS listener, bound to `FISH_VIZ_HOST` |
+| `FISH_SAY_ADDRESS` | `false` | `true`: after the welcome the fish says the last two octets of its IP (only when bound to `0.0.0.0`) |
 | `FISH_KIOSK_MODE`, `FISH_KIOSK_OUTPUT` | empty | Board display: force a mode such as `1280x720`, pick an output; see `deploy/README.md` |
 | `FISH_LINK_LOG` | empty | A file that records every line sent to the MCU and every byte read back |
 | `FISH_VOICE_QUIT` | `true` | Saying "salir" ends the program |
