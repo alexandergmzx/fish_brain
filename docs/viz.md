@@ -17,7 +17,8 @@ mouth looks different when the neck is also out; sprites are named
 (see `web/img/README.md`). Bubbles draw on top. Because the greeting plays before any browser
 connects, `viz.py` **replays the last `speak` event to a browser that connects within 30 s**, so
 the on-screen fish still performs the greeting. The host also plays the audio when present
-(double audio is intentional) so the fish animates even in `--dry-run` (no hardware).
+(double audio is intentional on the laptop; the console on a phone is muted) so the fish
+animates even in `--dry-run` (no hardware).
 
 The page also has a **mic picker + level meter**. Recording is host-side, so the browser can't use
 its own devices; instead `GET /mics` enumerates the host's input devices and `POST /mic
@@ -70,7 +71,47 @@ EOF (`--text`), or Ctrl-C quit.
   `off`), internet, backends, and whether the speaker is registered. Never a key or a token.
 - **`FISH_VIZ_TRUST_LOCAL=true`** lets POSTs from 127.0.0.1 through without the token.
 - `fish_brain/kiosk.py` and `web/wait.html` put the page on the board's display; see
-  `deploy/README.md`.
+  `deploy/README.md` (parked since ADR 0006: the page runs on the operator's phone).
+
+## Console view (2026-10-11)
+
+- **`/?console=1&token=<value>`** is the operator's view on a phone in portrait (ADR 0006): the
+  fish at about 30 vh, the round hold target under it, and a strip along the bottom that is
+  always visible. The console implies the kiosk layout and shares its pointer handlers, its
+  state machine and the operator sheet; the laptop in landscape gets the same three rows.
+- **The strip** shows, in words: the link (`pez conectado` / `pez callado` / `sin pez`), the
+  internet, the microphone source (`mic del tablero` or `mic del teléfono`, with the ptt
+  summary and `espera activada` when wait-to-speak is on), and `escuchando` while
+  `/status.listening` is true (polled every 3 s) or while `level` events arrive; then the
+  two transcript lines (heard, reply) in readable type and a gear that opens the sheet in one
+  tap. The five corner taps still work. An unreachable `/status` reads `sin respuesta del
+  cerebro`.
+- **Hidden in the console**: the mic picker row (with the meter), the sensitivity slider, the
+  WAV test row, the bubbles toggle and `Sonido en navegador`. The console is muted and draws
+  no bubbles: the fish speaks on the board, the phone shows. `Esperar para hablar` and the
+  text box stay in the sheet.
+- **The token leaves the address bar.** A `?token=` in the URL is stored in `sessionStorage`
+  (`fishToken`) and removed with `history.replaceState`, the other parameters kept; a reload
+  keeps it, a new tab needs the link again. With a token set, `GET /events` and
+  `GET /audio/<n>.wav` need it too: the stream opens as `/events?token=…`, the audio fetch
+  sends `X-Fish-Token`, the release beacon keeps the query form (a beacon has no headers).
+- **Heartbeat and watchdog.** The stream sends `retry: 2000` and then `{"type":"hb"}` every
+  10 s of silence. The page notes the time of the last message (heartbeats count); when
+  nothing arrived for 25 s it closes the `EventSource` and opens a new one, and does the same
+  on `pageshow` and on becoming visible when the stream is stale or closed. A phone that slept
+  or changed network comes back without a reload: the dot goes red, then green.
+- **`age_ms` on a replayed `speak`.** A `speak` replayed to a page that connects within 30 s
+  carries `age_ms`, the milliseconds since it was announced (`0` when live). The mouth track
+  and the gestures start that far in, so a mid-phrase reconnect animates the remainder; a
+  reply older than its `duration_ms` neither enters `speaking` nor plays, so a reconnecting
+  page never refuses presses for a reply that has already ended.
+- **Lightness.** The connection dot breathes on `opacity` and `transform`, never on
+  `box-shadow`. The console draws at 20 frames a second and, while nothing moves (no mouth
+  track, mouth closed, no gesture, no bubbles), draws the resting pose once and then polls
+  every 250 ms instead of asking for animation frames; a `speak`, a `level` or a gesture wakes
+  it. The hold target keeps its breathing and its spring states throughout.
+- In kiosk and console a non-passive `touchstart` cancels the touch default on the target
+  (the iOS loupe on a long press); the pointer handlers are untouched.
 
 ## Rule for anyone changing the page
 

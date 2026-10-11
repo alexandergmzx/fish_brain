@@ -18,6 +18,16 @@
 
         <button id="pttButton" type="button">🎤 Mantén para hablar <small>(o barra espaciadora)</small></button>
 
+        <!-- Operator console (/?console=1): the strip under the talk target, always visible. -->
+        <div id="consoleBar" hidden>
+            <div class="c-status" role="status" aria-live="polite">
+                <span id="cLink">…</span><span id="cNet"></span><span id="cMic"></span><span id="cListen"></span>
+            </div>
+            <p class="c-heard"><span class="t-tag">🗣️</span> <span id="cHeard">…</span></p>
+            <p class="c-reply"><span class="t-tag">🐟</span> <span id="cReply">…</span></p>
+            <button id="consoleGear" type="button" aria-label="Ajustes" title="Ajustes">⚙</button>
+        </div>
+
         <div class="controls">
             <div class="slider-container">
                 <label for="sensitivity">Sensibilidad: <span id="sensitivityValue">2.5</span></label>
@@ -38,8 +48,8 @@
                 <button id="speakBtn" type="button">🗣️ Hablar</button>
             </div>
             <div class="toggles">
-                <label><input type="checkbox" id="toggleBubbles" checked> Burbujas</label>
-                <label><input type="checkbox" id="toggleAudio"> Sonido en navegador</label>
+                <label class="c-hide"><input type="checkbox" id="toggleBubbles" checked> Burbujas</label>
+                <label class="c-hide"><input type="checkbox" id="toggleAudio"> Sonido en navegador</label>
                 <label><input type="checkbox" id="toggleWait"> Esperar para hablar</label>
             </div>
             <div class="file-row">
