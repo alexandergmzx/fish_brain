@@ -4,11 +4,13 @@ Hold a key to record from the mic; release to stop. Writes a mono WAV and return
 We prefer 16 kHz (what faster-whisper uses), but fall back to the device's native rate if it
 rejects 16 kHz — faster-whisper resamples to 16 kHz internally, so any WAV rate works.
 
-Three ways to say "talk now":
+Two ways to say "talk now":
 - `record_hold`: a keyboard key via `pynput` (needs a display), else Enter-to-toggle in a
   terminal (never without a TTY: a service has no stdin to read).
 - `record_multi`: any number of button-like sources (the browser's hold-to-talk button, a
-  remote's button via evdev). Recording starts on a fresh press of any of them.
+  remote's button via evdev). Recording starts on a fresh press of any of them. An optional
+  inbox (a zero-argument callable) can hand it an input item from the page instead; the wait
+  ends with that item and no microphone is opened.
 """
 from __future__ import annotations
 
@@ -221,17 +223,32 @@ _cut_last = False   # the previous recording hit max_record_s; wait for a releas
 
 
 def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
-                 on_level: Callable[[float], None] | None = None) -> Path:
+                 on_level: Callable[[float], None] | None = None,
+                 inbox: Callable[[], object] | None = None) -> Path | object:
     """Record while any of `sources` is held; returns the WAV path.
 
     Starts only on a fresh press: a source that already reads "held" when we begin waiting
     (a lost release, a tap while the fish was talking) must be released first. A recording
     longer than `cfg.max_record_s` is cut, and every source is then reset so a stuck button
     cannot start one recording after another.
+
+    `inbox()` is polled while waiting; the first item it returns (anything but None) is
+    returned as the turn's input instead of a recording. With no sources, the inbox is the
+    only trigger.
     """
     global _cut_last
-    if not sources:
+    if not sources and inbox is None:
         raise PTTUnavailable("no push-to-talk source configured")
+
+    def from_inbox():
+        return inbox() if inbox is not None else None
+
+    if not sources:
+        while True:                    # short sleeps keep Ctrl-C prompt
+            item = from_inbox()
+            if item is not None:
+                return item
+            time.sleep(0.02)
 
     def any_held() -> bool:
         return any(s.is_held() for s in sources)
@@ -244,9 +261,15 @@ def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
             for s in sources:
                 s.reset()
             while any_held():
+                item = from_inbox()
+                if item is not None:
+                    return item
                 time.sleep(0.02)
         _cut_last = False
         while not any_held():
+            item = from_inbox()
+            if item is not None:
+                return item
             time.sleep(0.02)
         t0 = time.monotonic()
 
@@ -264,12 +287,6 @@ def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
     finally:
         for s in sources:
             s.arm(False)
-
-
-def record_web(cfg: PTTConfig, is_held: Callable[[], bool],
-               on_level: Callable[[float], None] | None = None) -> Path:
-    """Record while one button-like predicate is true (kept for callers with a bare predicate)."""
-    return record_multi(cfg, [ButtonSource(is_held, name="web")], on_level)
 
 
 def _record_enter_toggle(cfg: PTTConfig,
