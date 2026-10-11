@@ -434,7 +434,11 @@
 
   // ---- main loop ---------------------------------------------------------
   let last = performance.now();
+  // On the board's own display the browser shares four small cores with the voice: draw
+  // the visitor view at about 24 frames a second instead of the display's 60.
+  const FRAME_MIN_MS = KIOSK ? 1000 / (Number(PARAMS.get("fps")) || 24) - 3 : 0;
   function frame(now) {
+    if (now - last < FRAME_MIN_MS) { requestAnimationFrame(frame); return; }
     let dt = (now - last) / 1000;
     last = now;
     if (dt > 0.05) dt = 0.05;
@@ -444,7 +448,11 @@
     if (activeGestures.length) activeGestures = activeGestures.filter((g) => now < g.end + 50);
     updateBubbles(dt);
 
-    try { draw(now); drawMicMeter(); } catch (e) { console.error("draw frame error:", e); }
+    try {
+      draw(now);
+      // The meter is behind the operator corner in the visitor view.
+      if (!KIOSK || document.documentElement.classList.contains("ops-open")) drawMicMeter();
+    } catch (e) { console.error("draw frame error:", e); }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
