@@ -32,13 +32,13 @@ data when warranted.
 | Item | State |
 |---|---|
 | Laptop fish (Billy Bass #1, Uno R4) | Working since June 2026 |
-| `braintip`: software for the UNO Q | Installed on the board (`~/fish_brain`, venv). 2026-10-11: `--say` spoke there with the local voice through the app's own audio path. No conversation yet: the board has no `.env`, no unit, linger off |
+| `braintip`: software for the UNO Q | Runs on the board as `fish-brain.service` with linger since 2026-10-11: boots alone, welcome, real turns from the touch display (`stt=openai llm=luna tts=loq`), about 4.3 s from release to voice on the home Wi-Fi. Not yet on the hotspot |
 | Board: hub, USB speaker, RedOctane microphone | Working on a power bank. Speaker to microphone loop checked |
 | Board: Loquendo | Works; about 0.75 s per short sentence with the daemon warm |
 | Board: MCU firmware | Big_mouth `braintip` (`unoq/BigMouthQ`) flashed 2026-10-11, no drivers attached: protocol transcript 122 of 122, pulses within 1 ms, 9,999 of 9,999 lines in a soak. LED matrix mirrors the nine L298 signals. PWM measured good on D3, D5, D6 |
 | Board: bring-up script | `tools/unoq_bringup.sh`: all tests passed 2026-10-11 |
 | Board: local speech-to-text | Slow: `tiny` 3.5 to 4.8 s, `base` 8 s, `small` 20 to 23 s per turn |
-| Board: push-to-talk | The touch display's hold-to-talk (ADR 0005); the page on a phone as spare. Kiosk files installed; the LightDM root file is the owner's step |
+| Board: push-to-talk | The touch display's hold-to-talk in a kiosk session (ADR 0005), working; the page on a phone as spare |
 | Board: HDMI touch display | Works when it has its own power and is on before the board (2 of 2 cold boots); not on the shared power bank |
 | Motors on the UNO Q (L298N), Billy Bass #2 calibration | Not started. Before wiring: 10 k pull-downs on D6, D3, D5 and on D7, D8 (D8 is pulled high in reset) |
 | Fair | **2026-10-17**. Billy Bass #2 first; the Sorting Hat only if it arrives |
