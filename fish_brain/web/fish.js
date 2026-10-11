@@ -58,11 +58,25 @@
   // button (mouse/touch) or the spacebar, so you don't need terminal focus or pynput.
   // When the host sets FISH_VIZ_TOKEN, open the page as /?token=... and every POST carries it.
   const PARAMS = new URLSearchParams(location.search);
-  const TOKEN = PARAMS.get("token") || "";
+  // The token leaves the address bar (history, screenshots, a shared link) and lives in
+  // sessionStorage for this tab; a reload keeps it, a new tab needs the link again.
+  let TOKEN = PARAMS.get("token") || "";
+  if (TOKEN) {
+    try { sessionStorage.setItem("fishToken", TOKEN); } catch (_) {}
+    PARAMS.delete("token");
+    const qs = PARAMS.toString();
+    try { history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash); } catch (_) {}
+  } else {
+    try { TOKEN = sessionStorage.getItem("fishToken") || ""; } catch (_) {}
+  }
+  const tokenQuery = () => (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : "");
   // Visitor view for a touch display (/?kiosk=1): fish and one talk target, the rest behind
-  // an operator corner. The default page is unchanged.
-  const KIOSK = PARAMS.get("kiosk") === "1";
+  // an operator corner. The operator console (/?console=1) is the same machine on a phone in
+  // portrait: the kiosk layout plus a status strip, muted. The default page is unchanged.
+  const CONSOLE = PARAMS.get("console") === "1";
+  const KIOSK = PARAMS.get("kiosk") === "1" || CONSOLE;
   if (KIOSK) document.documentElement.classList.add("kiosk");
+  if (CONSOLE) document.documentElement.classList.add("console");
   if (KIOSK && PARAMS.get("lite") === "1") document.documentElement.classList.add("lite");
   function jsonHeaders() {
     const h = { "Content-Type": "application/json" };
@@ -77,7 +91,7 @@
     if (!pttDown) return;
     pttDown = false;
     pttButton.classList.remove("recording");
-    const url = "/ptt" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : "");
+    const url = "/ptt" + tokenQuery();         // a beacon carries no header: the query form
     const body = new Blob([JSON.stringify({ down: false })], { type: "application/json" });
     if (!(navigator.sendBeacon && navigator.sendBeacon(url, body))) {
       fetch(url, { method: "POST", headers: jsonHeaders(), body: JSON.stringify({ down: false }),
@@ -117,6 +131,10 @@
     pttButton.addEventListener("touchend", (e) => { e.preventDefault(); setPtt(false); });
     pttButton.addEventListener("touchcancel", () => setPtt(false));
     window.addEventListener("mouseup", () => setPtt(false));   // release anywhere, not just on the button
+  } else {
+    // A long press on iOS raises the text loupe over the target; pointer events still
+    // fire with the touch default cancelled, so the hold below is untouched.
+    pttButton.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
   }
   const typingTag = (t) => t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName);
   // X11/Linux auto-repeat fires keyup+keydown PAIRS while a key is held, which would flap the
@@ -233,6 +251,7 @@
       images.set(name, img);
       anyLoaded = true;
       if (!baseW) { baseW = img.naturalWidth; baseH = img.naturalHeight; }
+      wakeDraw();                         // a dozing console must show the new pose
     };
     img.onerror = () => { /* missing PNG: skip silently */ };
     img.src = "/img/" + name;
@@ -262,7 +281,7 @@
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     return audioCtx;
   }
-  async function playBuffer(arrayBuffer) {
+  async function playBuffer(arrayBuffer, offsetS = 0) {
     const actx = ensureCtx();
     if (actx.state === "suspended") await actx.resume();
     const buf = await actx.decodeAudioData(arrayBuffer);
@@ -274,17 +293,19 @@
     src.buffer = buf;
     src.connect(analyser);
     if (toggleAudio.checked) analyser.connect(actx.destination);
-    src.start(0);
+    src.start(0, Math.max(0, offsetS));
     currentSource = src;
     playing = true;
     src.onended = () => { if (currentSource === src) { playing = false; mouthTarget = 0; } };
   }
   // Mouth envelope sent with the reply: [[t_ms, level0to1], ...] on the browser's own clock.
   let mouthTrackData = null, mouthClock = 0, mouthTrackEnd = 0;
-  function startMouthTrack(track) {
-    if (track && track.length) {
+  // ageMs: how long ago the host announced the reply (a replay to a page that just
+  // connected); the track starts that far in, so a mid-phrase reconnect animates the rest.
+  function startMouthTrack(track, ageMs = 0) {
+    if (track && track.length && ageMs <= track[track.length - 1][0]) {
       mouthTrackData = track;
-      mouthClock = performance.now();
+      mouthClock = performance.now() - ageMs;
       mouthTrackEnd = track[track.length - 1][0];
     } else {
       mouthTrackData = null;
@@ -301,12 +322,17 @@
     return lvl;
   }
   async function handleSpeak(ev) {
-    scheduleGestures(ev.gestures || []);
-    startMouthTrack(ev.mouth || null);        // drives the mouth even with sound off
-    if (!toggleAudio.checked) return;         // sound off: envelope is enough; skip audio
+    const age = Math.max(0, Number(ev.age_ms) || 0);   // 0 live; replayed: time already gone
+    scheduleGestures(ev.gestures || [], age);
+    startMouthTrack(ev.mouth || null, age);   // drives the mouth even with sound off
+    wakeDraw();
+    if (age > (ev.duration_ms || 0)) return;  // an old reply: nothing left to hear
+    if (!toggleAudio.checked || CONSOLE) return;  // sound off, or the console (always muted)
     try {
-      const resp = await fetch(ev.audio);
-      await playBuffer(await resp.arrayBuffer());
+      const headers = TOKEN ? { "X-Fish-Token": TOKEN } : {};
+      const resp = await fetch(ev.audio, { headers });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      await playBuffer(await resp.arrayBuffer(), age / 1000);
     } catch (e) { console.error("speak audio failed:", e); }
   }
   function sampleMouth(now) {
@@ -328,9 +354,10 @@
   // the head can stay open across words/sentences. We track those as a baseline timeline.
   let activeGestures = [];          // {channel, start, end} transient windows
   let neckBaseline = [];            // {start, out} hold/return transitions (sorted by start)
-  function scheduleGestures(list) {
+  function scheduleGestures(list, ageMs = 0) {
     const now = performance.now();
     pruneNeckBaseline(now);
+    const base = now - ageMs;         // a replayed reply started ageMs ago
     for (const [tMs, channel, body] of list) {
       const ch = String(channel).toUpperCase();
       const nums = String(body).trim().split(/\s+/).map(Number);
@@ -339,7 +366,7 @@
         total += nums[i + 1] || 0;
         if (nums[i] > 0) hasPos = true; else if (nums[i] < 0) hasNeg = true;
       }
-      const start = now + tMs;
+      const start = base + tMs;
       if (ch === "NECK" && hasPos !== hasNeg) {
         // single-direction stroke -> hold-open / return baseline transition
         neckBaseline.push({ start, out: hasPos });
@@ -436,13 +463,42 @@
   // ---- main loop ---------------------------------------------------------
   let last = performance.now();
   // On the board's own display the browser shares four small cores with the voice: draw
-  // the visitor view at about 24 frames a second instead of the display's 60.
-  const FRAME_MIN_MS = KIOSK ? 1000 / (Number(PARAMS.get("fps")) || 24) - 3 : 0;
+  // the visitor view at about 24 frames a second instead of the display's 60. The console
+  // runs on a phone that is also the hotspot: 20 a second, and none at all while the fish
+  // is still (then a 250 ms poll stands in for requestAnimationFrame until something moves).
+  const FRAME_MIN_MS = KIOSK ? 1000 / (Number(PARAMS.get("fps")) || (CONSOLE ? 20 : 24)) - 3 : 0;
+  let dozing = false, dozeTimer = null, stillDrawn = false;
+  function nothingMoves(now) {
+    if (mouthTrackData || playing || mouth.value >= 0.01 || bubbles.length) return false;
+    if (activeGestures.length) return false;
+    for (const e of neckBaseline) if (e.start > now) return false;   // a neck move is due
+    return true;
+  }
+  function wakeDraw() {                        // something changed: back to animation frames
+    stillDrawn = false;
+    if (!dozing) return;
+    dozing = false;
+    clearTimeout(dozeTimer);
+    last = performance.now();
+    requestAnimationFrame(frame);
+  }
   function frame(now) {
-    if (now - last < FRAME_MIN_MS) { requestAnimationFrame(frame); return; }
+    if (!dozing && now - last < FRAME_MIN_MS) { requestAnimationFrame(frame); return; }
     let dt = (now - last) / 1000;
     last = now;
     if (dt > 0.05) dt = 0.05;
+
+    if (CONSOLE && nothingMoves(now)) {
+      if (!stillDrawn) {                       // draw the resting pose once, then doze
+        try { draw(now); } catch (e) { console.error("draw frame error:", e); }
+        stillDrawn = true;
+      }
+      dozing = true;
+      dozeTimer = setTimeout(() => frame(performance.now()), 250);
+      return;
+    }
+    dozing = false;
+    stillDrawn = false;
 
     mouthTarget = sampleMouth(now);
     step(mouth, mouthTarget, dt);
@@ -451,8 +507,8 @@
 
     try {
       draw(now);
-      // The meter is behind the operator corner in the visitor view.
-      if (!KIOSK || document.documentElement.classList.contains("ops-open")) drawMicMeter();
+      // The meter is behind the operator corner in the visitor view, and hidden in the console.
+      if (!KIOSK || (!CONSOLE && document.documentElement.classList.contains("ops-open"))) drawMicMeter();
     } catch (e) { console.error("draw frame error:", e); }
     requestAnimationFrame(frame);
   }
@@ -478,11 +534,18 @@
     label.id = "kioskHint";
     pttButton.textContent = "";
     pttButton.appendChild(label);
-    const say = document.createElement("div");
-    say.id = "kioskSay";
-    say.innerHTML = '<p id="kioskHeard"></p><p id="kioskReply"></p>';
-    document.querySelector(".stage-wrap").appendChild(say);
-    const heard = say.querySelector("#kioskHeard"), reply = say.querySelector("#kioskReply");
+    // Transcript lines: over the fish in the kiosk, in the bottom strip in the console.
+    let heard, reply;
+    if (CONSOLE) {
+      heard = document.getElementById("cHeard");
+      reply = document.getElementById("cReply");
+    } else {
+      const say = document.createElement("div");
+      say.id = "kioskSay";
+      say.innerHTML = '<p id="kioskHeard"></p><p id="kioskReply"></p>';
+      document.querySelector(".stage-wrap").appendChild(say);
+      heard = say.querySelector("#kioskHeard"); reply = say.querySelector("#kioskReply");
+    }
 
     let online = false, state = "", pressedAt = 0, lastLevel = 0, speakUntil = 0;
     let thinkTimer = null;
@@ -550,29 +613,71 @@
     opsStatus.id = "opsStatus";
     document.querySelector(".controls").prepend(opsStatus);
     let taps = [], opsTimer = null, opsPoll = null;
+    // The console strip: what the operator reads between turns, in words, not meters.
+    const strip = {
+      link: document.getElementById("cLink"), net: document.getElementById("cNet"),
+      mic: document.getElementById("cMic"), ear: document.getElementById("cListen"),
+    };
+    const LINK_WORD = { ok: "pez conectado", silent: "pez callado", off: "sin pez" };
+    function paintStrip(st) {
+      if (!CONSOLE) return;
+      if (!st) {
+        strip.link.textContent = "sin respuesta del cerebro";
+        strip.link.className = "bad";
+        strip.net.textContent = ""; strip.mic.textContent = ""; strip.ear.textContent = "";
+        return;
+      }
+      const health = (st.link || {}).health || "";
+      strip.link.textContent = LINK_WORD[health] || ("enlace " + (health || "?"));
+      strip.link.className = health === "ok" ? "good" : "bad";
+      strip.net.textContent = st.online === undefined ? "internet ?" : st.online ? "internet" : "sin internet";
+      strip.net.className = st.online ? "good" : "bad";
+      const b = st.backends || {};
+      const cap = st.mic_capture === "browser" ? "mic del teléfono" : "mic del tablero";
+      strip.mic.textContent = cap + (b.ptt ? " · " + b.ptt : "") + (st.wait ? " · espera activada" : "");
+      strip.mic.className = "";
+      strip.ear.textContent = st.listening ? "escuchando" : "";
+      strip.ear.className = st.listening ? "ear" : "";
+    }
     async function refreshStatus() {
       try {
         const st = await (await fetch("/status", { cache: "no-store" })).json();
         const link = st.link || {};
         const b = st.backends || {};
         opsStatus.textContent =
-          `${st.host}  ${st.ip}  up ${st.up_s}s\n` +
+          `${st.host}  ${st.ip}  up ${st.up_s}s${st.tls ? "  https" : ""}\n` +
           `link: ${link.desc || "?"}  [${link.health || "?"}]\n` +
           `internet: ${st.online === undefined ? "?" : st.online ? "ok" : "OFFLINE"}` +
-          `   ready: ${st.ready ? "yes" : "no"}${st.wait ? "   WAIT-TO-SPEAK ON" : ""}\n` +
-          `stt ${b.stt || "?"}  llm ${b.llm || "?"}  tts ${b.tts || "?"}\nptt ${b.ptt || "?"}`;
+          `   ready: ${st.ready ? "yes" : "no"}${st.wait ? "   WAIT-TO-SPEAK ON" : ""}` +
+          `${st.listening ? "   listening" : ""}\n` +
+          `stt ${b.stt || "?"}  llm ${b.llm || "?"}  tts ${b.tts || "?"}\nptt ${b.ptt || "?"}` +
+          `${st.mic_capture ? "  mic " + st.mic_capture : ""}` +
+          `${st.max_record_s ? "  max " + st.max_record_s + "s" : ""}`;
+        paintStrip(st);
       } catch (_) {
         opsStatus.textContent = "sin respuesta del pez (fish-brain)";
+        paintStrip(null);
       }
     }
     function ops(open) {
       root.classList.toggle("ops-open", open);
       clearTimeout(opsTimer); clearInterval(opsPoll);
       if (open) {
-        refreshStatus(); loadMics();
-        opsPoll = setInterval(refreshStatus, 2000);
+        refreshStatus(); if (!CONSOLE) loadMics();
+        if (!CONSOLE) opsPoll = setInterval(refreshStatus, 2000);   // the console polls anyway
         opsTimer = setTimeout(() => ops(false), 45000);
       }
+    }
+    if (CONSOLE) {
+      // Muted and without bubbles: the phone shows, the fish speaks.
+      toggleAudio.checked = false;
+      toggleBubbles.checked = false;
+      refreshStatus();
+      setInterval(refreshStatus, 3000);
+      document.getElementById("consoleGear").addEventListener("click", (e) => {
+        e.preventDefault();
+        ops(!root.classList.contains("ops-open"));
+      });
     }
     corner.addEventListener("pointerdown", (e) => {
       e.preventDefault();
@@ -588,6 +693,7 @@
       event(ev) {
         if (ev.type === "level") {
           lastLevel = performance.now();
+          if (CONSOLE) strip.ear.textContent = "escuchando";
           if (pttDown) {
             show("listening");
             pttButton.style.setProperty("--lvl", Math.min(1, ev.rms * 12).toFixed(3));
@@ -604,9 +710,11 @@
           }
         } else if (ev.type === "speak") {
           clearTimeout(thinkTimer);
-          speakUntil = performance.now() + (ev.duration_ms || 0) + 300;
+          const left = (ev.duration_ms || 0) - Math.max(0, Number(ev.age_ms) || 0);
+          if (left < 0) { settle(); return; }    // a replay of a reply that already ended
+          speakUntil = performance.now() + left + 300;
           show("speaking");
-          setTimeout(() => { if (!pttDown) settle(); }, (ev.duration_ms || 0) + 350);
+          setTimeout(() => { if (!pttDown) settle(); }, left + 350);
         }
       },
     };
@@ -618,22 +726,61 @@
     statusEl.textContent = text;
     if (KIOSK) kiosk.conn(state === "live");
   }
+  // The host sends {"type":"hb"} every 10 s of silence. A phone that slept, changed network
+  // or lost the hotspot can keep a dead EventSource open for minutes: if nothing (not even
+  // a heartbeat) arrived for STALE_MS, drop it and open a new one; the same on coming back.
+  // The watchdog arms only once this stream has sent one heartbeat: a host that only sends
+  // SSE comments (which never reach onmessage) must not be judged stale every 25 s.
+  const STALE_MS = 25000;
+  let es = null, lastMsgAt = 0, hbSeen = false;
+  // A reconnect within 30 s of a reply gets that reply again. The host marks it with age_ms;
+  // when it does not, the audio URL (unique per reply) tells it apart and the age is local.
+  let lastSpeakAudio = null, lastSpeakAt = 0;
+  function markReplay(ev) {
+    const now = performance.now();
+    if (ev.audio && ev.audio === lastSpeakAudio) {
+      if (ev.age_ms === undefined) ev.age_ms = Math.round(now - lastSpeakAt);
+    } else {
+      lastSpeakAudio = ev.audio || null;
+      lastSpeakAt = now - Math.max(0, Number(ev.age_ms) || 0);
+    }
+    return ev;
+  }
   function connect() {
-    const es = new EventSource("/events");
-    es.onopen = () => setConn("live", "Conectado");
+    if (es) { try { es.close(); } catch (_) {} }
+    es = new EventSource("/events" + tokenQuery());
+    lastMsgAt = performance.now();
+    hbSeen = false;
+    es.onopen = () => { lastMsgAt = performance.now(); setConn("live", "Conectado"); };
     es.onerror = () => setConn("off", "Desconectado — reintentando…");
     es.onmessage = (e) => {
+      lastMsgAt = performance.now();
       let ev;
       try { ev = JSON.parse(e.data); } catch (_) { return; }
-      if (ev.type === "speak") handleSpeak(ev);
-      else if (ev.type === "level") pushMicLevel(ev.rms);
+      if (ev.type === "hb") { hbSeen = true; return; }
+      if (ev.type === "speak") handleSpeak(markReplay(ev));
+      else if (ev.type === "level") { pushMicLevel(ev.rms); wakeDraw(); }
       else if (ev.type === "stt") setTranscript(ev.role, ev.text);
       else if (ev.type === "ptt" && !ev.held) hostReleasedPtt();
       else if (ev.type === "draft") { speakText.value = ev.text || ""; speakText.focus(); }
       if (KIOSK) kiosk.event(ev);
     };
   }
+  function stale() {
+    if (!es || es.readyState === EventSource.CLOSED) return true;
+    return hbSeen && performance.now() - lastMsgAt > STALE_MS;
+  }
+  function reconnectIfStale() {
+    if (!stale()) return;
+    setConn("off", "Desconectado — reintentando…");
+    connect();
+  }
   connect();
+  setInterval(reconnectIfStale, 5000);
+  window.addEventListener("pageshow", reconnectIfStale);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") reconnectIfStale();
+  });
   loadMics();
 
   // offline test: load a WAV by hand
