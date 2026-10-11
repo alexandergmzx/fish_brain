@@ -307,6 +307,9 @@ class VizConfig:
     port: int = field(default_factory=lambda: _env_int("FISH_VIZ_PORT", 8723))
     # When set, the page's POST endpoints need it (open the page as /?token=...).
     token: str = field(default_factory=lambda: _env("FISH_VIZ_TOKEN", ""))
+    # True = requests from this machine itself (127.0.0.1) need no token. For a browser on
+    # the board's own display, so the token never has to sit in a URL.
+    trust_local: bool = field(default_factory=lambda: _env_bool("FISH_VIZ_TRUST_LOCAL", False))
 
 
 @dataclass

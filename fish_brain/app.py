@@ -229,6 +229,12 @@ def main(argv: list[str] | None = None) -> int:
                 viz.register_speaker(convo.speaker)   # let the on-screen text box drive the fish
             stt = "-" if args.text else cfg.stt.backend
             llm = "echo" if args.echo else f"{cfg.llm.profile}:{cfg.llm.model}"
+            if viz is not None:
+                viz.register_status(lambda: {
+                    "link": {"desc": link.describe(), "health": link.health()},
+                    "online": cloud.is_online(),
+                    "backends": {"stt": stt, "llm": llm, "tts": cfg.tts.backend,
+                                 "ptt": convo.ptt_summary()}})
             print(f"[fish] link={link.describe()} stt={stt} llm={llm} tts={cfg.tts.backend} "
                   f"ptt={convo.ptt_summary()}", flush=True)
             from .ptt import PTTUnavailable

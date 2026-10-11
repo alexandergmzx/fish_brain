@@ -445,9 +445,16 @@ cmd_router() {
         say "  Until 'router restore': Bridge sketches and App Lab cannot reach the MCU."
         say "  A router restart takes the port back by itself."
     else
-        if user_systemd is-active --quiet "$UNIT" 2>/dev/null; then
-            warn "fish-brain is running and will release the port again. Stop it first:"
-            warn "  systemctl --user stop fish-brain"
+        # Handing the port back under a running fish leaves it talking with dead motors
+        # and nothing in its log.
+        if [[ "${FISH_FORCE:-0}" != 1 ]]; then
+            if user_systemd is-active --quiet "$UNIT" 2>/dev/null; then
+                die "fish-brain is running and owns $port. Stop it first: systemctl --user stop fish-brain"
+            fi
+            local lock; lock="/run/lock/fish_brain-$(basename "$port").lock"
+            if [[ -e "$lock" ]] && ! flock -n "$lock" true 2>/dev/null; then
+                die "$port is held by another fish process ($(cat "$lock" 2>/dev/null)). Stop it first."
+            fi
         fi
         arduino-router-cli "${sockargs[@]}" '$/serial/open' "$port" \
             || die "the router did not re-open $port (is something else holding it? see 'status')"

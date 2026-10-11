@@ -16,6 +16,7 @@ Best-effort by design: a slow/absent browser never blocks the conductor (full qu
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import queue
 import socket
@@ -53,6 +54,8 @@ class VizServer:
         self._ptt_since = 0.0                 # when it was pressed (stale presses expire)
         self._wait = False                    # "wait to speak" checkbox: gate auto-speak of replies
         self._speaker = None                  # speak.Speaker, registered by app.py (text box -> /speak)
+        self._status_provider = None          # app.py: link, internet and backends for /status
+        self._started = time.monotonic()
 
     # --- lifecycle ---
     def start(self) -> None:
@@ -67,6 +70,23 @@ class VizServer:
             name = socket.gethostname()
             print(f"[viz] from another device: http://{name}.local:{port}{query}"
                   f"  (or http://{_lan_ip()}:{port}{query})", flush=True)
+
+    def register_status(self, provider) -> None:
+        """`provider()` returns a dict merged into `GET /status` (link, internet, backends)."""
+        self._status_provider = provider
+
+    def status(self) -> dict:
+        """What an operator needs at a glance. Never a key, a token or exception text."""
+        out = {"ok": True, "up_s": int(time.monotonic() - self._started),
+               "host": socket.gethostname(), "ip": _lan_ip(),
+               "ready": self._speaker is not None, "wait": self._wait}
+        provider = self._status_provider
+        if provider is not None:
+            try:
+                out.update(provider())
+            except Exception as e:
+                out["status_error"] = type(e).__name__
+        return out
 
     def stop(self) -> None:
         if self._httpd is not None:
@@ -306,6 +326,15 @@ def _lan_ip() -> str:
         return "127.0.0.1"
 
 
+def _is_loopback(addr: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    mapped = getattr(ip, "ipv4_mapped", None)
+    return (mapped or ip).is_loopback
+
+
 def _make_handler(server: "VizServer"):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # silence default request logging
@@ -323,6 +352,8 @@ def _make_handler(server: "VizServer"):
                 self._serve_events()
             elif path == "/mics":
                 self._send_json(server.list_mics())
+            elif path == "/status":
+                self._send_json(server.status())
             elif path.startswith("/audio/"):
                 self._serve_audio(path[len("/audio/"):])
             else:
@@ -332,8 +363,10 @@ def _make_handler(server: "VizServer"):
             path, _, query = self.path.partition("?")
             if path in ("/mic", "/ptt", "/speak", "/wait"):
                 token = server.cfg.viz.token
-                if token and token not in (self.headers.get("X-Fish-Token"),
-                                           parse_qs(query).get("token", [""])[0]):
+                local = server.cfg.viz.trust_local and _is_loopback(self.client_address[0])
+                if token and not local and token not in (
+                        self.headers.get("X-Fish-Token"),
+                        parse_qs(query).get("token", [""])[0]):
                     self._send_json({"ok": False, "error": "bad token"}, status=403)
                     return
                 try:
