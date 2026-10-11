@@ -230,3 +230,167 @@ def test_inbox_only_takes_while_listening(server):
     assert server.offer("c") is False               # full: two items at most
     assert server.take_inbox() == "a" and server.take_inbox() == "b"
     assert server.take_inbox() is None
+
+
+# --- the reading: /badge and /reading --------------------------------------------------
+JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 40
+AUTH = {"X-Fish-Token": "s3cret-token"}
+
+
+def post_raw(url, body, headers):
+    req = urllib.request.Request(url, data=body, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
+def post_badge(server, body=JPEG, headers=None, ctype="image/jpeg"):
+    return post_raw(server.url + "/badge", body, {"Content-Type": ctype, **(headers or {})})
+
+
+class StubReader:
+    def __init__(self, found=True):
+        self.found = found
+        self.calls = []
+
+    def __call__(self, data, want_look):
+        from fish_brain.reading import BadgeRead
+        self.calls.append((len(data), want_look))
+        if not self.found:
+            return BadgeRead(found=False)
+        return BadgeRead(found=True, full_name="Garcia Lopez Maria Jose",
+                         name_for_speech="María José", confidence="high",
+                         look="gorra roja" if want_look else None)
+
+
+def test_badge_without_a_reader_is_503(server):
+    assert post_badge(server, headers=AUTH) == (503, {"ok": False, "error": "no reader"})
+
+
+def test_badge_needs_the_token(server):
+    server.register_reader(StubReader())
+    assert post_badge(server)[0] == 403
+
+
+def test_badge_over_the_cap_is_413(server):
+    server.register_reader(StubReader())
+    conn = http.client.HTTPConnection("127.0.0.1", server._httpd.server_address[1], timeout=3)
+    conn.putrequest("POST", "/badge?token=s3cret-token")
+    conn.putheader("Content-Type", "image/jpeg")
+    conn.putheader("Content-Length", str(server.cfg.reading.max_image_bytes + 1))
+    conn.endheaders()
+    resp = conn.getresponse()
+    assert resp.status == 413
+    conn.close()
+
+
+def test_badge_wrong_magic_or_type_is_400(server):
+    reader = StubReader()
+    server.register_reader(reader)
+    assert post_badge(server, body=b"\x89PNG" + b"\x00" * 20, headers=AUTH)[0] == 400
+    assert post_badge(server, headers=AUTH, ctype="image/png")[0] == 400
+    assert reader.calls == []
+
+
+def test_badge_found_queues_an_unconfirmed_reading(server):
+    from fish_brain.reading import Reading
+    reader = StubReader()
+    server.register_reader(reader)
+    server.set_listening(True)
+    status, out = post_badge(server, headers=AUTH)
+    assert status == 200
+    assert out == {"ok": True, "found": True, "name": "Garcia Lopez Maria Jose",
+                   "first_name": "María José", "confidence": "high"}
+    item = server.take_inbox()
+    assert isinstance(item, Reading) and item.confirmed is False
+    assert item.name == "Garcia Lopez Maria Jose" and item.first_name == "María José"
+    assert item.look is None
+    assert reader.calls == [(len(JPEG), False)]
+    # Nothing of the photo stays on the server object.
+    for value in server.__dict__.values():
+        assert not (isinstance(value, (bytes, bytearray)) and JPEG[:4] in value)
+    assert JPEG[:4] not in repr(server.__dict__).encode("latin-1", "ignore")
+
+
+def test_badge_not_found_answers_found_false(server):
+    server.register_reader(StubReader(found=False))
+    server.set_listening(True)
+    assert post_badge(server, headers=AUTH) == (200, {"ok": True, "found": False})
+    assert server.take_inbox() is None
+
+
+def test_badge_while_not_listening_is_busy(server):
+    server.register_reader(StubReader())
+    assert post_badge(server, headers=AUTH) == (409, {"ok": False, "busy": True})
+
+
+def test_badge_look_header_follows_the_setting(server):
+    reader = StubReader()
+    server.register_reader(reader)
+    server.set_listening(True)
+    server.cfg.reading.look = False
+    post_badge(server, headers={**AUTH, "X-Fish-Look": "1"})
+    assert reader.calls[-1][1] is False and server.take_inbox().look is None
+    server.cfg.reading.look = True
+    post_badge(server, headers={**AUTH, "X-Fish-Look": "1"})
+    assert reader.calls[-1][1] is True and server.take_inbox().look == "gorra roja"
+    post_badge(server, headers=AUTH)
+    assert reader.calls[-1][1] is False
+
+
+def test_badge_cloud_errors_are_503(server):
+    from fish_brain import cloud
+
+    def offline(data, want_look):
+        raise cloud.CloudUnavailable("offline")
+
+    def bad_key(data, want_look):
+        raise cloud.CloudMisconfigured("OPENAI_API_KEY is not set")
+
+    server.register_reader(offline)
+    assert post_badge(server, headers=AUTH) == (503, {"ok": False, "error": "offline"})
+    server.register_reader(bad_key)
+    status, out = post_badge(server, headers=AUTH)
+    assert (status, out["error"]) == (503, "misconfigured") and "KEY" not in json.dumps(out)
+
+
+def test_badge_says_the_canned_lines(server):
+    class Mouth:
+        said = []
+
+        def say_canned(self, name):
+            self.said.append(name)
+            return True
+
+    server.register_speaker(Mouth())
+    server.register_reader(StubReader(found=False))
+    server.set_listening(True)
+    post_badge(server, headers=AUTH)
+    assert Mouth.said == [server.cfg.canned.reading_wait, server.cfg.canned.reading_fail]
+
+
+def test_reading_queues_a_confirmed_name(server):
+    from fish_brain.reading import Reading
+    server.set_listening(True)
+    status, out = post(server.url + "/reading", {"name": " maría   JOSÉ, garcía "}, AUTH)
+    assert status == 200 and out == {"ok": True, "name": "María José García"}
+    item = server.take_inbox()
+    assert isinstance(item, Reading) and item.confirmed is True
+    assert item.name == "María José García" and item.first_name == "María"
+    assert post(server.url + "/reading", {"name": "!!!"}, AUTH)[0] == 400
+    assert post(server.url + "/reading", {"name": "Ana"})[0] == 403
+
+
+def test_reading_while_not_listening_is_busy(server):
+    assert post(server.url + "/reading", {"name": "Ana"}, AUTH) == (409, {"ok": False, "busy": True})
+
+
+def test_status_says_whether_a_reader_is_there(server):
+    data = json.loads(get(server.url + "/status")[1])
+    assert data["reading"] is False and data["reading_look"] is False
+    server.register_reader(StubReader())
+    server.cfg.reading.look = True
+    data = json.loads(get(server.url + "/status")[1])
+    assert data["reading"] is True and data["reading_look"] is True

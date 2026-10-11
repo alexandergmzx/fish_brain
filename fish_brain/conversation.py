@@ -106,7 +106,58 @@ class FishConversation:
     def _handle_item(self, item) -> bool:
         """An input item that is not a recording (offered by the page). The single dispatch
         point for such items; returns whether the loop goes on."""
+        from .reading import Reading
+        if isinstance(item, Reading):
+            return self._reading_turn(item)
         print(f"[turn] unknown input item {type(item).__name__}", flush=True)
+        return True
+
+    def _reading_turn(self, r) -> bool:
+        """A visitor's name arrived (ADR 0007). A new visitor: the history is reset and the
+        per-visitor rules attached. Unconfirmed (a badge): the fish asks "¿Tú eres X?" and
+        the answer is the next normal voice turn, with the question seeded in the history.
+        Confirmed (typed): the fish tells the future now. The quit words never apply here."""
+        from . import reading
+        times: dict[str, float] = {}
+        look_note = f" Lleva: {r.look}." if r.look else ""
+        if not self.echo:
+            self.llm.reset()
+            self.llm.extra_rules = self.cfg.reading.rules
+        if not r.confirmed:
+            question = reading.echo_question(r.first_name)
+            if self.viz is not None:
+                self.viz.push_reading("ask")
+            print("fish> (lectura: pregunta por el nombre)", flush=True)
+            self.speaker.speak(question)
+            if not self.echo:
+                self.llm.remember(
+                    f"[Lectura] El visitante muestra su gafete: se llama {r.name}.{look_note}"
+                    " Pregúntale si es él o ella; cuando confirme, dile su futuro.", question)
+            times.update(self.speaker.last_timing)
+            print("[turn] read=ask " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
+                  + f" link={self.link.health()}", flush=True)
+            return True
+        if self.echo:
+            reply = reading.echo_fortune(r.first_name)
+        else:
+            t0 = time.monotonic()
+            reply = self.llm.reply(
+                f"[Lectura] Se llama {r.name}, confirmado.{look_note} Dile su futuro.")
+            times["llm"] = time.monotonic() - t0
+            if self.llm.last_error and self.cfg.tts.backend != "loq":
+                # The model is unreachable and so, most likely, is cloud TTS: the cached line.
+                print(f"[turn] lectura sin señal: {self.llm.last_error}", flush=True)
+                self._apologize(self.cfg.canned.reading_fail)
+                return True
+        print("fish> (lectura)", flush=True)
+        if not reply:
+            return True
+        if self.viz is not None:
+            self.viz.push_reading("speaking")
+        self.speaker.speak(reply)
+        times.update(self.speaker.last_timing)
+        print("[turn] read=tell " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
+              + f" link={self.link.health()}", flush=True)
         return True
 
     def _transcribe(self, wav: Path) -> str:

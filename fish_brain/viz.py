@@ -67,6 +67,7 @@ class VizServer:
         self._ptt_since = 0.0                 # when it was pressed (stale presses expire)
         self._wait = False                    # "wait to speak" checkbox: gate auto-speak of replies
         self._speaker = None                  # speak.Speaker, registered by app.py (text box -> /speak)
+        self._reader = None                   # reading.read_badge, registered by app.py (/badge)
         self._status_provider = None          # app.py: link, internet and backends for /status
         self._started = time.monotonic()
         # Items for the turn loop that come from the page instead of the microphone (later: a
@@ -98,7 +99,8 @@ class VizServer:
                "host": socket.gethostname(), "ip": _lan_ip(),
                "ready": self._speaker is not None, "wait": self._wait,
                "max_record_s": float(self.cfg.ptt.max_record_s),
-               "mic_capture": "host", "tls": False, "listening": self._listening}
+               "mic_capture": "host", "tls": False, "listening": self._listening,
+               "reading": self._reader is not None, "reading_look": bool(self.cfg.reading.look)}
         provider = self._status_provider
         if provider is not None:
             try:
@@ -247,6 +249,67 @@ class VizServer:
     def push_draft(self, text: str) -> None:
         """Drop a reply into the browser's editable text box (for "wait to speak" mode)."""
         self._publish(json.dumps({"type": "draft", "text": text}))
+
+    def push_reading(self, stage: str, **fields) -> None:
+        """Tell the page where a reading is: `ask` (the fish asks the name) or `speaking`.
+        Never the photo; a name is fine, the stream needs the token."""
+        self._publish(json.dumps({"type": "reading", "stage": stage, **fields}))
+
+    # --- the reading: a badge photo or a typed name becomes an input item ---
+    def register_reader(self, fn) -> None:
+        """`fn(jpeg_bytes, want_look) -> reading.BadgeRead`; raises the cloud errors."""
+        self._reader = fn
+
+    def _say_canned(self, name: str) -> None:
+        if self._speaker is not None:
+            try:
+                self._speaker.say_canned(name)      # dropped when the fish is talking
+            except Exception as e:
+                print(f"[viz] could not say {name!r}: {e}", flush=True)
+
+    def read_badge(self, jpeg: bytes, want_look: bool) -> tuple[int, dict]:
+        """`POST /badge`: read the photo and offer a `Reading` to the turn loop. Returns
+        (status, body). The bytes are this call's argument and nothing else."""
+        from . import cloud
+        from .reading import Reading, first_word
+        if self._reader is None:
+            return 503, {"ok": False, "error": "no reader"}
+        want_look = bool(self.cfg.reading.look and want_look)
+        self._say_canned(self.cfg.canned.reading_wait)
+        try:
+            res = self._reader(jpeg, want_look)
+        except cloud.CloudUnavailable:
+            self._say_canned(self.cfg.canned.reading_fail)
+            return 503, {"ok": False, "error": "offline"}
+        except cloud.CloudMisconfigured:
+            self._say_canned(self.cfg.canned.reading_fail)
+            return 503, {"ok": False, "error": "misconfigured"}
+        except ValueError as e:
+            self._say_canned(self.cfg.canned.reading_fail)
+            return 400, {"ok": False, "error": str(e)}
+        if not res.found:
+            self._say_canned(self.cfg.canned.reading_fail)
+            return 200, {"ok": True, "found": False}
+        first = res.name_for_speech or first_word(res.full_name)
+        item = Reading(name=res.full_name, first_name=first,
+                       look=res.look if want_look else None, confirmed=False)
+        if not self.offer(item):
+            return 409, {"ok": False, "busy": True}
+        return 200, {"ok": True, "found": True, "name": res.full_name, "first_name": first,
+                     "confidence": res.confidence}
+
+    def read_name(self, name, look=None) -> tuple[int, dict]:
+        """`POST /reading`: a typed name, confirmed, straight to the turn loop."""
+        from .reading import Reading, clean_name, first_word
+        clean = clean_name(name)
+        if not clean:
+            return 400, {"ok": False, "error": "no name"}
+        look = (str(look).strip()[:120] or None) if (self.cfg.reading.look
+                                                     and isinstance(look, str)) else None
+        item = Reading(name=clean, first_name=first_word(clean), look=look, confirmed=True)
+        if not self.offer(item):
+            return 409, {"ok": False, "busy": True}
+        return 200, {"ok": True, "name": clean}
 
     # --- mic device selection ---
     def list_mics(self) -> dict:
@@ -456,9 +519,12 @@ def _make_handler(server: "VizServer"):
 
         def do_POST(self):  # noqa: N802
             path, _, query = self.path.partition("?")
-            if path in ("/mic", "/ptt", "/speak", "/wait"):
+            if path in ("/mic", "/ptt", "/speak", "/wait", "/badge", "/reading"):
                 if not self._authorized(query):
                     self._send_json({"ok": False, "error": "bad token"}, status=403)
+                    return
+                if path == "/badge":
+                    self._post_badge()
                     return
                 raw = self._read_body(server.MAX_JSON_BYTES)
                 if raw is None:
@@ -471,12 +537,39 @@ def _make_handler(server: "VizServer"):
                         self._send_json(server.set_ptt(body.get("down")))
                     elif path == "/speak":
                         self._send_json(server.speak_text(body.get("text")))
+                    elif path == "/reading":
+                        status, out = server.read_name(body.get("name"), body.get("look"))
+                        self._send_json(out, status=status)
                     else:
                         self._send_json(server.set_wait(body.get("on")))
                 except Exception as e:
                     self._send_json({"ok": False, "error": str(e)}, status=400)
             else:
                 self.send_error(404)
+
+        def _post_badge(self):
+            """A badge photo (image/jpeg). The bytes stay in this frame: never stored on the
+            server object, never logged."""
+            ctype = (self.headers.get("Content-Type") or "").lower()
+            if not ctype.startswith("image/jpeg"):
+                self._send_json({"ok": False, "error": "image/jpeg expected"}, status=400)
+                return
+            data = self._read_body(server.cfg.reading.max_image_bytes)
+            if data is None:
+                return
+            if data[:3] != b"\xff\xd8\xff":
+                self._send_json({"ok": False, "error": "not a JPEG"}, status=400)
+                return
+            want_look = self.headers.get("X-Fish-Look") == "1"
+            try:
+                status, out = server.read_badge(data, want_look)
+            except Exception as e:     # the reader must never take the handler down
+                print(f"[reading] failed: {type(e).__name__}", flush=True)
+                server._say_canned(server.cfg.canned.reading_fail)
+                status, out = 500, {"ok": False, "error": type(e).__name__}
+            finally:
+                del data
+            self._send_json(out, status=status)
 
         def _send_json(self, obj, status: int = 200):
             body = json.dumps(obj).encode("utf-8")

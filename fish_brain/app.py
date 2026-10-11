@@ -53,6 +53,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="open the motor link, send STOP, report, and exit")
     parser.add_argument("--prerender-canned", action="store_true",
                         help="render every canned phrase with the current TTS backend, then exit")
+    parser.add_argument("--read-badge", metavar="FILE",
+                        help="read the name on a badge photo (JPEG) with the vision model, "
+                             "print the result as JSON and exit (--llm / FISH_READING_PROFILE "
+                             "pick the profile)")
     args = parser.parse_args(argv)
 
     # Load .env so OPENAI_API_KEY (and optional overrides) are available.
@@ -108,7 +112,8 @@ def main(argv: list[str] | None = None) -> int:
         cloud_keys.add(STT_PROFILES[cfg.stt.backend]["api_key_env"])
     if not args.echo:
         cloud_keys.add(cfg.llm.api_key_env)
-    one_shot = (args.list_canned or args.prefetch_stt or args.check_link)
+    one_shot = (args.list_canned or args.prefetch_stt or args.check_link
+                or args.read_badge is not None)
     if cloud_keys and not one_shot:
         # Know whether the internet is there without ever blocking a turn on it.
         cloud.start_probe(wait_s=3.0)
@@ -116,6 +121,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_canned:
         for name in cfg.canned.phrases:
             print(name)
+        return 0
+
+    if args.read_badge is not None:
+        # Before any voice warm-up: this never starts Loquendo or touches the motors.
+        import json
+        from dataclasses import asdict
+        from . import reading
+        try:
+            data = open(args.read_badge, "rb").read()
+            res = reading.read_badge(data, cfg, want_look=cfg.reading.look)
+        except Exception as e:
+            print(f"read-badge FAILED ({type(e).__name__}): {e}", file=sys.stderr)
+            return 1
+        print(json.dumps(asdict(res), ensure_ascii=False, indent=2))
         return 0
 
     if args.prefetch_stt:
@@ -227,6 +246,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 78
             if viz is not None:
                 viz.register_speaker(convo.speaker)   # let the on-screen text box drive the fish
+                from . import reading
+                viz.register_reader(                  # a badge photo from the console (/badge)
+                    lambda data, look: reading.read_badge(data, cfg, want_look=look))
             stt = "-" if args.text else cfg.stt.backend
             llm = "echo" if args.echo else f"{cfg.llm.profile}:{cfg.llm.model}"
             if viz is not None:
