@@ -729,20 +729,36 @@
   // The host sends {"type":"hb"} every 10 s of silence. A phone that slept, changed network
   // or lost the hotspot can keep a dead EventSource open for minutes: if nothing (not even
   // a heartbeat) arrived for STALE_MS, drop it and open a new one; the same on coming back.
+  // The watchdog arms only once this stream has sent one heartbeat: a host that only sends
+  // SSE comments (which never reach onmessage) must not be judged stale every 25 s.
   const STALE_MS = 25000;
-  let es = null, lastMsgAt = 0;
+  let es = null, lastMsgAt = 0, hbSeen = false;
+  // A reconnect within 30 s of a reply gets that reply again. The host marks it with age_ms;
+  // when it does not, the audio URL (unique per reply) tells it apart and the age is local.
+  let lastSpeakAudio = null, lastSpeakAt = 0;
+  function markReplay(ev) {
+    const now = performance.now();
+    if (ev.audio && ev.audio === lastSpeakAudio) {
+      if (ev.age_ms === undefined) ev.age_ms = Math.round(now - lastSpeakAt);
+    } else {
+      lastSpeakAudio = ev.audio || null;
+      lastSpeakAt = now - Math.max(0, Number(ev.age_ms) || 0);
+    }
+    return ev;
+  }
   function connect() {
     if (es) { try { es.close(); } catch (_) {} }
     es = new EventSource("/events" + tokenQuery());
     lastMsgAt = performance.now();
+    hbSeen = false;
     es.onopen = () => { lastMsgAt = performance.now(); setConn("live", "Conectado"); };
     es.onerror = () => setConn("off", "Desconectado — reintentando…");
     es.onmessage = (e) => {
       lastMsgAt = performance.now();
       let ev;
       try { ev = JSON.parse(e.data); } catch (_) { return; }
-      if (ev.type === "hb") return;
-      if (ev.type === "speak") handleSpeak(ev);
+      if (ev.type === "hb") { hbSeen = true; return; }
+      if (ev.type === "speak") handleSpeak(markReplay(ev));
       else if (ev.type === "level") { pushMicLevel(ev.rms); wakeDraw(); }
       else if (ev.type === "stt") setTranscript(ev.role, ev.text);
       else if (ev.type === "ptt" && !ev.held) hostReleasedPtt();
@@ -751,7 +767,8 @@
     };
   }
   function stale() {
-    return !es || es.readyState === EventSource.CLOSED || performance.now() - lastMsgAt > STALE_MS;
+    if (!es || es.readyState === EventSource.CLOSED) return true;
+    return hbSeen && performance.now() - lastMsgAt > STALE_MS;
   }
   function reconnectIfStale() {
     if (!stale()) return;

@@ -99,12 +99,17 @@ EOF (`--text`), or Ctrl-C quit.
   10 s of silence. The page notes the time of the last message (heartbeats count); when
   nothing arrived for 25 s it closes the `EventSource` and opens a new one, and does the same
   on `pageshow` and on becoming visible when the stream is stale or closed. A phone that slept
-  or changed network comes back without a reload: the dot goes red, then green.
+  or changed network comes back without a reload: the dot goes red, then green. The 25 s
+  rule arms only after the stream has sent one `hb`: a host whose stream carries only SSE
+  comments (which never reach the page's handler) is reconnected only when the browser
+  reports the stream closed, never on a timer.
 - **`age_ms` on a replayed `speak`.** A `speak` replayed to a page that connects within 30 s
   carries `age_ms`, the milliseconds since it was announced (`0` when live). The mouth track
   and the gestures start that far in, so a mid-phrase reconnect animates the remainder; a
   reply older than its `duration_ms` neither enters `speaking` nor plays, so a reconnecting
-  page never refuses presses for a reply that has already ended.
+  page never refuses presses for a reply that has already ended. Each reply's audio URL is
+  unique, so a `speak` whose URL the page has already seen is a replay even when the host
+  sends no `age_ms`: the page then takes the age from its own clock.
 - **Lightness.** The connection dot breathes on `opacity` and `transform`, never on
   `box-shadow`. The console draws at 20 frames a second and, while nothing moves (no mouth
   track, mouth closed, no gesture, no bubbles), draws the resting pose once and then polls
