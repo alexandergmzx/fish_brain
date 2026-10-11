@@ -641,9 +641,9 @@ cmd_kiosk() {
             done
             say "  root file    $([[ -e "$conf" ]] && printf 'installed' || printf 'NOT installed (kiosk on prints the command)')"
             say "  ~/.xsession  $([[ -e "$xs" ]] && grep -q "^$KIOSK_MARK" "$xs" && printf 'kiosk' || printf 'not the kiosk')"
-            say "  session      $(pgrep -u "$ME" -f 'kiosk/session.sh' >/dev/null && printf 'running' || printf 'not running')$(pgrep -x lightdm-gtk-gre >/dev/null && printf '   LOGIN SCREEN IS SHOWING')"
-            say "  supervisor   $(pgrep -u "$ME" -f 'fish_brain.kiosk' >/dev/null && printf 'running' || printf 'not running')$([[ -e "$pause" ]] && printf '   PAUSED')"
-            say "  browser      $(pgrep -u "$ME" -fc 'user-data-dir=/tmp/fish-kiosk' 2>/dev/null || true) processes"
+            say "  session      $(pgrep -u "$ME" -f '[k]iosk/session.sh' >/dev/null && printf 'running' || printf 'not running')$(pgrep -x lightdm-gtk-gre >/dev/null && printf '   LOGIN SCREEN IS SHOWING')"
+            say "  supervisor   $(pgrep -u "$ME" -f '[p]ython3 -m fish_brain.kiosk' >/dev/null && printf 'running' || printf 'not running')$([[ -e "$pause" ]] && printf '   PAUSED')"
+            say "  browser      $(pgrep -u "$ME" -fc '[u]ser-data-dir=/tmp/fish-kiosk' 2>/dev/null || true) processes"
             journalctl -t fish-kiosk -n 3 --no-pager -o cat 2>/dev/null | sed 's/^/  /' || true
             ;;
         *) die "kiosk: on | off | pause | resume | status" ;;
