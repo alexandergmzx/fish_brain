@@ -16,6 +16,9 @@ Type=exec
 WorkingDirectory=%h/fish_brain
 ExecStart=%h/fish_brain/.venv/bin/python -u -m fish_brain.app --viz
 Environment=PYTHONUNBUFFERED=1 PYTHONFAULTHANDLER=1
+# A kiosk login puts DISPLAY into the user manager. The fish must behave the same with and
+# without a display, and Wine must never open a window on the visitors' screen.
+UnsetEnvironment=DISPLAY XAUTHORITY WAYLAND_DISPLAY
 # always, not on-failure: a clean exit (spoken "salir", a stray SIGTERM) must not leave
 # the fish off.
 Restart=always

@@ -7,6 +7,7 @@
 #   deploy/unoq_setup.sh router release|restore   board: router lets go of / takes back the UART
 #   deploy/unoq_setup.sh router off|on        board: PRINTS the root commands, runs nothing
 #   deploy/unoq_setup.sh hotspot "<SSID>" "<password>" [connect]   board: save the phone hotspot
+#   deploy/unoq_setup.sh kiosk on|off|pause|resume|status   board: the fish page on its own display
 #   deploy/unoq_setup.sh status               board: what is running, who has the port
 #
 # This script never calls sudo. Steps that need root are printed for the owner to run.
@@ -35,7 +36,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 usage() {
     # The header comment of this file is the help text.
-    sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 # The board subcommands change the machine they run on, and `install` renders speech with
@@ -587,6 +588,68 @@ cmd_status() {
     return 0
 }
 
+# The fish page on the board's own display. Everything here is the user's own files; the
+# one root file is printed for the owner.
+KIOSK_MARK="# fish-kiosk"
+cmd_kiosk() {
+    local action="${1:-status}" xs="$HOME/.xsession" conf=/etc/lightdm/lightdm.conf.d/50-fish-kiosk.conf
+    local pause="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/fish-kiosk.pause"
+    require_board "kiosk $action"
+    case "$action" in
+        on)
+            local t
+            for t in chromium xrandr xset xsetroot; do
+                have "$t" || die "$t not found (the kiosk needs chromium and x11-xserver-utils)"
+            done
+            if [[ -e "$xs" ]] && ! grep -q "^$KIOSK_MARK" "$xs"; then
+                mv "$xs" "$xs.fish-bak"
+                warn "your own ~/.xsession was moved to ~/.xsession.fish-bak"
+            fi
+            printf '#!/bin/sh\n%s (deploy/unoq_setup.sh kiosk on; remove with: kiosk off)\nexec "%s/deploy/kiosk/session.sh"\n' \
+                "$KIOSK_MARK" "$REPO" > "$xs"
+            chmod 755 "$xs"
+            ok "~/.xsession starts the fish page"
+            [[ "$(env_get FISH_VIZ_TOKEN)" && "$(env_get FISH_VIZ_TRUST_LOCAL)" != true ]] &&
+                warn "FISH_VIZ_TOKEN is set: add FISH_VIZ_TRUST_LOCAL=true to .env, or the display's button does nothing"
+            if [[ -e "$conf" ]]; then
+                ok "$conf is installed"
+            else
+                say ""
+                say "Yours, once (the board then logs in by itself into the kiosk):"
+                say "  sudo install -D -m 644 $REPO/deploy/kiosk/50-fish-kiosk.conf $conf"
+                say "  sudo systemctl restart lightdm"
+                say "Undo: sudo rm $conf && sudo systemctl restart lightdm"
+            fi
+            ;;
+        off)
+            if [[ -e "$xs" ]] && grep -q "^$KIOSK_MARK" "$xs"; then
+                rm -f "$xs"; ok "~/.xsession removed"
+                [[ -e "$xs.fish-bak" ]] && mv "$xs.fish-bak" "$xs" && ok "your own ~/.xsession is back"
+            else
+                say "  ~/.xsession is not the kiosk's; left alone"
+            fi
+            say "Root part, yours: sudo rm $conf && sudo systemctl restart lightdm"
+            ;;
+        pause)  : > "$pause"; ok "kiosk paused (the browser closes within a few seconds)" ;;
+        resume) rm -f "$pause"; ok "kiosk resumed" ;;
+        status)
+            step "Kiosk"
+            local c
+            for c in /sys/class/drm/card*-*; do
+                [[ -e "$c/status" ]] || continue
+                say "  $(basename "$c")  $(cat "$c/status")  $(head -1 "$c/modes" 2>/dev/null)"
+            done
+            say "  root file    $([[ -e "$conf" ]] && printf 'installed' || printf 'NOT installed (kiosk on prints the command)')"
+            say "  ~/.xsession  $([[ -e "$xs" ]] && grep -q "^$KIOSK_MARK" "$xs" && printf 'kiosk' || printf 'not the kiosk')"
+            say "  session      $(pgrep -u "$ME" -f 'kiosk/session.sh' >/dev/null && printf 'running' || printf 'not running')$(pgrep -x lightdm-gtk-gre >/dev/null && printf '   LOGIN SCREEN IS SHOWING')"
+            say "  supervisor   $(pgrep -u "$ME" -f 'fish_brain.kiosk' >/dev/null && printf 'running' || printf 'not running')$([[ -e "$pause" ]] && printf '   PAUSED')"
+            say "  browser      $(pgrep -u "$ME" -fc 'user-data-dir=/tmp/fish-kiosk' 2>/dev/null || true) processes"
+            journalctl -t fish-kiosk -n 3 --no-pager -o cat 2>/dev/null | sed 's/^/  /' || true
+            ;;
+        *) die "kiosk: on | off | pause | resume | status" ;;
+    esac
+}
+
 main() {
     local cmd="${1:-}"
     [[ $# -gt 0 ]] && shift
@@ -596,7 +659,8 @@ main() {
         service) cmd_service "$@" ;;
         router)  cmd_router "$@" ;;
         hotspot) cmd_hotspot "$@" ;;
-        status)  cmd_status "$@" ;;
+        kiosk)   cmd_kiosk "$@" ;;
+        status)  cmd_status "$@"; cmd_kiosk status ;;
         ""|-h|--help|help) usage ;;
         *) usage >&2; die "unknown subcommand: $cmd" ;;
     esac
