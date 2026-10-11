@@ -18,6 +18,10 @@ With a token set (`FISH_VIZ_TOKEN`), `/events`, `/audio/*` and every POST need i
 its static files, `/status` and `/mics` stay open. The stream sends `retry: 2000` first and a
 `{"type": "hb"}` event after `HEARTBEAT_S` of silence. The inbox (`offer`, `take_inbox`,
 `set_listening`) carries input items from the page to the turn loop instead of a recording.
+
+With `FISH_VIZ_TLS_CERT` and `FISH_VIZ_TLS_KEY` a second listener serves the same page over
+HTTPS on `FISH_VIZ_TLS_PORT` (a phone's microphone needs a secure context); the plain one
+stays. The TLS handshake runs in the worker thread, never in the accept loop.
 """
 from __future__ import annotations
 
@@ -25,6 +29,7 @@ import ipaddress
 import json
 import queue
 import socket
+import ssl
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -63,6 +68,8 @@ class VizServer:
         self._last_event_ts = 0.0
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self._tls_httpd: _TLSServer | None = None
+        self._tls_thread: threading.Thread | None = None
         self._ptt_held = False                # browser hold-to-talk button state
         self._ptt_since = 0.0                 # when it was pressed (stale presses expire)
         self._wait = False                    # "wait to speak" checkbox: gate auto-speak of replies
@@ -76,17 +83,50 @@ class VizServer:
 
     # --- lifecycle ---
     def start(self) -> None:
+        """Bind the plain listener and, with a certificate configured, the HTTPS one.
+        A certificate that cannot be loaded raises OSError (ssl.SSLError is one): a set-up
+        error for app.py, not something a restart fixes."""
         handler = _make_handler(self)
-        self._httpd = ThreadingHTTPServer((self.cfg.viz.host, self.cfg.viz.port), handler)
+        host, port = self.cfg.viz.host, self.cfg.viz.port
+        cert, key = self.cfg.viz.tls_cert, self.cfg.viz.tls_key
+        if cert and key:
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            ctx.load_cert_chain(cert, key)
+            self._tls_httpd = _TLSServer((host, self.cfg.viz.tls_port), handler, ctx)
+            self._tls_thread = threading.Thread(target=self._tls_httpd.serve_forever,
+                                                daemon=True)
+            self._tls_thread.start()
+        self._httpd = ThreadingHTTPServer((host, port), handler)
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
-        host, port = self.cfg.viz.host, self.cfg.viz.port
         query = "/?token=…" if self.cfg.viz.token else ""
+        remote = host in ("0.0.0.0", "::")
+        if self._tls_httpd is not None:
+            tls_port = self.tls_port_bound
+            console = "/?console=1&token=…" if self.cfg.viz.token else "/?console=1"
+            print(f"[viz] phone: https://{host}:{tls_port}{console}", flush=True)
+            if remote:
+                name = socket.gethostname()
+                print(f"[viz] phone from another device: https://{name}.local:{tls_port}{console}"
+                      f"  (or https://{self.lan_ip()}:{tls_port}{console})", flush=True)
         print(f"[viz] on-screen fish at http://{host}:{port}{query}", flush=True)
-        if host in ("0.0.0.0", "::"):
+        if remote:
             name = socket.gethostname()
             print(f"[viz] from another device: http://{name}.local:{port}{query}"
                   f"  (or http://{_lan_ip()}:{port}{query})", flush=True)
+
+    @property
+    def tls_port_bound(self) -> int | None:
+        """The port the HTTPS listener bound (None without one)."""
+        if self._tls_httpd is None:
+            return None
+        return self._tls_httpd.server_address[1]
+
+    @staticmethod
+    def lan_ip() -> str:
+        """This machine's address on the local network (what a phone would type)."""
+        return _lan_ip()
 
     def register_status(self, provider) -> None:
         """`provider()` returns a dict merged into `GET /status` (link, internet, backends)."""
@@ -98,7 +138,8 @@ class VizServer:
                "host": socket.gethostname(), "ip": _lan_ip(),
                "ready": self._speaker is not None, "wait": self._wait,
                "max_record_s": float(self.cfg.ptt.max_record_s),
-               "mic_capture": "host", "tls": False, "listening": self._listening}
+               "mic_capture": "host", "tls": self._tls_httpd is not None,
+               "listening": self._listening}
         provider = self._status_provider
         if provider is not None:
             try:
@@ -112,6 +153,10 @@ class VizServer:
             self._httpd.shutdown()
             self._httpd.server_close()
             self._httpd = None
+        if self._tls_httpd is not None:
+            self._tls_httpd.shutdown()
+            self._tls_httpd.server_close()
+            self._tls_httpd = None
 
     # --- access ---
     def authorized(self, client_addr: str, headers, query: str) -> bool:
@@ -331,6 +376,39 @@ class VizServer:
 
     def wait_enabled(self) -> bool:
         return self._wait
+
+
+class _TLSServer(ThreadingHTTPServer):
+    """The HTTPS listener. The listening socket stays plain and the TLS handshake runs on
+    the per-connection worker thread, so a client that connects and never speaks (or one
+    that rejects the certificate) costs one thread for 10 s and never the accept loop.
+    Python 3.13 has no `http.server.HTTPSServer`."""
+
+    def __init__(self, address, handler, ctx: ssl.SSLContext):
+        self.ctx = ctx
+        super().__init__(address, handler)
+
+    def finish_request(self, request, client_address):
+        request.settimeout(10)
+        try:
+            tls = self.ctx.wrap_socket(request, server_side=True,
+                                       do_handshake_on_connect=False)
+        except (ssl.SSLError, OSError):
+            return
+        try:
+            tls.do_handshake()
+        except (ssl.SSLError, OSError):
+            tls.close()
+            return
+        # The handler sets its own socket timeout in setup() (Handler.timeout).
+        # shutdown_request() only sees the plain socket, so the TLS one is closed here.
+        try:
+            self.RequestHandlerClass(tls, client_address, self)
+        finally:
+            try:
+                tls.close()
+            except OSError:
+                pass
 
 
 def _pulse_sources():

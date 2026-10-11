@@ -230,3 +230,100 @@ def test_inbox_only_takes_while_listening(server):
     assert server.offer("c") is False               # full: two items at most
     assert server.take_inbox() == "a" and server.take_inbox() == "b"
     assert server.take_inbox() is None
+
+
+# --- the HTTPS listener (FISH_VIZ_TLS_CERT / FISH_VIZ_TLS_KEY) ---
+import shutil
+import ssl
+import subprocess
+
+needs_openssl = pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl not found")
+
+
+@pytest.fixture
+def cert_pair(tmp_path):
+    crt, key = tmp_path / "t.crt", tmp_path / "t.key"
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-days", "2",
+                    "-noenc", "-keyout", str(key), "-out", str(crt), "-subj", "/CN=localhost",
+                    "-addext", "subjectAltName=IP:127.0.0.1"],
+                   check=True, capture_output=True)
+    return crt, key
+
+
+@pytest.fixture
+def tls_server(cert_pair):
+    cfg = Config()
+    cfg.viz.host, cfg.viz.port, cfg.viz.token = "127.0.0.1", 0, "s3cret-token"
+    cfg.viz.tls_cert, cfg.viz.tls_key, cfg.viz.tls_port = str(cert_pair[0]), str(cert_pair[1]), 0
+    srv = VizServer(cfg)
+    srv.start()
+    srv.url = f"http://127.0.0.1:{srv._httpd.server_address[1]}"
+    srv.tls_url = f"https://127.0.0.1:{srv.tls_port_bound}"
+    yield srv
+    srv.stop()
+
+
+def get_https(url, timeout=3):
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with urllib.request.urlopen(url, timeout=timeout, context=ctx) as r:
+        return r.status, r.read()
+
+
+@needs_openssl
+def test_status_over_https(tls_server):
+    status, body = get_https(tls_server.tls_url + "/status")
+    assert status == 200
+    data = json.loads(body)
+    assert data["tls"] is True
+    assert b"s3cret-token" not in body
+    # The plain listener is untouched.
+    status, body = get(tls_server.url + "/status")
+    assert status == 200 and json.loads(body)["tls"] is True
+
+
+@needs_openssl
+def test_a_silent_client_does_not_block_the_tls_listener(tls_server):
+    silent = socket.create_connection(("127.0.0.1", tls_server.tls_port_bound))
+    try:
+        t0 = time.monotonic()
+        status, _ = get_https(tls_server.tls_url + "/status", timeout=2)
+        assert status == 200
+        assert time.monotonic() - t0 < 1.0
+    finally:
+        silent.close()
+
+
+@needs_openssl
+def test_a_plain_http_client_on_the_tls_port_is_dropped(tls_server):
+    with pytest.raises((urllib.error.URLError, ConnectionError, OSError)):
+        get(tls_server.tls_url.replace("https", "http") + "/status", timeout=3)
+    assert get_https(tls_server.tls_url + "/status")[0] == 200
+
+
+def test_a_wrong_certificate_path_is_an_oserror(tmp_path):
+    cfg = Config()
+    cfg.viz.host, cfg.viz.port, cfg.viz.tls_port = "127.0.0.1", 0, 0
+    cfg.viz.tls_cert, cfg.viz.tls_key = str(tmp_path / "no.crt"), str(tmp_path / "no.key")
+    srv = VizServer(cfg)
+    with pytest.raises(OSError):
+        srv.start()
+    srv.stop()
+
+
+def test_no_environment_means_plain_http_only(monkeypatch):
+    for name in ("FISH_VIZ_TLS_CERT", "FISH_VIZ_TLS_KEY", "FISH_VIZ_TLS_PORT", "FISH_SAY_ADDRESS"):
+        monkeypatch.delenv(name, raising=False)
+    cfg = Config()
+    assert cfg.viz.tls_cert == "" and cfg.viz.tls_key == ""
+    assert cfg.viz.tls_port == 8724 and cfg.viz.say_address is False
+    cfg.viz.host, cfg.viz.port = "127.0.0.1", 0
+    srv = VizServer(cfg)
+    srv.start()
+    try:
+        assert srv.tls_port_bound is None
+        status, body = get(f"http://127.0.0.1:{srv._httpd.server_address[1]}/status")
+        assert status == 200 and json.loads(body)["tls"] is False
+    finally:
+        srv.stop()

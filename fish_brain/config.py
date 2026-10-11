@@ -310,6 +310,14 @@ class VizConfig:
     # True = requests from this machine itself (127.0.0.1) need no token. For a browser on
     # the board's own display, so the token never has to sit in a URL.
     trust_local: bool = field(default_factory=lambda: _env_bool("FISH_VIZ_TRUST_LOCAL", False))
+    # A certificate and its key: with both set, a second, HTTPS listener on `tls_port` serves
+    # the same page (a phone's microphone needs a secure context). The plain one stays.
+    tls_cert: str = field(default_factory=lambda: _env("FISH_VIZ_TLS_CERT", ""))
+    tls_key: str = field(default_factory=lambda: _env("FISH_VIZ_TLS_KEY", ""))
+    tls_port: int = field(default_factory=lambda: _env_int("FISH_VIZ_TLS_PORT", 8724))
+    # True = after the welcome the fish says the last two octets of its LAN address (only
+    # when bound to 0.0.0.0, where a phone has to type it).
+    say_address: bool = field(default_factory=lambda: _env_bool("FISH_SAY_ADDRESS", False))
 
 
 @dataclass
