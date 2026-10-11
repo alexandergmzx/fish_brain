@@ -35,7 +35,8 @@ data when warranted.
 | `braintip`: software for the UNO Q | Written 2026-10-10. Installed on the board (`~/fish_brain`, venv); no conversation run there yet: the board's `.env` has no key |
 | Board: hub, USB speaker, RedOctane microphone | Working on a power bank. Speaker to microphone loop checked |
 | Board: Loquendo | Works; about 0.75 s per short sentence with the daemon warm |
-| Board: link to the MCU | `uart_echo` flashed; 100 of 100 lines answered. Its LEDs not yet looked at |
+| Board: link to the MCU | `uart_echo` flashed; 300 of 300 lines answered at the fish's rate, 3.9 ms each. Its LEDs not yet looked at |
+| Board: bring-up script | `tools/unoq_bringup.sh`: all tests passed 2026-10-11 |
 | Board: local speech-to-text | Slow: `tiny` 3.5 to 4.8 s, `base` 8 s, `small` 20 to 23 s per turn |
 | Board: push-to-talk | No remote. Candidates: the speaker's play/pause key, or the page from a phone |
 | MCU firmware for the UNO Q, motors | Braintip Phases 4 and 5; not started, not in this repo |
@@ -160,7 +161,7 @@ check its replies against this table.
 |---|---|---|
 | [`fish_brain/`](fish_brain/) | yes | The package; modules as in "What is in use" |
 | [`tests/`](tests/) | yes | Unit tests that need no hardware and no network |
-| [`tools/`](tools/) | yes | `uart_check.py` (link soak test), `unoq_checks.sh` (board checks), `sketches/` (two MCU test sketches, not the fish firmware) |
+| [`tools/`](tools/) | yes | `uart_check.py` (link soak test), `unoq_checks.sh` (board checks), `unoq_bringup.sh` (board tests with PASS/FAIL), `sketches/` (two MCU test sketches, not the fish firmware) |
 | [`deploy/`](deploy/) | yes | The unit, the board set-up script, the board's example environment. **The repo is the source of truth for the board: never hand-edit it without the same change here** |
 | [`docs/`](docs/) | yes | `BRAINTIP.md`, `UNOQ_BRIDGE_RPC_EXPLAINED.md`, `viz.md`, `adr/`, `results/` |
 | `gui/` | yes | June prototypes; parked |
@@ -280,7 +281,8 @@ deploy/unoq_setup.sh sync         # from the laptop: copy this tree to the board
 deploy/unoq_setup.sh install      # prints the sudo lines for him; venv, canned phrases, link check
 deploy/unoq_setup.sh service      # install and start the user unit
 deploy/unoq_setup.sh status
-tools/unoq_checks.sh              # the Braintip Phase 1 table
+tools/unoq_checks.sh              # the Braintip Phase 1 table (what the board sees)
+tools/unoq_bringup.sh             # usb, voice, speaker-to-mic loop, MCU link; expect "all tests passed"
 .venv/bin/python tools/uart_check.py --release-router      # needs the uart_echo sketch; expect 0 lost
 systemctl --user restart fish-brain
 journalctl --user -u fish-brain -f

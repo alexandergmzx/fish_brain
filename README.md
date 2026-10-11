@@ -149,6 +149,12 @@ tools/unoq_checks.sh              # what the board sees: USB, audio, input devic
 journalctl --user -u fish-brain -f
 ```
 
+**Bring-up test.** `tools/unoq_bringup.sh` runs the board tests and prints PASS or FAIL for
+each: the port is the USB host with a speaker and a microphone; Loquendo renders a sentence
+in 2 s or less; that sentence played on the speaker is heard by the microphone; 300 lines to
+the MCU (with `uart_echo` flashed) all come back. `--stt tiny` adds a local speech-to-text
+timing. It needs no root and makes sound. Last run 2026-10-11: all passed.
+
 `tools/unoq_checks.sh --mic CARD --speaker CARD` records and plays back; `--keys` finds a
 button's device and key name; `--stress` is a 10-minute load test.
 

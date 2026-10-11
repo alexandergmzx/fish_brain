@@ -15,6 +15,14 @@ Pass. This confirms on the board: the Linux link is `Serial2`; `$/serial/close` 
 port while the router keeps running and the sketch keeps running; uploading works with the
 router up.
 
-Not done: the 33-lines-per-second soak with `tools/uart_check.py` (it needs the Python
-environment on the board), a router restart in the middle of a run, and the LED behaviour,
-which nobody has looked at yet.
+## Soak at the fish's rate (2026-10-11)
+
+`tools/unoq_bringup.sh` (commit after `c6e1aa7`), which runs
+`tools/uart_check.py --port /dev/ttyHS1 --count 300 --release-router`: 300 sent, 300
+acknowledged; round trip 3.59 ms minimum, 3.88 average, 4.02 at the 95th percentile, 4.23
+maximum. The same run passed its other tests: USB host with speaker and microphone; a warm
+Loquendo sentence in 0.79 s; speaker-to-microphone level 0.273 against 0.0006 of silence;
+`tiny` speech-to-text 4.5 s per turn.
+
+Not done: a router restart in the middle of a run, and the LED behaviour, which nobody has
+looked at yet.
