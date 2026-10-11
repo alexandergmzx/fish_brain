@@ -1,6 +1,6 @@
 # 0005 — The page on the board's own display, and the screen as the turn trigger
 
-**Status:** accepted · **Date:** 2026-10-11
+**Status:** replaced by 0006 (2026-10-11) · **Date:** 2026-10-11
 
 ## Context
 

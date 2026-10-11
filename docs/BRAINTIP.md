@@ -54,7 +54,7 @@ the speaker/remote are not recognized. Arduino staff called that setup unsupport
 | STT | faster-whisper `small`, local | Measure on the Cortex-A53; else OpenAI transcription | Phase 3 decision |
 | TTS | `loq` (Loquendo under Wine, x86) | ARM64 port of `loq` not confirmed. Fallback: OpenAI TTS to WAV | Phase 3 decision |
 | LLM | OpenAI chat | Same, over the hotspot | No change |
-| `--viz` | `127.0.0.1:8723` | Optional: bind `0.0.0.0` so the phone on the hotspot opens the fish and hold-to-talk as a fallback | Optional |
+| `--viz` | `127.0.0.1:8723` | Required at the fair: the unit passes it and the page on the operator's phone is the interface (ADR 0006) | Phase 6 |
 | Startup | Manual in a terminal | systemd service at boot | Phase 3 |
 | Firmware | Big_mouth, PlatformIO, Uno R4 (`renesas-ra`) | Port to `arduino:zephyr:unoq` via arduino-cli; read commands from the internal UART | Phase 4 |
 
@@ -317,6 +317,24 @@ common ground with the UNO Q, motor pack separate from the power bank. Before tr
 TB6612FNG, measure each motor: under 1 A running and 3 A stall. Then the README calibration
 (open/close curves, `sync_offset_ms`).
 
+## Phase 6 — the phone as the interface; the reading (ADR 0006, 0007)
+
+Decided 2026-10-11 after the display was measured (`docs/results/2026-10-11-kiosk-display.md`).
+The board drives no display at the fair; the operator's phone is trigger, microphone and badge
+camera. Stages, in order; each leaves the fish working with the board microphone through the
+page, which works today:
+
+| Stage | What | Evidence |
+|---|---|---|
+| 1 | The display unplugged and the board measured; a hotspot smoke test with today's code; token on `/events` and `/audio`, body caps, heartbeat, the inbox in `record_multi`; the console view `?console=1` | results files; level 0 and 2 |
+| 2 | HTTPS listener behind `FISH_VIZ_TLS_*`; `deploy/unoq_setup.sh tls`; the owner's phone passes `isSecureContext` (the go/no-go for the phone microphone); the fish says its address | level 0, 2, 5 |
+| 3 | The reading: `POST /badge` → `gpt-6-luna` → "¿Tú eres X?" → the answer is a turn; `reading_wait`, `reading_fail`; tamer welcome and goodbye | level 0, 1, 2, 5 |
+| 4 | The phone's microphone: AudioWorklet → 16 kHz WAV → `POST /utterance` (`FISH_MIC_CAPTURE=browser`); dropped first if time runs out | level 0, 2, 5 |
+| 5 | Rehearsal on battery on the hotspot with the fair phone; results; the fair matrix rewritten | level 5 |
+
+Pass line: a cold boot with no display; a phone turn over the hotspot; a reading from a badge
+photo to the fish asking the name; the phone's microphone over HTTPS.
+
 ## Proposed config / env (not implemented yet)
 
 | Variable | Example | Purpose |
@@ -400,3 +418,5 @@ the text above disagree, this section is right.
 | PWM pins | "reports of trouble on 5 and 6" | D3, D5 and D6 measured good: 500 Hz, duty right to 0.1 point; enables and direction pins do not disturb each other |
 | Phase 4 pass line | Each PWM pin shows output on an LED or meter | Measured from the MCU by reading the pins back; see `docs/results/2026-10-11-unoq-firmware-leds.md` |
 | Push-to-talk | A remote | The touch display on the board (ADR 0005) |
+| Push-to-talk (2026-10-11, ADR 0006) | The touch display (ADR 0005) | The page on the operator's phone; the display parked |
+| Mic (row above) | The board's PipeWire source | The phone's microphone through the page once Phase 6 Stage 4 lands; the board's stays as the fallback |

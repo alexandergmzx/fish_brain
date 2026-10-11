@@ -122,10 +122,13 @@ The board runs the same program with a different `.env`. Full steps, and which o
 `sudo`, are in [`deploy/README.md`](deploy/README.md).
 
 **Status (2026-10-11).** On the board: the fish runs as a service, starts at boot, speaks its
-welcome and holds a conversation started from a touch display (cloud speech-to-text and LLM,
-Loquendo voice). The MCU runs the fish firmware from Big_mouth and shows the motor signals on
-its LEDs. Not done: the phone hotspot, motor drivers and motors, calibration of the second
-fish. Measurements are in [`docs/results/`](docs/results/).
+welcome and holds a conversation started from the page on a phone or from a touch display (cloud
+speech-to-text and LLM, Loquendo voice). The MCU runs the fish firmware from Big_mouth and shows
+the motor signals on its LEDs. Decided, not yet built: the operator's phone as the only interface
+over HTTPS, the phone's microphone, and the reading of a visitor's badge
+([ADR 0006](docs/adr/0006-the-phone-is-the-interface.md), [ADR 0007](docs/adr/0007-the-reading.md)).
+Not done: the phone hotspot, motor drivers and motors, calibration of the second fish.
+Measurements are in [`docs/results/`](docs/results/).
 
 ### Hardware
 
@@ -134,7 +137,7 @@ fish. Measurements are in [`docs/results/`](docs/results/).
 | Power | A power bank into the hub's power input, the hub's cable into the board. **The cable matters**: with one cable the board stayed in USB device mode and saw nothing on the hub; with a newer one it became the host at once. Check with `cat /sys/class/typec/port0/data_role` (want `[host]`) and `lsusb` |
 | Speaker | Any USB speaker. The one tested is playback-only and also has media keys |
 | Microphone | Any USB microphone (tested: RedOctane USB Microphone) |
-| Push-to-talk | The hold-to-talk target on an HDMI touch display attached to the hub (see "Screen" below), the page opened from a phone, or a button on an input device (`FISH_PTT_DEVICE`) |
+| Push-to-talk | The page opened from the operator's phone or PC (the fair's interface, ADR 0006), a button on an input device (`FISH_PTT_DEVICE`), or the hold-to-talk target on an HDMI touch display (parked, see "Screen" below) |
 | Display (optional) | HDMI touch display on the hub. **Give it its own power and switch it on before the board**: fed from the hub's power bank the board did not see it |
 
 PipeWire picks a USB speaker and microphone as the defaults by itself. Volume:
@@ -213,7 +216,11 @@ only local choice that is close to usable.
   restart, an upload) its pins are not driven, and D8 is pulled high. Fit 10 k from each
   enable (D6, D3, D5) and from D7 and D8 to ground, and a switch on the motor pack.
 
-### Screen, or no screen
+### The phone as the interface, or a screen
+
+At the fair the page is opened on the operator's phone (`FISH_VIZ_HOST=0.0.0.0`, a
+`FISH_VIZ_TOKEN`, the console view `/?console=1`); the board drives no display
+([ADR 0006](docs/adr/0006-the-phone-is-the-interface.md)). The display below is parked.
 
 With an HDMI touch display on the hub the board shows the visitor view of the page
 (`/?kiosk=1`) by itself: the fish and one hold-to-talk target. Set-up, what each screen state
