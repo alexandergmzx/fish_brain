@@ -16,8 +16,9 @@ mouth looks different when the neck is also out; sprites are named
 `neck{Rest|Out}_mouth{0..3}_tail{Rest|Flap}.png` and missing ones fall back to a simpler pose
 (see `web/img/README.md`). Bubbles draw on top. Because the greeting plays before any browser
 connects, `viz.py` **replays the last `speak` event to a browser that connects within 30 s**, so
-the on-screen fish still performs the greeting. The host also plays the audio when present
-(double audio is intentional) so the fish animates even in `--dry-run` (no hardware).
+the on-screen fish still performs the greeting. The host plays the audio; the page's own sound
+is the "Sonido en navegador" toggle, off by default (on a phone next to the fish a second voice
+would only echo it). The fish animates from the envelope either way, even in `--dry-run`.
 
 The page also has a **mic picker + level meter**. Recording is host-side, so the browser can't use
 its own devices; instead `GET /mics` enumerates the host's input devices and `POST /mic
@@ -36,7 +37,8 @@ bar that decays to flat when released (the meter is live **only while recording*
 
 With `--viz` the turn is triggered by an on-screen **hold-to-talk** button (or the browser
 spacebar) instead of the keyboard: press/release POST `/ptt {"down": bool}` to `viz.set_ptt`, and
-`conversation` records via `ptt.record_web` (which polls `viz.ptt_held`) rather than `record_hold`.
+`conversation` records via `ptt.record_multi` (the web button is one `ButtonSource` polling
+`viz.ptt_held`; the viz inbox can hand it an input item instead) rather than `record_hold`.
 This avoids terminal focus / `pynput` issues and makes debugging easy. An empty transcription
 (silence / too-short hold) **re-listens** instead of ending the loop — only `salir`/`quit`/`exit`,
 EOF (`--text`), or Ctrl-C quit.
