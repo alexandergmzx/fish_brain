@@ -190,7 +190,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.viz:
         from .viz import VizServer
         viz = VizServer(cfg)
-        viz.start()
+        try:
+            viz.start()                 # a bad certificate path is a set-up error, not a crash
+        except OSError as e:            # ssl.SSLError is an OSError
+            print(f"Configuration problem: the page could not start: {e}", file=sys.stderr)
+            return 78
 
     try:
         try:
