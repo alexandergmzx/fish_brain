@@ -289,14 +289,19 @@ class CannedConfig:
     goodbye: str = "goodbye"
     no_signal: str = "no_signal"    # spoken when a cloud call fails
     no_mic: str = "no_mic"          # spoken when the microphone can't be opened
+    reading_wait: str = "reading_wait"   # while a badge photo is being read
+    reading_fail: str = "reading_fail"   # the badge could not be read
     # True = greet once per boot, not on every (re)start. Marker lives in $XDG_RUNTIME_DIR.
     welcome_once: bool = field(default_factory=lambda: _env_bool("FISH_WELCOME_ONCE", False))
     # name -> Spanish text spoken by the fish.
     phrases: dict[str, str] = field(default_factory=lambda: {
-        "welcome": "¡Hola pendejos! Llevenme al río y ponganme algo en el ojo, no sean culero",
-        "goodbye": "¡Adiós! Me voy a la verga!",
+        "welcome": "¡Hola! Soy el pez que todo lo sabe. Pregúntame lo que quieras, o enséñame "
+                   "tu gafete y te leo el futuro.",
+        "goodbye": "¡Me voy a nadar! Que les vaya bonito.",
         "no_signal": "Uy, se me fue la señal. Dame un segundo y repítemelo.",
         "no_mic": "No te escucho, revisa el micrófono.",
+        "reading_wait": "A ver, a ver… déjame leer ese gafete. No te muevas.",
+        "reading_fail": "Uy, no alcanzo a leer tu gafete. ¿Cómo te llamas?",
     })
 
 
