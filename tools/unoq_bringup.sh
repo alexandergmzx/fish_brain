@@ -12,12 +12,14 @@
 #   voice  Loquendo: start its daemon, time one warm sentence          (pass: 2 s or less)
 #   loop   play that sentence on the speaker, record it with the microphone
 #                                                 (pass: level 0.02 or more, 10x the silence)
-#   link   MCU link with the uart_echo sketch flashed: 300 lines at the fish's rate
+#   link   MCU link, 300 lines at the fish's rate: the fish firmware's motor-safe check
+#          (fw_check.py), or uart_check.py when the uart_echo sketch is flashed
 #                                                 (pass: none lost)
 #   stt    local speech-to-text on the loop recording, time per turn   (reported, no pass line)
 #
 # Needs no root. `loop` makes sound. `link` asks the router to release /dev/ttyHS1 for the
-# test and hands it back. Nothing else is changed; files go under /tmp.
+# test and hands it back; it is skipped while fish-brain runs or something else holds the
+# link lock. Nothing else is changed; files go under /tmp.
 set -u
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,7 +33,7 @@ VOLUME=""
 TESTS=()
 FAILED=0
 
-usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -134,12 +136,31 @@ PYEOF
 test_link() {
   local out rc
   [ -x "$PY" ] || { result FAIL link "no venv at $REPO/.venv (run deploy/unoq_setup.sh install)"; return; }
+  if systemctl --user is-active --quiet fish-brain 2>/dev/null; then
+    result INFO link "fish-brain is running and holds the port: link test skipped"; return
+  fi
+  out="$("$PY" "$REPO/tools/fw_check.py" check --port "$PORT" --count 300 --release-router 2>&1)"
+  rc=$?
+  case "$out" in
+    *"is in use by"*)   # the link lock is held: the tool refused before touching the router
+      result INFO link "$(printf '%s\n' "$out" | grep 'is in use by' | head -1 | sed 's/^\[fw_check\] //' | cut -c1-150): link test skipped"
+      return ;;
+  esac
+  if [ $rc -eq 0 ]; then
+    result PASS link "firmware: $(printf '%s\n' "$out" | grep -E '^PASS +soak' | tr -s ' ' | cut -d' ' -f3- | cut -c1-150)"
+    return
+  fi
+  if [ $rc -ne 3 ]; then
+    result FAIL link "fw_check exit $rc: $(printf '%s\n' "$out" | grep -E '^FAIL|^\[fw_check\]' | tail -2 | paste -sd' ' | cut -c1-200) (is the fish firmware or uart_echo flashed? run tools/fw_check.py --release-router for the full table)"
+    return
+  fi
+  # Exit 3: the uart_echo sketch answered, so judge the wire alone.
   out="$("$PY" "$REPO/tools/uart_check.py" --port "$PORT" --count 300 --release-router 2>&1)"
   rc=$?
   if [ $rc -eq 0 ]; then
-    result PASS link "$(printf '%s\n' "$out" | grep -iE 'acked|lost|rtt' | grep -v 'sent [0-9]*/' | tr -s ' ' | paste -sd';' | cut -c1-150)"
+    result PASS link "uart_echo sketch: $(printf '%s\n' "$out" | grep -iE 'acked|lost|rtt' | grep -v 'sent [0-9]*/' | tr -s ' ' | paste -sd';' | cut -c1-150)"
   else
-    result FAIL link "uart_check exit $rc: $(printf '%s\n' "$out" | tail -2 | paste -sd' ' | cut -c1-160) (is uart_echo flashed?)"
+    result FAIL link "uart_check exit $rc: $(printf '%s\n' "$out" | tail -2 | paste -sd' ' | cut -c1-160) (the uart_echo sketch answered the probe, then lost lines)"
   fi
 }
 

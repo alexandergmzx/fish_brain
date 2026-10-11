@@ -12,11 +12,15 @@ with numbers (loss, round-trip time, achieved rate) before any motor is wired:
 The default payload `PING {n}` is motor-safe on every target: the echo sketches answer
 `ACK PING <n>` (`--expect ack`) and the real firmware answers `Unknown command. Type HELP`
 (`--expect any`, which counts one reply line per sent line and skips the firmware's echo).
+`--expect auto` sends one `PING 0` first and picks the mode from the answer. The firmware
+itself is checked with tools/fw_check.py, which matches replies by echo.
 
 UNO Q notes. The arduino-router daemon owns /dev/ttyHS1. `--release-router` asks it to
 let go (`$/serial/close`) and hands the port back (`$/serial/open`) on exit, also after
 Ctrl-C or an error, unless `--keep-released` is given. While the port is released every
 Bridge method is unregistered, so a Bridge sketch needs an MCU reset after the hand-back.
+Before any router call the tool takes the link lock (`link_lock`), the same file the app
+holds while it owns the port, so a test never talks into a running fish.
 `--transport bridge` sends each line as a `fish_cmd` notification through the router and
 reads the replies from the router's Monitor port (TCP 127.0.0.1:7500).
 
@@ -31,11 +35,13 @@ from __future__ import annotations
 
 import argparse
 import collections
+import contextlib
 import math
 import os
 import signal
 import socket
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -46,6 +52,8 @@ DEFAULT_HZ = 33.0
 JUNK_WINDOW_S = 0.5     # listen this long after opening, to report boot text / stale bytes
 MAX_SAMPLES = 8         # garbage lines shown in the report
 PING_METHOD = "fish_ping"
+PROBE_LINE = "PING 0"   # --expect auto: motor-safe on the echo sketches and the firmware
+LOCK_DIR = "/run/lock"
 
 
 class SetupError(Exception):
@@ -118,6 +126,125 @@ class RouterRPC:
             pass
 
 
+# --- one owner per port: the link lock and the router hand-over ---------------------------
+
+def lock_path(port: str) -> str:
+    """Lock file for `port`. The app (fish_brain/serial_link.py) uses the same rule."""
+    folder = LOCK_DIR
+    if not (os.path.isdir(folder) and os.access(folder, os.W_OK)):
+        folder = tempfile.gettempdir()
+    return os.path.join(folder, f"fish_brain-{os.path.basename(port)}.lock")
+
+
+def link_lock(port: str):
+    """Take the exclusive lock for `port`; return the open file, which holds it.
+
+    flock(LOCK_EX | LOCK_NB) on `lock_path(port)`, with "pid <n> <argv0 basename>"
+    written into the file. Closing the file (or the process ending) releases it. Busy -> SetupError
+    naming the holder.
+    """
+    import fcntl
+
+    path = lock_path(port)
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o666)
+    except OSError as e:
+        raise SetupError(f"cannot open the link lock {path}: {e}") from e
+    f = os.fdopen(fd, "r+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        holder = f.read(200).strip() or "another process"
+        f.close()
+        raise SetupError(f"{port} is in use by {holder} (lock {path}). Stop it first: "
+                         "systemctl --user stop fish-brain") from None
+    f.truncate(0)
+    f.write(f"pid {os.getpid()} {os.path.basename(sys.argv[0] or 'python')}\n")
+    f.flush()
+    return f
+
+
+def _router_call(router_socket: str, timeout: float, method: str, port: str) -> None:
+    rpc = RouterRPC(router_socket, timeout)
+    try:
+        rpc.call(method, port)
+    finally:
+        rpc.close()
+
+
+def _raise_interrupt(*_: object) -> None:
+    raise KeyboardInterrupt
+
+
+class Released:
+    """What `router_released` yields: the caller stores its transport here."""
+
+    def __init__(self) -> None:
+        self.transport = None           # closed on exit, before the hand-back
+        self.handback_failed = False    # True: the router did not get its port back
+
+
+@contextlib.contextmanager
+def router_released(port: str, router_socket: str, timeout: float, keep: bool = False,
+                    *, release: bool = True, tag: str = "uart_check"):
+    """Run the body with the router off `port`; hand the port back on every way out.
+
+    `timeout`, systemd and a closed ssh session send SIGTERM/SIGHUP: inside the body they
+    arrive as KeyboardInterrupt, so the exit path below always runs. With `release` False
+    only the signal handling and the transport close are done (laptop ports).
+    """
+    old_handlers: dict = {}
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            old_handlers[sig] = signal.signal(sig, _raise_interrupt)
+        except ValueError:
+            break   # not the main thread
+    state = Released()
+    released = False
+    try:
+        if release:
+            # Set first: a close cut short (signal, timeout) may still have taken effect,
+            # and an extra $/serial/open is harmless.
+            released = True
+            try:
+                _router_call(router_socket, timeout, "$/serial/close", port)
+            except (SetupError, RouterError):
+                released = False    # never reached the router, or it refused
+                raise
+            print(f"[{tag}] router released {port}")
+        yield state
+    finally:
+        # A second signal must not cut the hand-back short. Both steps are bounded by
+        # `timeout`, so ignoring Ctrl-C here cannot hang.
+        for sig in (signal.SIGINT, *old_handlers):
+            try:
+                old = signal.signal(sig, signal.SIG_IGN)
+            except ValueError:
+                break
+            old_handlers.setdefault(sig, old)
+        if state.transport is not None:
+            state.transport.close()
+        if released and keep:
+            print(f"[{tag}] {port} left released (--keep-released). Hand it "
+                  f"back with: arduino-router-cli '$/serial/open' {port}")
+        elif released:
+            try:
+                _router_call(router_socket, timeout, "$/serial/open", port)
+                print(f"[{tag}] router re-attached {port} (a Bridge sketch "
+                      "needs an MCU reset to register again)")
+            except (SetupError, RouterError, OSError) as e:
+                print(f"[{tag}] could NOT hand {port} back to the router: {e}\n"
+                      f"             run: arduino-router-cli '$/serial/open' {port}",
+                      file=sys.stderr)
+                state.handback_failed = True
+        for sig, old in old_handlers.items():
+            # None = a handler set from C; SIG_DFL is the closest we can put back.
+            signal.signal(sig, old if old is not None else signal.SIG_DFL)
+
+
 # --- transports: write one line, read whatever comes back ---------------------------------
 
 class SerialTransport:
@@ -130,6 +257,8 @@ class SerialTransport:
             raise SetupError("the serial transport needs 'pyserial' "
                              "(pip install pyserial)") from e
         try:
+            # pyserial puts the tty in raw mode with echo off, so nothing sent by the MCU
+            # is looped back to it by the line discipline.
             self._ser = serial.Serial(port, baud, timeout=0.05, write_timeout=1,
                                       rtscts=False, dsrdtr=False, xonxoff=False)
         except (serial.SerialException, OSError) as e:
@@ -276,10 +405,11 @@ class Matcher:
                     self.res.garbage.append(text)
                 return
             # "any": one reply line per sent line. The real firmware echoes what it
-            # receives and prints a "> " prompt; neither is a reply.
+            # receives and prints a "> " prompt; neither is a reply, and neither is a
+            # '#' record of a trace build.
             while text.startswith(">"):
                 text = text[1:].lstrip()
-            if not text:
+            if not text or text.startswith("#"):
                 return
             if text.upper() in self._texts:
                 self.res.echoes += 1
@@ -364,6 +494,29 @@ def run_check(transport, *, count: int, hz: float, payload: str, expect: str,
         if res.sent > 1 and last > first:
             res.achieved_hz = (res.sent - 1) / (last - first)
     return res
+
+
+def probe_expect(transport, wait: float = 1.0) -> str:
+    """`--expect auto`: send one probe line and name the mode its answer calls for.
+
+    A reply starting with "ACK " is an echo sketch ('ack'); anything else, silence
+    included, is treated as the firmware ('any').
+    """
+    transport.write_line(PROBE_LINE)
+    buf = b""
+    deadline = time.monotonic() + wait
+    quiet_after = 0.0
+    while time.monotonic() < deadline:
+        data = transport.read()
+        if data:
+            buf += data
+            quiet_after = time.monotonic() + 0.15
+        elif quiet_after and time.monotonic() > quiet_after:
+            break
+    for raw in buf.replace(b"\r", b"\n").split(b"\n"):
+        if raw.decode("utf-8", "replace").strip().startswith("ACK "):
+            return "ack"
+    return "any"
 
 
 def _percentile(values: list, p: float) -> float:
@@ -517,8 +670,6 @@ class _FakeRouter:
 
 def self_test() -> int:
     """Run the real code paths against local stand-ins. Returns a process exit code."""
-    import tempfile
-
     failures: list = []
 
     def check(name: str, ok: bool, detail: str = "") -> None:
@@ -538,7 +689,8 @@ def self_test() -> int:
         res = main.last_result
         check("exit code", code == want_code, f"{code}")
         check("lost count", res.lost == want_lost, f"{res.lost}")
-        check("boot junk reported", any("boot junk" in j for j in res.junk))
+        if expect != "auto":    # there the probe's read takes the banner
+            check("boot junk reported", any("boot junk" in j for j in res.junk))
         return res
 
     res = serial_case("serial, echo sketch (ack)", "ack", "ack", 0, 0, 0)
@@ -547,6 +699,10 @@ def self_test() -> int:
     serial_case("serial, 1 line in 50 dropped", "ack", "ack", 50, 4, 1)
     res = serial_case("serial, real-firmware replies (any)", "firmware", "any", 0, 0, 0)
     check("echoes skipped", res.echoes == 200, f"{res.echoes}")
+    res = serial_case("serial, --expect auto against the firmware", "firmware", "auto",
+                      0, 0, 0)
+    check("picked 'any'", res.echoes == 200, f"{res.echoes}")
+    serial_case("serial, --expect auto against the echo sketch", "ack", "auto", 0, 0, 0)
 
     try:
         import msgpack  # noqa: F401
@@ -600,6 +756,21 @@ def self_test() -> int:
                     close()
                 check("only the close call", router.calls == [("$/serial/close", [path])],
                       f"{router.calls}")
+
+                print("[self-test] link lock held elsewhere: refuse before the router")
+                router.calls.clear()
+                path, close = _pty_peer("ack")
+                holder = link_lock(path)
+                try:
+                    code = main(["--port", path, "--release-router", "--router-socket",
+                                 sock, "--count", "5"])
+                finally:
+                    holder.close()
+                    close()
+                check("exit code 2", code == 2, f"{code}")
+                check("router never called", router.calls == [], f"{router.calls}")
+                again = link_lock(path)     # released with the holder's file
+                again.close()
             finally:
                 router.close()
 
@@ -612,7 +783,8 @@ def self_test() -> int:
 def _parse(argv: Optional[list]) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Count lost lines and round-trip time on the motor-MCU link.",
-        epilog="Exit code: 0 no loss, 1 lost lines, 2 the test could not run.")
+        epilog="Exit code: 0 no loss, 1 lost lines, 2 the test could not run "
+               "(which includes a port that the running fish holds).")
     p.add_argument("--port", default="/dev/ttyHS1",
                    help="serial device (default: %(default)s, the UNO Q internal UART)")
     p.add_argument("--baud", type=int, default=115200)
@@ -622,9 +794,10 @@ def _parse(argv: Optional[list]) -> argparse.Namespace:
     p.add_argument("--payload", default="PING {n}",
                    help="line to send; {n} is the line number (default: %(default)r, "
                         "motor-safe)")
-    p.add_argument("--expect", choices=("ack", "any"), default="ack",
+    p.add_argument("--expect", choices=("ack", "any", "auto"), default="ack",
                    help="ack: wait for 'ACK <line>' (echo sketches). any: one reply line "
-                        "per sent line (real firmware)")
+                        "per sent line (real firmware). auto: send 'PING 0' and pick "
+                        "ack when the answer starts with 'ACK ', else any")
     p.add_argument("--transport", choices=("serial", "bridge"), default="serial",
                    help="serial: raw lines on --port. bridge: router notifications")
     p.add_argument("--release-router", action="store_true",
@@ -658,62 +831,41 @@ def _parse(argv: Optional[list]) -> argparse.Namespace:
     return args
 
 
-def _router_call(args: argparse.Namespace, method: str) -> None:
-    rpc = RouterRPC(args.router_socket, args.timeout)
-    try:
-        rpc.call(method, args.port)
-    finally:
-        rpc.close()
-
-
-def _raise_interrupt(*_: object) -> None:
-    raise KeyboardInterrupt
-
-
 def main(argv: Optional[list] = None) -> int:
     args = _parse(argv)
     if args.self_test:
         return self_test()
     main.last_result = Result()
-    # `timeout`, systemd and a closed ssh session send SIGTERM/SIGHUP: unwind through
-    # the finally below so the router gets its port back.
-    old_handlers: dict = {}
-    for name in ("SIGTERM", "SIGHUP"):
-        sig = getattr(signal, name, None)
-        if sig is None:
-            continue
-        try:
-            old_handlers[sig] = signal.signal(sig, _raise_interrupt)
-        except ValueError:
-            break   # not the main thread
-    released = False
-    transport = None
+    serial_mode = args.transport == "serial"
+    lock = None
     code = 2
     try:
-        if args.release_router:
-            # Set first: a close cut short (signal, timeout) may still have taken effect,
-            # and an extra $/serial/open is harmless.
-            released = True
-            try:
-                _router_call(args, "$/serial/close")
-            except (SetupError, RouterError):
-                released = False    # never reached the router, or it refused
-                raise
-            print(f"[uart_check] router released {args.port}")
-        if args.transport == "bridge":
-            transport = BridgeTransport(args.router_socket, args.method, args.port,
-                                        args.monitor, args.timeout)
-        else:
-            transport = SerialTransport(args.port, args.baud)
-        print(f"[uart_check] {transport.label}: {args.count} lines at {args.hz:g} Hz, "
-              f"expect={args.expect}", flush=True)
-        res = run_check(transport, count=args.count, hz=args.hz, payload=args.payload,
-                        expect=args.expect, timeout=args.timeout)
-        main.last_result = res
-        report(res, transport.label, args.hz)
-        code = 0 if res.sent and not res.lost and not res.error else 1
-        if res.error == "interrupted":
-            code = 130
+        # Before any router call: a running fish holds this lock, and must keep its port.
+        if args.release_router or (serial_mode and args.port.startswith("/dev/ttyHS")):
+            lock = link_lock(args.port)
+        with router_released(args.port, args.router_socket, args.timeout,
+                             args.keep_released, release=args.release_router) as rel:
+            if serial_mode:
+                transport = SerialTransport(args.port, args.baud)
+            else:
+                transport = BridgeTransport(args.router_socket, args.method, args.port,
+                                            args.monitor, args.timeout)
+            rel.transport = transport
+            expect = args.expect
+            if expect == "auto":
+                expect = probe_expect(transport)
+                print(f"[uart_check] probe {PROBE_LINE!r}: expect={expect}")
+            print(f"[uart_check] {transport.label}: {args.count} lines at {args.hz:g} Hz, "
+                  f"expect={expect}", flush=True)
+            res = run_check(transport, count=args.count, hz=args.hz, payload=args.payload,
+                            expect=expect, timeout=args.timeout)
+            main.last_result = res
+            report(res, transport.label, args.hz)
+            code = 0 if res.sent and not res.lost and not res.error else 1
+            if res.error == "interrupted":
+                code = 130
+        if rel.handback_failed:
+            code = code or 2
     except SetupError as e:
         print(f"[uart_check] {e}", file=sys.stderr)
     except (RouterError, OSError) as e:
@@ -722,32 +874,8 @@ def main(argv: Optional[list] = None) -> int:
         print("\n[uart_check] interrupted", file=sys.stderr)
         code = 130
     finally:
-        # A second signal must not cut the hand-back short. Both steps are bounded by
-        # --timeout, so ignoring Ctrl-C here cannot hang.
-        for sig in (signal.SIGINT, *old_handlers):
-            try:
-                old = signal.signal(sig, signal.SIG_IGN)
-            except ValueError:
-                break
-            old_handlers.setdefault(sig, old)
-        if transport is not None:
-            transport.close()
-        if released and args.keep_released:
-            print(f"[uart_check] {args.port} left released (--keep-released). Hand it "
-                  f"back with: arduino-router-cli '$/serial/open' {args.port}")
-        elif released:
-            try:
-                _router_call(args, "$/serial/open")
-                print(f"[uart_check] router re-attached {args.port} (a Bridge sketch "
-                      "needs an MCU reset to register again)")
-            except (SetupError, RouterError, OSError) as e:
-                print(f"[uart_check] could NOT hand {args.port} back to the router: {e}\n"
-                      f"             run: arduino-router-cli '$/serial/open' {args.port}",
-                      file=sys.stderr)
-                code = code or 2
-        for sig, old in old_handlers.items():
-            # None = a handler set from C; SIG_DFL is the closest we can put back.
-            signal.signal(sig, old if old is not None else signal.SIG_DFL)
+        if lock is not None:
+            lock.close()
     return code
 
 
