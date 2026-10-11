@@ -108,3 +108,15 @@ class Speaker:
             return True
         finally:
             self._lock.release()
+
+    def say_canned(self, name: str) -> bool:
+        """Play a canned phrase by name under the same lock. Returns False when the fish is
+        already speaking (dropped) or the name is empty; an unknown name is a no-op."""
+        if not name or not self._lock.acquire(blocking=False):
+            return False
+        try:
+            from . import canned   # lazy: canned imports this module
+            canned.play(name, self.link, self.cfg, player=self.player, viz=self.viz)
+            return True
+        finally:
+            self._lock.release()
