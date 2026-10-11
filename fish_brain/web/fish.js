@@ -63,6 +63,7 @@
   // an operator corner. The default page is unchanged.
   const KIOSK = PARAMS.get("kiosk") === "1";
   if (KIOSK) document.documentElement.classList.add("kiosk");
+  if (KIOSK && PARAMS.get("lite") === "1") document.documentElement.classList.add("lite");
   function jsonHeaders() {
     const h = { "Content-Type": "application/json" };
     if (TOKEN) h["X-Fish-Token"] = TOKEN;

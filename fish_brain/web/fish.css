@@ -333,3 +333,5 @@ html.kiosk.ops-open #opsStatus {
     html.kiosk .stage-wrap { height: auto; }
     html.kiosk #stage { width: 100vw; height: auto; }
 }
+/* /?kiosk=1&lite=1: no idle motion on the talk target (for measuring what it costs). */
+html.kiosk.lite #pttButton { animation: none !important; }
