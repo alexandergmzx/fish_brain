@@ -16,9 +16,9 @@ mouth looks different when the neck is also out; sprites are named
 `neck{Rest|Out}_mouth{0..3}_tail{Rest|Flap}.png` and missing ones fall back to a simpler pose
 (see `web/img/README.md`). Bubbles draw on top. Because the greeting plays before any browser
 connects, `viz.py` **replays the last `speak` event to a browser that connects within 30 s**, so
-the on-screen fish still performs the greeting. The host also plays the audio when present
-(double audio is intentional on the laptop; the console on a phone is muted) so the fish
-animates even in `--dry-run` (no hardware).
+the on-screen fish still performs the greeting. The host plays the audio; the page's own sound
+is the "Sonido en navegador" toggle, off by default (on a phone next to the fish a second voice
+would only echo it). The fish animates from the envelope either way, even in `--dry-run`.
 
 The page also has a **mic picker + level meter**. Recording is host-side, so the browser can't use
 its own devices; instead `GET /mics` enumerates the host's input devices and `POST /mic
@@ -37,7 +37,8 @@ bar that decays to flat when released (the meter is live **only while recording*
 
 With `--viz` the turn is triggered by an on-screen **hold-to-talk** button (or the browser
 spacebar) instead of the keyboard: press/release POST `/ptt {"down": bool}` to `viz.set_ptt`, and
-`conversation` records via `ptt.record_web` (which polls `viz.ptt_held`) rather than `record_hold`.
+`conversation` records via `ptt.record_multi` (the web button is one `ButtonSource` polling
+`viz.ptt_held`; the viz inbox can hand it an input item instead) rather than `record_hold`.
 This avoids terminal focus / `pynput` issues and makes debugging easy. An empty transcription
 (silence / too-short hold) **re-listens** instead of ending the loop — only `salir`/`quit`/`exit`,
 EOF (`--text`), or Ctrl-C quit.
@@ -46,8 +47,11 @@ EOF (`--text`), or Ctrl-C quit.
 
 - **Reachable from a phone.** `FISH_VIZ_HOST=0.0.0.0` (or `--viz-host`) makes the page reachable
   from other devices; the start-up line prints the address. Set `FISH_VIZ_TOKEN` with it and open
-  the page as `/?token=<value>`: the POST endpoints (`/speak`, `/ptt`, `/mic`, `/wait`) then
-  refuse requests without it. Without a token anyone on the network can make the fish talk.
+  the page as `/?token=<value>`: the POST endpoints (`/speak`, `/ptt`, `/mic`, `/wait`), the
+  event stream (`/events`) and the audio files (`/audio/<n>.wav`) then refuse requests without
+  it (`?token=` in the query or the `X-Fish-Token` header; loopback passes with
+  `FISH_VIZ_TRUST_LOCAL`). The page itself, `/status` and `/mics` stay open. Without a token
+  anyone on the network can make the fish talk.
 - **A press can end from the host.** A recording is cut at `FISH_PTT_MAX_S`; the host then
   ends the press and sends a `ptt` event (`{"type": "ptt", "held": false}`) so the button
   follows. A press older than the limit is treated as a lost release. The page also releases

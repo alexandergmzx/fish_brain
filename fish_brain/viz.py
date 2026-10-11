@@ -13,6 +13,11 @@ mouth, and tweens neck/tail from the gesture events — so it animates even with
 (`--dry-run`), which is exactly the "physical fish misbehaving" fallback.
 
 Best-effort by design: a slow/absent browser never blocks the conductor (full queues drop).
+
+With a token set (`FISH_VIZ_TOKEN`), `/events`, `/audio/*` and every POST need it; the page,
+its static files, `/status` and `/mics` stay open. The stream sends `retry: 2000` first and a
+`{"type": "hb"}` event after `HEARTBEAT_S` of silence. The inbox (`offer`, `take_inbox`,
+`set_listening`) carries input items from the page to the turn loop instead of a recording.
 """
 from __future__ import annotations
 
@@ -38,10 +43,18 @@ class VizServer:
     # Replay the most recent speak event to a browser that connects within this window, so the
     # startup greeting (played before any browser subscribes) still animates the on-screen fish.
     REPLAY_WINDOW_S = 30.0
+    # A `{"type": "hb"}` event after this much silence on the stream: a comment is invisible
+    # to the page, a data event lets it tell a dead connection from a quiet one.
+    HEARTBEAT_S = 10.0
+    # Open event streams at once; a new one past this evicts the oldest (a phone that
+    # reconnects leaves its old stream behind until the socket times out).
+    MAX_SUBSCRIBERS = 8
+    # Largest JSON body a POST may carry.
+    MAX_JSON_BYTES = 64 * 1024
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        self._subscribers: set[queue.Queue] = set()
+        self._subscribers: list[queue.Queue] = []   # oldest first
         self._lock = threading.Lock()
         self._audio: dict[str, bytes] = {}   # token -> WAV bytes (keep the last few)
         self._audio_order: list[str] = []
@@ -56,6 +69,10 @@ class VizServer:
         self._speaker = None                  # speak.Speaker, registered by app.py (text box -> /speak)
         self._status_provider = None          # app.py: link, internet and backends for /status
         self._started = time.monotonic()
+        # Items for the turn loop that come from the page instead of the microphone (later: a
+        # badge reading, an uploaded recording). Small on purpose: an item is one turn.
+        self._inbox: queue.Queue = queue.Queue(maxsize=2)
+        self._listening = False               # the turn loop is waiting for input
 
     # --- lifecycle ---
     def start(self) -> None:
@@ -79,7 +96,9 @@ class VizServer:
         """What an operator needs at a glance. Never a key, a token or exception text."""
         out = {"ok": True, "up_s": int(time.monotonic() - self._started),
                "host": socket.gethostname(), "ip": _lan_ip(),
-               "ready": self._speaker is not None, "wait": self._wait}
+               "ready": self._speaker is not None, "wait": self._wait,
+               "max_record_s": float(self.cfg.ptt.max_record_s),
+               "mic_capture": "host", "tls": False, "listening": self._listening}
         provider = self._status_provider
         if provider is not None:
             try:
@@ -94,23 +113,73 @@ class VizServer:
             self._httpd.server_close()
             self._httpd = None
 
+    # --- access ---
+    def authorized(self, client_addr: str, headers, query: str) -> bool:
+        """The token rule: no token configured, or loopback with `trust_local`, or the token
+        in the `X-Fish-Token` header or the `token` query field."""
+        token = self.cfg.viz.token
+        if not token:
+            return True
+        if self.cfg.viz.trust_local and _is_loopback(client_addr):
+            return True
+        return token in (headers.get("X-Fish-Token"), parse_qs(query).get("token", [""])[0])
+
+    # --- the inbox: input items from the page, for the turn loop ---
+    @property
+    def listening(self) -> bool:
+        return self._listening
+
+    def set_listening(self, flag: bool) -> None:
+        """The turn loop says whether it is waiting for input (so an item can be offered)."""
+        self._listening = bool(flag)
+
+    def offer(self, item) -> bool:
+        """Hand an item to the turn loop. False when it is not listening or already has one."""
+        if not self._listening:
+            return False
+        try:
+            self._inbox.put_nowait(item)
+        except queue.Full:
+            return False
+        return True
+
+    def take_inbox(self):
+        """The next offered item, or None. Polled by `ptt.record_multi` while it waits."""
+        try:
+            return self._inbox.get_nowait()
+        except queue.Empty:
+            return None
+
     # --- pub/sub ---
     def _subscribe(self) -> queue.Queue:
         q: queue.Queue = queue.Queue(maxsize=64)
+        evicted = None
         with self._lock:
-            self._subscribers.add(q)
+            self._subscribers.append(q)
+            if len(self._subscribers) > self.MAX_SUBSCRIBERS:
+                evicted = self._subscribers.pop(0)
             replay = self._last_event
-            fresh = (time.monotonic() - self._last_event_ts) < self.REPLAY_WINDOW_S
-        if replay is not None and fresh:
+            age_ms = int((time.monotonic() - self._last_event_ts) * 1000)
+        if evicted is not None:
             try:
-                q.put_nowait(replay)  # catch up a just-connected browser (e.g. the greeting)
+                evicted.put_nowait(None)   # the sentinel: its handler loop ends
             except queue.Full:
+                pass
+        if replay is not None and age_ms < self.REPLAY_WINDOW_S * 1000:
+            # Catch up a just-connected browser (e.g. the greeting). The age lets the page skip
+            # a performance that is already over.
+            try:
+                event = json.loads(replay)
+                event["age_ms"] = age_ms
+                q.put_nowait(json.dumps(event))
+            except (ValueError, queue.Full):
                 pass
         return q
 
     def _unsubscribe(self, q: queue.Queue) -> None:
         with self._lock:
-            self._subscribers.discard(q)
+            if q in self._subscribers:
+                self._subscribers.remove(q)
 
     def _publish(self, data: str) -> None:
         with self._lock:
@@ -160,6 +229,7 @@ class VizServer:
             "gestures": [[t, ch, body] for (t, ch, body) in gesture_events],
             "mouth": mouth,
             "open_pwm": self.cfg.mouth.open_pwm,
+            "age_ms": 0,
         })
         with self._lock:
             self._last_event = data
@@ -337,41 +407,64 @@ def _is_loopback(addr: str) -> bool:
 
 def _make_handler(server: "VizServer"):
     class Handler(BaseHTTPRequestHandler):
+        timeout = 20   # a stalled upload or handshake must not pin a worker thread for ever
+
         def log_message(self, *args):  # silence default request logging
             pass
 
+        def _authorized(self, query: str) -> bool:
+            return server.authorized(self.client_address[0], self.headers, query)
+
+        def _read_body(self, max_bytes: int) -> bytes | None:
+            """The request body, or None after answering 411 (no length) or 413 (too big)."""
+            raw = self.headers.get("Content-Length")
+            try:
+                length = int(raw) if raw is not None else -1
+            except ValueError:
+                length = -1
+            if length < 0:
+                self._send_json({"ok": False, "error": "length required"}, status=411)
+                return None
+            if length > max_bytes:
+                self._send_json({"ok": False, "error": "too large"}, status=413)
+                return None
+            return self.rfile.read(length)
+
         def do_GET(self):  # noqa: N802
-            path = self.path.split("?", 1)[0]
+            path, _, query = self.path.partition("?")
             if path == "/" or path == "/index.html":
                 self._serve_file("index.html")
             elif path in ("/fish.js", "/fish.css"):
                 self._serve_file(path.lstrip("/"))
             elif path.startswith("/img/"):
                 self._serve_img(path[len("/img/"):])
-            elif path == "/events":
-                self._serve_events()
             elif path == "/mics":
                 self._send_json(server.list_mics())
             elif path == "/status":
                 self._send_json(server.status())
-            elif path.startswith("/audio/"):
-                self._serve_audio(path[len("/audio/"):])
+            elif path == "/events" or path.startswith("/audio/"):
+                # The stream carries transcripts and the audio is the fish's voice: with a
+                # token set, both need it like the POSTs do.
+                if not self._authorized(query):
+                    self._send_json({"ok": False, "error": "bad token"}, status=403)
+                elif path == "/events":
+                    self._serve_events()
+                else:
+                    self._serve_audio(path[len("/audio/"):])
             else:
                 self.send_error(404)
 
         def do_POST(self):  # noqa: N802
             path, _, query = self.path.partition("?")
             if path in ("/mic", "/ptt", "/speak", "/wait"):
-                token = server.cfg.viz.token
-                local = server.cfg.viz.trust_local and _is_loopback(self.client_address[0])
-                if token and not local and token not in (
-                        self.headers.get("X-Fish-Token"),
-                        parse_qs(query).get("token", [""])[0]):
+                if not self._authorized(query):
                     self._send_json({"ok": False, "error": "bad token"}, status=403)
                     return
+                raw = self._read_body(server.MAX_JSON_BYTES)
+                if raw is None:
+                    return
                 try:
-                    length = int(self.headers.get("Content-Length", 0))
-                    body = json.loads(self.rfile.read(length) or b"{}")
+                    body = json.loads(raw or b"{}")
                     if path == "/mic":
                         self._send_json(server.set_mic(body.get("device")))
                     elif path == "/ptt":
@@ -442,16 +535,19 @@ def _make_handler(server: "VizServer"):
             self.send_header("Connection", "keep-alive")
             self.end_headers()
             try:
-                # Prime the stream so the browser knows it's connected.
-                self.wfile.write(b": connected\n\n")
+                # Prime the stream so the browser knows it's connected, and say how soon to
+                # reconnect after a drop.
+                self.wfile.write(b": connected\n\nretry: 2000\n\n")
                 self.wfile.flush()
                 while True:
                     try:
-                        data = q.get(timeout=15)
+                        data = q.get(timeout=server.HEARTBEAT_S)
                     except queue.Empty:
-                        self.wfile.write(b": keep-alive\n\n")  # heartbeat
+                        self.wfile.write(b'data: {"type":"hb"}\n\n')  # heartbeat
                         self.wfile.flush()
                         continue
+                    if data is None:
+                        break   # evicted by a newer subscriber
                     self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
                     self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, OSError):

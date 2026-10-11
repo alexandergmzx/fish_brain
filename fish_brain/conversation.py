@@ -84,16 +84,30 @@ class FishConversation:
         return self._stt
 
     # --- one turn, in stages ---------------------------------------------------------
-    def _record(self) -> Path:
-        """Wait for push-to-talk and record. Raises ptt.MicError / ptt.PTTUnavailable."""
+    def _record(self) -> Path | object:
+        """Wait for push-to-talk and record, or for an item the page offers through the viz
+        inbox. Raises ptt.MicError / ptt.PTTUnavailable."""
         # Stream the live mic level to the on-screen fish (if any) while recording.
         on_level = (lambda lvl: self.viz.push_level(lvl)) if self.viz is not None else None
         if self.sources:
             if self.viz is not None:
                 print("[ptt] mantén pulsado 'Hablar' (navegador o control) para grabar…",
                       flush=True)
-            return ptt.record_multi(self.cfg.ptt, self.sources, on_level=on_level)
+                self.viz.set_listening(True)
+            try:
+                return ptt.record_multi(
+                    self.cfg.ptt, self.sources, on_level=on_level,
+                    inbox=self.viz.take_inbox if self.viz is not None else None)
+            finally:
+                if self.viz is not None:
+                    self.viz.set_listening(False)
         return ptt.record_hold(self.cfg.ptt, on_level=on_level)
+
+    def _handle_item(self, item) -> bool:
+        """An input item that is not a recording (offered by the page). The single dispatch
+        point for such items; returns whether the loop goes on."""
+        print(f"[turn] unknown input item {type(item).__name__}", flush=True)
+        return True
 
     def _transcribe(self, wav: Path) -> str:
         """Recording -> text ("" when there is nothing usable in it)."""
@@ -137,6 +151,8 @@ class FishConversation:
         else:
             t0 = time.monotonic()
             wav = self._record()
+            if not isinstance(wav, Path):
+                return self._handle_item(wav)
             times["rec"] = time.monotonic() - t0
             t0 = time.monotonic()
             user = self._transcribe(wav)
