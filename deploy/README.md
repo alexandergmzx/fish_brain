@@ -31,7 +31,7 @@ Every subcommand can be run again safely. `deploy/unoq_setup.sh` with no argumen
 | 9 | board | script | `deploy/unoq_setup.sh hotspot "<SSID>" "<password>"` | Saves the phone hotspot so the board joins it by itself. |
 | 10 | board | **you** | `wpctl set-default <id>` (see Audio) | Picks the USB speaker and the remote's microphone. |
 | 11 | laptop | script, **you** for the upload once drivers are wired | `deploy/unoq_fw.sh push`, `compile`, `upload --by <name>` | Puts the fish firmware (Big_mouth, branch `braintip`) on the MCU. Stop the fish first. |
-| 12 | board | script, then **you** | `deploy/unoq_setup.sh kiosk on`, then the two printed `sudo` lines | The page on the board's own display (see the kiosk section). Optional. |
+| 12 | board | script, then **you** | `deploy/unoq_setup.sh kiosk on`, then the two printed `sudo` lines | Parked ([ADR 0006](../docs/adr/0006-the-phone-is-the-interface.md)): the page on the board's own display. At the fair the page is on the operator's phone instead. |
 
 Step 1 without rsync on the board (it is not on the stock image) falls back to tar over ssh; that
 copy does not remove files you deleted on the laptop. `rsync` is in the `apt` line of step 3.
@@ -209,12 +209,21 @@ with nobody logged in. No `sudo` on this image. Saving does not need the phone t
 not drop your ssh session; `connect` (or `nmcli connection up fish-hotspot`) does drop it if you
 came in over the home Wi-Fi.
 
-On the hotspot, find the board from the phone at `http://segunda.local:8723/?token=<FISH_VIZ_TOKEN>`
-(iPhone resolves `.local`; on Android use the board's IP from the hotspot's client list).
+On the hotspot, open the page from the phone at `http://segunda.local:8723/?console=1&token=<FISH_VIZ_TOKEN>`
+or, where `.local` does not resolve, at `http://<board ip>:8723/?console=1&token=<FISH_VIZ_TOKEN>`.
+An Android phone that is itself the hotspot most likely cannot resolve `.local` (its own network is
+mobile data) and hands out a different `192.168.x.0/24` each time the hotspot is enabled: use the IP
+form there. The board can say its address after the welcome (`FISH_SAY_ADDRESS=true`, once it lands);
+from the laptop on the same hotspot, `ssh arduino@segunda.local hostname -I` prints it.
+First measured hotspot turn: not yet (see the fair-day matrix, row 3).
 
 Checks: `nmcli -f NAME,AUTOCONNECT-PRIORITY,DEVICE connection show`, `nmcli device wifi list`.
 
-## The fish page on the board's own display (kiosk)
+## Parked: the fish page on the board's own display (kiosk)
+
+Not used at the fair since [ADR 0006](../docs/adr/0006-the-phone-is-the-interface.md): the
+browser on the board costs 1.1 to 1.3 cores and about 13 C ([results](../docs/results/2026-10-11-kiosk-display.md)).
+With no display attached nothing of it runs. Kept for a stand with mains power.
 
 An HDMI touch display on the hub shows the visitor view of the page (`/?kiosk=1`): the fish
 at full height and one hold-to-talk target. Record: [ADR 0005](../docs/adr/0005-kiosk-on-the-board-display.md).
@@ -276,17 +285,17 @@ With no display attached nothing of the kiosk runs, and the fish is the same.
 
 ## Fair-day test matrix
 
-Run it on battery, on the phone hotspot, with the speaker, the microphone and the display the
-fair will use, the display on its own power and switched on first. Keep
+Run it on battery, on the phone hotspot, with the speaker, the microphone and the phone the
+fair will use; no display. Keep
 `journalctl --user -u fish-brain -f` open in an ssh session. "Board LEDs" are the MCU's
 matrix (three lanes: mouth nearest the USB-C connector, neck, tail) and LED4 (green
 heartbeat, blue per command).
 
 | # | Test | How | Pass |
 |---|---|---|---|
-| 1 | Cold boot | Display on, then power the board; touch nothing | Waiting page, then the fish page; the welcome plays; `[fish] link=serial /dev/ttyHS1 …` in the log. Note the seconds from power to voice |
-| 2 | Touch turn | Hold the round button, ask, release | Button red while the host records, amber while it thinks, green while it speaks; a `[turn]` line with five timings and `link=ok`; the mouth lane of the matrix moves with the voice |
-| 3 | Phone turn | Phone on the hotspot, page with the token, hold to talk | Same as 2 |
+| 1 | Cold boot | Hotspot on, then power the board; touch nothing | The welcome plays; `[fish] link=serial /dev/ttyHS1 …` in the log; the phone opens the page and the dot is green. Note the seconds from power to voice |
+| 2 | Phone turn, board microphone | Hold the round target on the phone (`?console=1`), ask toward the fish, release | Target red while the host records, amber while it thinks, green while it speaks; a `[turn]` line with five timings and `link=ok`; the mouth lane of the matrix moves with the voice. No restart needed to fall back to this row from any other |
+| 3 | Phone turn, phone microphone | `Activar micrófono` once, then as 2 with the phone held toward the visitor | Same as 2, plus an `[utt]` line; `?mic=host` brings row 2 back without a restart |
 | 4 | Page without token | From a phone: `http://segunda.local:8723/` and press | Nothing is recorded or spoken |
 | 5 | Turn time | Read five `[turn]` lines | Release-to-voice mostly under about 5 s |
 | 6 | Hotspot data off | Mobile data off, ask something | "Se me fue la señal…" within about 10 s, about 2 s on the next tries |
@@ -302,15 +311,16 @@ heartbeat, blue per command).
 | 16 | Link missing | `systemctl --user set-environment FISH_SERIAL_PORT=/dev/ttyNOPE`, restart | The fish talks; `(degraded)` in the summary line; `[turn] … link=off`. Then `unset-environment FISH_SERIAL_PORT`, restart |
 | 17 | Microphone unplugged | Pull the microphone, hold and speak, replug | Noted: with the board's own input as fallback the recording is silence and the fish says nothing. Works again after the replug |
 | 18 | Speaker replug | Pull and replug the speaker, ask | Sound returns without a restart (if not: restart, and note it) |
-| 19 | No display | Boot with the display unplugged | Same summary line; a phone turn works; `deploy/unoq_setup.sh kiosk status` shows no browser |
-| 20 | Screen stays on | Leave it untouched for 30 minutes | Still lit and responsive |
+| 19 | Display attached by mistake | Boot with a display plugged in | The fish is the same; `deploy/unoq_setup.sh kiosk status`: the parked kiosk may start a browser, `kiosk pause` closes it |
+| 20 | Phone stays on | Leave the phone untouched for 30 minutes (auto-lock off, on a power bank) | Page still green and responsive; a turn works |
 | 21 | "salir" | Say "salir" | Answered like any phrase; the fish stays on (`FISH_VOICE_QUIT=false`) |
 | 22 | Soak | 30 minutes, a turn every minute or two | No restart, no growing delay, temperature steady |
 | 23 | Battery | Full charge, a turn now and then | Runtime noted; longer than the fair shift |
 
-If a row fails on the day: 2 → the phone page (3). 14/16 → the fish still talks without
-motors. 6–8 → move the phone closer. The display → see the kiosk table above; the fish does
-not need it. Anything else → `deploy/unoq_setup.sh status` and the log.
+If a row fails on the day: 3 → row 2 (`?mic=host`, no restart). The phone → the laptop on the
+hotspot, or `ssh -L 8723:127.0.0.1:8723 arduino@segunda.local` and `http://localhost:8723/?console=1`.
+14/16 → the fish still talks without motors. 6–8 → move the phone closer. Anything else →
+`deploy/unoq_setup.sh status` and the log. Restarting `fish-brain` during the fair: ask first.
 
 Measured so far, without motors: rows 13 and 15 by hand on 2026-10-11
 (`docs/results/2026-10-11-unoq-firmware-leds.md`), row 2 once in echo mode
