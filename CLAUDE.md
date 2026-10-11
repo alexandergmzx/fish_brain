@@ -27,19 +27,20 @@ data when warranted.
 - When a question has a clean experimental answer, propose the experiment instead of
   guessing. Don't add scope beyond what the task asks.
 
-## Status (as of 2026-10-10)
+## Status (as of 2026-10-11)
 
 | Item | State |
 |---|---|
 | Laptop fish (Billy Bass #1, Uno R4) | Working since June 2026 |
-| `braintip`: software for the UNO Q | Written 2026-10-10. Installed on the board (`~/fish_brain`, venv); no conversation run there yet: the board's `.env` has no key |
+| `braintip`: software for the UNO Q | Installed on the board (`~/fish_brain`, venv). 2026-10-11: `--say` spoke there with the local voice through the app's own audio path. No conversation yet: the board has no `.env`, no unit, linger off |
 | Board: hub, USB speaker, RedOctane microphone | Working on a power bank. Speaker to microphone loop checked |
 | Board: Loquendo | Works; about 0.75 s per short sentence with the daemon warm |
-| Board: link to the MCU | `uart_echo` flashed; 300 of 300 lines answered at the fish's rate, 3.9 ms each. Its LEDs not yet looked at |
+| Board: MCU firmware | Big_mouth `braintip` (`unoq/BigMouthQ`) flashed 2026-10-11, no drivers attached: protocol transcript 122 of 122, pulses within 1 ms, 9,999 of 9,999 lines in a soak. LED matrix mirrors the nine L298 signals. PWM measured good on D3, D5, D6 |
 | Board: bring-up script | `tools/unoq_bringup.sh`: all tests passed 2026-10-11 |
 | Board: local speech-to-text | Slow: `tiny` 3.5 to 4.8 s, `base` 8 s, `small` 20 to 23 s per turn |
-| Board: push-to-talk | No remote. Candidates: the speaker's play/pause key, or the page from a phone |
-| MCU firmware for the UNO Q, motors | Braintip Phases 4 and 5; not started, not in this repo |
+| Board: push-to-talk | The touch display's hold-to-talk (ADR 0005); the page on a phone as spare. Kiosk files installed; the LightDM root file is the owner's step |
+| Board: HDMI touch display | Works when it has its own power and is on before the board (2 of 2 cold boots); not on the shared power bank |
+| Motors on the UNO Q (L298N), Billy Bass #2 calibration | Not started. Before wiring: 10 k pull-downs on D6, D3, D5 and on D7, D8 (D8 is pulled high in reset) |
 | Fair | **2026-10-17**. Billy Bass #2 first; the Sorting Hat only if it arrives |
 
 Ask before starting the next Braintip phase. Until the fair, prefer work that closes the fair
@@ -96,7 +97,7 @@ Other repos. **They stay untouched; this repo only calls them.**
 
 | Repo | Role | Touched via |
 |---|---|---|
-| `~/Development/Big_mouth` | Firmware, Uno R4 WiFi: executes motor commands. Pins: its `include/Config.h` | Serial, 115200 baud |
+| `~/Development/Big_mouth` | Firmware: executes motor commands. `main` = Uno R4 WiFi; branch `braintip` adds the UNO Q build (`unoq/BigMouthQ`), edited from here by his word of 2026-10-11, protocol unchanged. Pins: its `include/Config.h` | Serial, 115200 baud; flashed with `deploy/unoq_fw.sh` |
 | `~/Development/loquen_hack` (laptop), `loq_winer` (board) | `loq`, the Loquendo voice | `loq -o FILE.wav -- "texto"` |
 
 ## Targets and hosts (measured 2026-10-10)
@@ -127,11 +128,13 @@ Changed only by a record in [`docs/adr/`](docs/adr/). Do not reopen without new 
 | Gestures | Driven by the text; random only when there is no text | 2026-06-06 |
 | Board transport | Ask the router to release the port; Bridge RPC as alternative (ADR 0001) | 2026-10-10 |
 | Board start-up | systemd user service with linger (ADR 0002) | 2026-10-10 |
+| Turn trigger at the fair | Hold-to-talk on the board's touch display, kiosk session (ADR 0005) | 2026-10-11 |
+| Motor port | One holder at a time: a lock taken before the router is asked for anything | 2026-10-11 |
 | Speech backends | By environment; laptop defaults are local STT and `loq` (ADR 0003) | 2026-10-10 |
 | LLM | Profiles; `groq` in code, `luna` on the board (ADR 0004) | 2026-10-10 |
 | `master` | Untouched. On `braintip` the laptop must still run with no environment set | 2026-10-10 |
 
-Not decided: what triggers a turn at the fair (no remote yet); which cloud speech-to-text;
+Not decided: which cloud speech-to-text;
 a tamer set of canned phrases; local STT when offline. Decided 2026-10-10: the board's voice
 is Loquendo (`FISH_TTS_BACKEND=loq`).
 
@@ -161,8 +164,8 @@ check its replies against this table.
 |---|---|---|
 | [`fish_brain/`](fish_brain/) | yes | The package; modules as in "What is in use" |
 | [`tests/`](tests/) | yes | Unit tests that need no hardware and no network |
-| [`tools/`](tools/) | yes | `uart_check.py` (link soak test), `unoq_checks.sh` (board checks), `unoq_bringup.sh` (board tests with PASS/FAIL), `sketches/` (two MCU test sketches, not the fish firmware) |
-| [`deploy/`](deploy/) | yes | The unit, the board set-up script, the board's example environment. **The repo is the source of truth for the board: never hand-edit it without the same change here** |
+| [`tools/`](tools/) | yes | `fw_check.py` (firmware checker: replies, timing, soak, one-line send), `uart_check.py` (link soak test), `unoq_checks.sh` (board checks), `unoq_bringup.sh` (board tests with PASS/FAIL), `sketches/` (MCU test sketches: two echo sketches and the pin probe; the fish firmware is in Big_mouth) |
+| [`deploy/`](deploy/) | yes | The unit, the board set-up script, the MCU flash helper (`unoq_fw.sh`), the kiosk session (`kiosk/`), the board's example environment. **The repo is the source of truth for the board: never hand-edit it without the same change here** |
 | [`docs/`](docs/) | yes | `BRAINTIP.md`, `UNOQ_BRIDGE_RPC_EXPLAINED.md`, `viz.md`, `adr/`, `results/` |
 | `gui/` | yes | June prototypes; parked |
 | `.claude/settings.json` | yes | Assistant deny rules |
@@ -266,6 +269,7 @@ never `git clean` (it would delete `.env` and `.venv`).
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q tests   # expect all passed
 .venv/bin/python -m compileall -q fish_brain                             # expect no output
 .venv/bin/python tools/uart_check.py --self-test                         # expect 0 lost
+.venv/bin/python tools/fw_check.py --self-test                           # expect all passed
 
 # laptop, no hardware (cloud voice, so Wine is not involved)
 .venv/bin/python -m fish_brain.app --dry-run --text --no-audio --tts openai   # type a turn; expect TX lines and a [turn] line
@@ -281,8 +285,12 @@ deploy/unoq_setup.sh sync         # from the laptop: copy this tree to the board
 deploy/unoq_setup.sh install      # prints the sudo lines for him; venv, canned phrases, link check
 deploy/unoq_setup.sh service      # install and start the user unit
 deploy/unoq_setup.sh status
+deploy/unoq_setup.sh kiosk on|off|pause|resume|status   # the page on the board's display
+deploy/unoq_fw.sh push | compile [--trace] | upload --by <who> | status | log   # from the laptop: MCU sketches
 tools/unoq_checks.sh              # the Braintip Phase 1 table (what the board sees)
 tools/unoq_bringup.sh             # usb, voice, speaker-to-mic loop, MCU link; expect "all tests passed"
+.venv/bin/python tools/fw_check.py check --release-router   # firmware flashed, fish stopped; expect RESULT PASS
+.venv/bin/python tools/fw_check.py send "MOUTH 120 50" --release-router   # one line, prints the reply
 .venv/bin/python tools/uart_check.py --release-router      # needs the uart_echo sketch; expect 0 lost
 systemctl --user restart fish-brain
 journalctl --user -u fish-brain -f
@@ -302,7 +310,7 @@ their own. The steps are in the README.
 
 | Symptom | Look at |
 |---|---|
-| Fish does not move | `--dry-run` output; `--check-link`; `tools/uart_check.py`; the start-up line `link=`; on the board, whether the router gave up the port |
+| Fish does not move | The board's LEDs first: LED4 green must blink (MCU alive), the matrix must move with speech (MCU got the commands: then look after the MCU, at drivers and power). The `[turn]` line's `link=` and any `[link] MCU silent`. With the service stopped: `--check-link` (says whether the MCU answers) and `tools/fw_check.py check --release-router`. These tools refuse while a fish holds the port |
 | Mouth out of sync | The `[turn]` line (`play_start`); `sync_offset_ms` |
 | "no te entendí" every time | The level meter in the page; the selected source (`wpctl status`); `silence_rms` |
 | Remote does nothing | `python -m fish_brain.evdev_button --list` and `--watch`; the start-up line `ptt=` |
@@ -361,6 +369,20 @@ Machine and tool facts only, each dated.
 - **Sketches may only call Zephyr functions exported in `syms-dynamic.ld`**
   (`k_thread_name_get` is not).
 - **From router 0.11 the socket is `0660 root:arduino-router`.**
+- **Every byte the MCU sends while the router owns the port is one error line in the router's
+  journal** (2026-10-11): a sketch that prints unprompted floods it. Keep the port released
+  while a chatty sketch is flashed.
+- **The core's `portInputRegister()` does not compile** (2026-10-11); take the port block
+  from the Zephyr GPIO device (see `tools/sketches/pwm_probe`).
+- **PWM is 500 Hz and a duty change waits for the next period**: 0 to 2 ms from
+  `analogWrite` to the pin (2026-10-11). Direction pins change at once.
+- **At MCU reset D8 (PB4) is pulled high and D2 (PB3) is in a debug function**; the other
+  header pins used by the fish float (2026-10-11).
+- **`pinMode` before `analogWrite` does not break PWM on core 0.55.2** (2026-10-11, D9/D10).
+- **The HDMI display needs its own power and must be on before the board boots**
+  (2026-10-11); on the shared power bank the board did not see it at all.
+- **Without linger the user manager, and PipeWire with it, stops 10 s after the last ssh
+  logout**; after it starts, the USB speaker is the default output only 3 s later.
 
 **This desktop and the assistant's environment**
 

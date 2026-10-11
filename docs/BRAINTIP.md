@@ -389,3 +389,14 @@ the text above disagree, this section is right.
 | Install (3.1) | `pip install -e .` | Works after `apt update` and the apt line; PyAV and the OpenAI SDK are bounded in `pyproject.toml` because the newest versions break it |
 | Unit (3.6) | System unit, `Restart=on-failure` | User unit with linger (PipeWire is per user), `Restart=always`, `KillSignal=SIGINT`; see `deploy/` |
 | LLM | OpenAI chat, no change | Profiles: `groq` (GPT-OSS-20B) or `luna` (GPT-6 Luna); `FISH_LLM_PROFILE` |
+
+## Corrections (2026-10-11)
+
+| Topic | Above says | What is true |
+|---|---|---|
+| Motor driver (target hardware, Phases 4 and 5) | TB6612FNG ×2 at 3.3 V | L298N boards, as on Billy Bass #1, on the same pin numbers (owner, 2026-10-11). Inputs are driven at 3.3 V |
+| Firmware home (Phase 4) | "Use a `braintip` branch in Big_mouth too" | Done: `unoq/BigMouthQ` there, one `main.cpp` for both boards, built on the board with `deploy/unoq_fw.sh` |
+| `pinMode()` on PWM pins | Can break `analogWrite()` | Not on core 0.55.2 (measured on D9, D10). The firmware still gives the enables no `pinMode` |
+| PWM pins | "reports of trouble on 5 and 6" | D3, D5 and D6 measured good: 500 Hz, duty right to 0.1 point; enables and direction pins do not disturb each other |
+| Phase 4 pass line | Each PWM pin shows output on an LED or meter | Measured from the MCU by reading the pins back; see `docs/results/2026-10-11-unoq-firmware-leds.md` |
+| Push-to-talk | A remote | The touch display on the board (ADR 0005) |

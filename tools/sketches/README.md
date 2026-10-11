@@ -8,10 +8,30 @@ ported. They move no motors. Each one pairs with one fish_brain transport:
 | `uart_echo` | `FISH_SERIAL_TRANSPORT=serial` (raw UART) | `/dev/ttyHS1`, released by the router | `ACK <line>` on the UART |
 | `bridge_echo` | `FISH_SERIAL_TRANSPORT=bridge` (router RPC) | `fish_cmd` / `fish_ping` through `/var/run/arduino-router.sock` | `ACK <line>` on the Monitor, TCP `127.0.0.1:7500` |
 
-Status (2026-10-10): **both sketches are uncompiled and unflashed.** They were written
-against core `arduino:zephyr` 0.55.2, `Arduino_RouterBridge` 0.4.3 and the files on the
-board, but nothing was built. The upload recipe below is taken from the core's
-`platform.txt` and was not run either. Compiling and flashing are the owner's steps.
+Status (2026-10-11): `uart_echo` was compiled, flashed and measured on 2026-10-10. It is
+no longer on the MCU: the fish firmware (Big_mouth, branch `braintip`, `unoq/BigMouthQ`) is.
+`bridge_echo` has never been built. `pwm_probe` was flashed once on 2026-10-11.
+
+Sketches are pushed, compiled and flashed with `deploy/unoq_fw.sh` (from the laptop), which
+keeps a numbered log of every upload on the board. Flashing is the owner's step unless he
+says otherwise.
+
+## `pwm_probe`: the pins before anything is wired
+
+Speaks no protocol; it only prints lines starting with `PP ` on the link every 20 s. It
+reports each motor pin's state at entry, reads the direction pins back, measures duty and
+frequency on the enable pins by sampling the pin, checks that enables and direction pins do
+not disturb each other, and shows a test picture on the matrix and the RGB LEDs.
+
+```bash
+deploy/unoq_fw.sh push tools/sketches/pwm_probe && deploy/unoq_fw.sh compile pwm_probe
+deploy/unoq_fw.sh upload pwm_probe --by owner
+.venv/bin/python tools/fw_check.py listen --seconds 45 --release-router    # on the board
+```
+
+Its duty figures read low by up to 2.5 points at mid-scale: it takes fewer samples while a
+pin is high. Correct with the sample counts it prints (`n=` at 0 % and at 100 %). While it
+is flashed, keep the port released: every byte it prints is a line in the router's journal.
 
 ## Rules
 
