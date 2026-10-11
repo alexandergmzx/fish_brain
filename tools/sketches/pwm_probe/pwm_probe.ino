@@ -328,6 +328,13 @@ static void captureEntry() {
   // Driven from outside or floating: a floating pin follows the pull.
   for (uint8_t i = 0; i < 9; i++) {
     uint8_t pin = ALL_PINS[i];
+    if ((i % 3) == 2) {
+      // The enables get no pinMode at all, here or anywhere: the firmware only ever calls
+      // analogWrite on them, and that exact sequence is what section C must measure.
+      // Their entry state comes from the registers alone.
+      g_entry[i].cls = g_entry[i].mode == 3 ? 'f' : g_entry[i].level ? 'h' : 'l';
+      continue;
+    }
     FastPin p = fastPin(pin);
     pinMode(pin, INPUT_PULLUP);
     delay(2);
@@ -385,9 +392,6 @@ static void sectionEntry() {
 
 // ---- B: digital write and read back -----------------------------------------------------
 static void sectionDigital() {
-  for (uint8_t i = 0; i < 3; i++) {
-    pinMode(ENA_PINS[i], INPUT_PULLDOWN);   // quiet inputs while the others are checked
-  }
   for (uint8_t i = 0; i < 6; i++) {
     pinMode(DIR_PINS[i], OUTPUT);
     digitalWrite(DIR_PINS[i], LOW);

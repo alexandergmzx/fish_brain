@@ -841,7 +841,7 @@ def main(argv: Optional[list] = None) -> int:
     code = 2
     try:
         # Before any router call: a running fish holds this lock, and must keep its port.
-        if args.release_router or (serial_mode and args.port.startswith("/dev/ttyHS")):
+        if args.release_router or not serial_mode or args.port.startswith("/dev/ttyHS"):
             lock = link_lock(args.port)
         with router_released(args.port, args.router_socket, args.timeout,
                              args.keep_released, release=args.release_router) as rel:

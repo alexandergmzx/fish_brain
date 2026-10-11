@@ -190,12 +190,21 @@ artifact() {
 
 sha_of() { sha256sum "$1" | cut -d' ' -f1; }
 
-fish_brain_active() { user_systemd is-active --quiet "$UNIT" 2>/dev/null; }
+# Running unless systemd clearly says otherwise: a question that cannot be asked counts as yes.
+fish_brain_active() {
+    local a
+    a="$(user_systemd is-active "$UNIT" 2>/dev/null)" || true
+    [[ "$a" != inactive && "$a" != failed && "$a" != unknown ]]
+}
 
 link_locked() {  # is somebody holding fish_brain's lock on the MCU link?
-    [[ -e "$LINK_LOCK" ]] || return 1
-    have flock || return 1
-    ! flock -n "$LINK_LOCK" true 2>/dev/null
+    local f
+    have flock || return 0
+    for f in "$LINK_LOCK" "${TMPDIR:-/tmp}/$(basename "$LINK_LOCK")"; do
+        [[ -e "$f" ]] || continue
+        flock -n "$f" true 2>/dev/null || return 0
+    done
+    return 1
 }
 
 parse_build_args() {  # sets NAME VARIANT BY NOTE FORCE from the arguments

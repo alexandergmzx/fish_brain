@@ -594,7 +594,15 @@ def cmd_replay(sess: Session, args, rep: Report) -> Optional[int]:
         # appears twice keeps its own expectation.
         blocks = expect.get(line)
         want = (blocks.popleft() if len(blocks) > 1 else blocks[0]) if blocks else None
-        if drives and not args.drive:
+        # '#drive' in the script marks only the long and held tests. Without --drive nothing
+        # that moves an output is sent at all (SET lines are: they move nothing, and the
+        # STATUS blocks further down expect their values); a held PWM needs --held on top,
+        # as everywhere else in this tool.
+        words = line.split()
+        reply = expected_reply(line)           # [] = OPEN/CLOSE: a preset pulse, no reply
+        moves = (bool(words) and words[0].upper() in CHANNELS
+                 and (reply == [] or reply_type(reply or ["ERROR"]) not in ("error", "stopped")))
+        if ((drives or moves) and not args.drive) or (HELD_RE.match(line) and not args.held):
             skipped += 1
             continue
         s = sess.xfer(line)
@@ -626,7 +634,13 @@ def cmd_replay(sess: Session, args, rep: Report) -> Optional[int]:
 
 def _steps(events: list) -> list:
     """[(pwm, ms on the MCU clock)] between consecutive #T records of one channel."""
-    return [(a.pwm, ((b.us - a.us) % (1 << 32)) / 1000.0) for a, b in zip(events, events[1:])]
+    out = []
+    for a, b in zip(events, events[1:]):
+        by_us = ((b.us - a.us) % (1 << 32)) / 1000.0
+        by_ms = float((b.ms - a.ms) % (1 << 32))
+        # micros() may wrap long before 2^32 on this core; millis() then has the last word.
+        out.append((a.pwm, by_us if abs(by_us - by_ms) <= 2.0 else by_ms))
+    return out
 
 
 def run_line(sess: Session, line: str) -> tuple:
@@ -1442,7 +1456,9 @@ def _parse(argv: Optional[list]) -> argparse.Namespace:
                                     "~/fish_fw/protocol)")
     c.add_argument("--expect", help="v1.expect, same search")
     c.add_argument("--drive", action="store_true",
-                   help="also send the lines marked '#drive' (outputs move)")
+                   help="also send the lines that move an output")
+    c.add_argument("--held", action="store_true",
+                   help="with --drive: also the lines that hold a PWM until the next command")
 
     c = sub.add_parser("timing", parents=[common],
                        help="trace build: truth table, pulse lengths, chains, clock")
@@ -1510,6 +1526,8 @@ def _parse(argv: Optional[list]) -> argparse.Namespace:
             p.error(f"--lengths must be 1..{MAX_RUN_TIME_MS}")
     if args.cmd == "soak" and args.bursts and not args.drive:
         p.error("--bursts only makes sense with --drive")
+    if args.cmd == "send" and any(ord(ch) < 32 for ch in args.line):
+        p.error("control characters in the line")
     if args.cmd == "send" and HELD_RE.match(args.line) and not args.held:
         p.error(f"{args.line!r} holds a PWM until the next command: give --held")
     return args
