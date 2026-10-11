@@ -30,6 +30,8 @@ Every subcommand can be run again safely. `deploy/unoq_setup.sh` with no argumen
 | 8 | board | script | `deploy/unoq_setup.sh service` | Installs the unit in `~/.config/systemd/user/`, enables it, starts or restarts it. |
 | 9 | board | script | `deploy/unoq_setup.sh hotspot "<SSID>" "<password>"` | Saves the phone hotspot so the board joins it by itself. |
 | 10 | board | **you** | `wpctl set-default <id>` (see Audio) | Picks the USB speaker and the remote's microphone. |
+| 11 | laptop | script, **you** for the upload once drivers are wired | `deploy/unoq_fw.sh push`, `compile`, `upload --by <name>` | Puts the fish firmware (Big_mouth, branch `braintip`) on the MCU. Stop the fish first. |
+| 12 | board | script, then **you** | `deploy/unoq_setup.sh kiosk on`, then the two printed `sudo` lines | The page on the board's own display (see the kiosk section). Optional. |
 
 Step 1 without rsync on the board (it is not on the stock image) falls back to tar over ssh; that
 copy does not remove files you deleted on the laptop. `rsync` is in the `apt` line of step 3.

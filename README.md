@@ -121,11 +121,11 @@ To find a remote's device and key: `python -m fish_brain.evdev_button --list`, t
 The board runs the same program with a different `.env`. Full steps, and which of them need
 `sudo`, are in [`deploy/README.md`](deploy/README.md).
 
-**Status (2026-10-10).** Checked on the board: USB speaker and microphone, Loquendo, flashing
-the MCU, the raw link to it, installing fish_brain, and local speech-to-text speed. Not run
-there yet: a whole conversation (no API key on the board), the service, and anything with
-motors. Measurements are in
-[`docs/results/`](docs/results/).
+**Status (2026-10-11).** On the board: the fish runs as a service, starts at boot, speaks its
+welcome and holds a conversation started from a touch display (cloud speech-to-text and LLM,
+Loquendo voice). The MCU runs the fish firmware from Big_mouth and shows the motor signals on
+its LEDs. Not done: the phone hotspot, motor drivers and motors, calibration of the second
+fish. Measurements are in [`docs/results/`](docs/results/).
 
 ### Hardware
 
@@ -134,7 +134,8 @@ motors. Measurements are in
 | Power | A power bank into the hub's power input, the hub's cable into the board. **The cable matters**: with one cable the board stayed in USB device mode and saw nothing on the hub; with a newer one it became the host at once. Check with `cat /sys/class/typec/port0/data_role` (want `[host]`) and `lsusb` |
 | Speaker | Any USB speaker. The one tested is playback-only and also has media keys |
 | Microphone | Any USB microphone (tested: RedOctane USB Microphone) |
-| Push-to-talk | A button on an input device (`FISH_PTT_DEVICE`), or the page opened from a phone |
+| Push-to-talk | The hold-to-talk target on an HDMI touch display attached to the hub (see "Screen" below), the page opened from a phone, or a button on an input device (`FISH_PTT_DEVICE`) |
+| Display (optional) | HDMI touch display on the hub. **Give it its own power and switch it on before the board**: fed from the hub's power bank the board did not see it |
 
 PipeWire picks a USB speaker and microphone as the defaults by itself. Volume:
 `wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0`. At 40 % the tested speaker was too quiet for
@@ -186,28 +187,43 @@ only local choice that is close to usable.
   the router to release it and gives it back on exit; the router keeps running. No udev
   rule is needed. By hand:
   `arduino-router-cli '$/serial/close' /dev/ttyHS1` and `'$/serial/open' /dev/ttyHS1`.
-- Sketches are compiled and flashed on the board itself, with the router running and no
-  password:
+- The firmware is Big_mouth's, branch `braintip`, folder `unoq/BigMouthQ`: the same
+  `main.cpp` and headers as the Uno R4, built for the UNO Q. Same protocol, same pin numbers.
+  It is pushed, compiled and flashed from the laptop, with a numbered log of every upload
+  kept on the board:
 
   ```bash
-  arduino-cli compile -b arduino:zephyr:unoq tools/sketches/uart_echo   # about a minute
-  arduino-cli upload  -b arduino:zephyr:unoq tools/sketches/uart_echo
+  deploy/unoq_fw.sh push && deploy/unoq_fw.sh compile      # about 90 s on the board
+  deploy/unoq_fw.sh upload --by <your name>                # resets the MCU; refuses while the fish runs
+  deploy/unoq_fw.sh status
   ```
 
-- [`tools/sketches/`](tools/sketches/) has two test sketches; they are **not** the fish
-  firmware. `uart_echo` answers every line with `ACK <line>`, blinks the MCU's blue LED once
-  a second and flips the green one on each line. It answered 100 of 100 lines at about
-  4 ms each. `bridge_echo` is the same idea through the router (`FISH_SERIAL_TRANSPORT=bridge`)
-  and has not been flashed.
-- `tools/uart_check.py --release-router` runs a longer test at the fish's line rate.
-- Firmware that drives motors from this MCU does not exist yet.
+- **The board's LEDs show what the MCU is doing.** LED4 green blinks while the firmware
+  runs and flashes blue for every line received. The matrix has one lane per motor (mouth
+  nearest the USB-C connector, then neck, then tail): a lamp for `+`, a lamp for `-`, and a
+  bar for the PWM. If the matrix moves with the voice and the fish does not, look after the
+  MCU: drivers, wiring, motor power.
+- Check the firmware with the fish stopped: `tools/fw_check.py check --release-router`
+  (motor-safe lines only), `tools/fw_check.py send "MOUTH 120 50" --release-router` for one
+  line with its reply. These tools, `--check-link` and the flash helper refuse to run while
+  a fish holds the port.
+- [`tools/sketches/`](tools/sketches/) has test sketches only: two echo sketches for the
+  link and `pwm_probe`, which measures the motor pins with nothing wired.
+- **Before wiring L298N boards**: while the MCU is in reset (the whole Linux boot, a router
+  restart, an upload) its pins are not driven, and D8 is pulled high. Fit 10 k from each
+  enable (D6, D3, D5) and from D7 and D8 to ground, and a switch on the motor pack.
 
-### No screen
+### Screen, or no screen
 
-A turn is triggered by a button on an input device (`FISH_PTT_DEVICE`, `FISH_PTT_KEY`,
-`FISH_PTT_MODE`) or by the page opened from a phone (`--viz` with `FISH_VIZ_HOST=0.0.0.0`
-and a `FISH_VIZ_TOKEN`). With neither, the program stops with exit status 78 instead of
-restarting forever.
+With an HDMI touch display on the hub the board shows the visitor view of the page
+(`/?kiosk=1`) by itself: the fish and one hold-to-talk target. Set-up, what each screen state
+means and the operator corner are in
+[`deploy/README.md`](deploy/README.md#the-fish-page-on-the-boards-own-display-kiosk).
+
+Without a display a turn is triggered by the page opened from a phone (`FISH_VIZ_HOST=0.0.0.0`
+and a `FISH_VIZ_TOKEN`) or by a button on an input device (`FISH_PTT_DEVICE`, `FISH_PTT_KEY`,
+`FISH_PTT_MODE`). With none of these the program stops with exit status 78 instead of
+restarting forever. The fish itself runs the same with and without a display.
 
 ## Calibration
 
