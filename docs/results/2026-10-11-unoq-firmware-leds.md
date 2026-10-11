@@ -62,7 +62,7 @@ fades red, green, blue with `analogWrite`; LED4 lights with LOW.
 | MCU clock | same | −547 ppm against the host over 12 s |
 | Loop | same | Longest gap 13.2 ms (while a long reply was printed), no trace record dropped |
 | Soak, the fish's own lines with bursts | `fw_check.py soak --seconds 300 --drive --bursts` | 9,999 sent, echoed and accepted, 0 lost; round trip 9.13 ms average, 21.75 maximum; longest loop gap 1.2 ms |
-| One spoken sentence through the app | `python -m fish_brain.app --say "…"` with `FISH_LINK_LOG` | Voice from the USB speaker (heard by the owner on the earlier run with `uart_echo`). 185 lines in 8.1 s, 182 echoed and accepted, none rejected. The other three are the attach `STOP` and the last two lines, whose replies the log of that commit could not record (fixed in `8868853`'s successor) |
+| One spoken sentence through the app | `python -m fish_brain.app --say "…"` with `FISH_LINK_LOG` | Voice from the USB speaker (heard by the owner on the earlier run with `uart_echo`). 185 lines in 8.1 s, 182 echoed and accepted, none rejected. The other three are the attach `STOP` and the last two lines, whose replies the log of that commit could not record (the log was fixed afterwards, commit `8d72d6e`) |
 
 ## Firmware, normal build (upload 3, the one left on the MCU)
 
@@ -73,6 +73,19 @@ fades red, green, blue with `analogWrite`; LED4 lights with LOW.
 | `fw_check.py soak --seconds 600 --drive --bursts` | 19,999 sent, echoed and accepted, 0 lost; round trip 5.10 ms average, 5.17 at the 95th percentile, 47.5 maximum |
 
 Pulse timing was measured on the trace build of the same source and not again on this one.
+
+## Rehearsals with the app talking (normal build, commit `993a742`)
+
+The app was run by hand on the board (`python -m fish_brain.app --say "<23 s of text>"`,
+local voice, `FISH_LINK_LOG` on). Pass lines: tools refuse and the fish loses no line; all
+outputs off within 1 s of a hard kill; the voice continues through a reflash.
+
+| Case | What was done | Result |
+|---|---|---|
+| Tools against a talking fish | 9 s into the sentence: `app --check-link`, `uart_check.py --release-router`, `fw_check.py check --release-router`, `unoq_setup.sh router restore`, `unoq_fw.sh upload` | All five refused, naming the holder (`pid … app.py`). The fish sent 626 lines in 23.2 s; 626 echoed by the MCU, none rejected |
+| Hard kill | `kill -9` of the app 10 s into the sentence, then `fw_check.py send STATUS` | 0.99 s after the kill (the time the tool needs to start): MOUTH, NECK, TAIL all `stopped`. No STOP was sent; the last pulse ended by itself |
+| Restart after the kill | `app --say "Ya volví."` | First line on the link: `STOP`, 0.9 s before the first mouth pulse |
+| Reflash mid-sentence | `unoq_fw.sh upload BigMouthQ --force` 9 s into the sentence (upload 4, 11 s) | The voice went on. Journal: `[link] MCU silent` 15.0 s after attach, `[link] MCU answering again` 5.8 s later. 635 lines written. `fw_check.py check` afterwards: pass |
 
 ## Found on the way
 
@@ -86,6 +99,6 @@ Pulse timing was measured on the trace build of the same source and not again on
 ## Not done
 
 - The owner has not yet watched the lamp walk or a spoken sentence on the matrix.
-- Router restart and reflash in the middle of speech; `kill -9` of the app in mid-sentence.
+- A router restart in the middle of speech (the owner's `sudo`).
 - An overnight soak.
 - Anything with a driver or a motor.
