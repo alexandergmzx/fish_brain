@@ -51,6 +51,14 @@
 #define PP_REGISTERS 1
 #endif
 
+#if PP_REGISTERS
+// The core's portInputRegister() does not compile on 0.55.2 (its cast binds after `->IDR`),
+// so the port block is taken from the Zephyr GPIO device here.
+#define PP_PORT(pin) ((GPIO_TypeDef*)(((struct gpio_stm32_config*)(digitalPinToPortDevice(pin)->config))->base))
+#define PP_IDR(pin)  ((volatile uint32_t*)&(PP_PORT(pin)->IDR))
+#define PP_MASK(pin) ((uint32_t)1U << digitalPinToPinIndex(pin))
+#endif
+
 static const unsigned long REPORT_PERIOD_MS = 20000;
 static const float DUTY_TOLERANCE = 1.5f;   // percentage points
 
@@ -187,8 +195,8 @@ static FastPin fastPin(uint8_t pin) {
   p.idr = nullptr;
   p.mask = 0;
 #if PP_REGISTERS
-  p.idr = (volatile uint32_t*)(uintptr_t)portInputRegister(pin);
-  p.mask = (uint32_t)digitalPinToBitMask(pin);
+  p.idr = PP_IDR(pin);
+  p.mask = PP_MASK(pin);
 #endif
   return p;
 }
@@ -301,8 +309,8 @@ static void captureEntry() {
     e.cls = '?';
 #if PP_REGISTERS
     // STM32 GPIO block: MODER +0x00, PUPDR +0x0C, IDR +0x10, AFRL +0x20, AFRH +0x24.
-    volatile uint32_t* idr = (volatile uint32_t*)(uintptr_t)portInputRegister(pin);
-    uint32_t mask = (uint32_t)digitalPinToBitMask(pin);
+    volatile uint32_t* idr = PP_IDR(pin);
+    uint32_t mask = PP_MASK(pin);
     uint8_t bit = 0;
     while (bit < 15 && !(mask & (1UL << bit))) {
       bit++;
