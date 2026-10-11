@@ -188,3 +188,148 @@ input[type="range"] { width: 100%; accent-color: #63b3ed; }
 }
 .file-row label:hover { background: #2b6cb0; }
 .file-row input[type=file] { position: absolute; left: -9999px; }
+
+
+/* ---- visitor view (/?kiosk=1): fish at full height, one talk target ---------------- */
+html.kiosk, html.kiosk body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    cursor: none;
+}
+html.kiosk { --talk-w: clamp(190px, 28vw, 46vh); }
+html.kiosk body { padding: 0; display: block; }
+html.kiosk .container {
+    max-width: none;
+    width: 100vw;
+    height: 100vh;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--talk-w);
+    align-items: center;
+}
+html.kiosk h1 {
+    position: fixed;
+    top: 1.5vh;
+    left: 2vw;
+    margin: 0;
+    z-index: 3;
+    font-size: clamp(14px, 3.2vh, 30px);
+    opacity: 0.85;
+}
+html.kiosk .stage-wrap {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+html.kiosk #stage {
+    width: auto;
+    height: min(100vh, calc((100vw - var(--talk-w)) * 5 / 6));
+    aspect-ratio: 6 / 5;
+    border-radius: 0;
+}
+html.kiosk #conn-dot { top: 1.6vh; right: auto; left: 0.6vw; }
+html.kiosk #kioskSay {
+    position: absolute;
+    left: 3vw;
+    right: 3vw;
+    bottom: 2.5vh;
+    text-align: center;
+    pointer-events: none;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+html.kiosk #kioskSay p { margin: 0.4vh 0; }
+html.kiosk #kioskHeard { font-size: clamp(12px, 2.6vh, 22px); opacity: 0.75; }
+html.kiosk #kioskReply { font-size: clamp(15px, 3.8vh, 34px); font-weight: 600; }
+
+/* The talk target: one round button that is always a little alive. */
+html.kiosk #pttButton {
+    --lvl: 0;
+    width: min(calc(var(--talk-w) - 24px), 62vh);
+    aspect-ratio: 1;
+    margin: 0;
+    padding: 8%;
+    justify-self: center;
+    border-radius: 50%;
+    font-size: clamp(16px, 3.6vh, 34px);
+    line-height: 1.2;
+    cursor: none;
+    background: #3182ce;
+    box-shadow: 0 0 0 0 rgba(99, 179, 237, 0.5), 0 1.5vh 4vh rgba(0, 0, 0, 0.35);
+    transition: background 0.35s, box-shadow 0.25s;
+    animation: kBreathe 3.4s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+html.kiosk #pttButton:hover { background: #3182ce; }
+html.kiosk.k-waiting #pttButton { background: #805ad5; animation-duration: 1.2s; }
+html.kiosk.k-listening #pttButton {
+    background: #e53e3e;
+    animation: kListen 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) infinite alternate;
+    box-shadow: 0 0 0 calc(0.6vh + var(--lvl) * 5vh) rgba(229, 62, 62, 0.28),
+                0 1.5vh 4vh rgba(0, 0, 0, 0.35);
+}
+html.kiosk.k-thinking #pttButton {
+    background: #d69e2e;
+    animation: kThink 1.5s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+html.kiosk.k-speaking #pttButton {
+    background: #2c7a7b;
+    opacity: 0.8;
+    animation: kSpeak 0.62s cubic-bezier(0.34, 1.56, 0.64, 1) infinite alternate;
+}
+html.kiosk.k-offline #pttButton { background: #4a5568; opacity: 0.7; animation-duration: 6s; }
+html.kiosk #pttButton.k-nudge { animation: kNudge 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) 1; }
+@keyframes kBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035) translateY(-0.6vh); } }
+@keyframes kListen { from { transform: scale(0.97); } to { transform: scale(1.05); } }
+@keyframes kThink {
+    0%, 100% { transform: rotate(-3deg) scale(0.98); }
+    50% { transform: rotate(3deg) scale(1.02) translateY(-0.8vh); }
+}
+@keyframes kSpeak { from { transform: scale(0.96) translateY(0.4vh); } to { transform: scale(1.02) translateY(-0.4vh); } }
+@keyframes kNudge {
+    10%, 90% { transform: translateX(-0.4vw) rotate(-2deg); }
+    30%, 70% { transform: translateX(0.8vw) rotate(3deg); }
+    50% { transform: translateX(-1vw) rotate(-3deg); }
+}
+
+/* Operator corner (five taps top-right) and the sheet it opens. */
+html.kiosk #opsCorner { position: fixed; top: 0; right: 0; width: 12vmin; height: 12vmin; z-index: 5; }
+html.kiosk .controls { display: none; }
+html.kiosk.ops-open .controls {
+    display: grid;
+    position: fixed;
+    inset: 4vh 4vw;
+    margin: 0;
+    padding: 3vh 3vw;
+    z-index: 4;
+    overflow: auto;
+    touch-action: pan-y;
+    background: rgba(26, 32, 44, 0.96);
+    border-radius: 16px;
+    box-shadow: 0 2vh 8vh rgba(0, 0, 0, 0.6);
+}
+html.kiosk.ops-open, html.kiosk.ops-open body { cursor: auto; }
+#opsStatus { display: none; }
+html.kiosk.ops-open #opsStatus {
+    display: block;
+    grid-column: 1 / -1;
+    margin: 0;
+    font: 14px/1.5 ui-monospace, monospace;
+    white-space: pre-wrap;
+    color: #9ae6b4;
+}
+@media (orientation: portrait) {
+    html.kiosk .container { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    html.kiosk .stage-wrap { height: auto; }
+    html.kiosk #stage { width: 100vw; height: auto; }
+}

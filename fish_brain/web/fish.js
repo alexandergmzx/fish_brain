@@ -57,7 +57,12 @@
   // POST /ptt {down} on press/release edges; the host records while held. Works with the
   // button (mouse/touch) or the spacebar, so you don't need terminal focus or pynput.
   // When the host sets FISH_VIZ_TOKEN, open the page as /?token=... and every POST carries it.
-  const TOKEN = new URLSearchParams(location.search).get("token") || "";
+  const PARAMS = new URLSearchParams(location.search);
+  const TOKEN = PARAMS.get("token") || "";
+  // Visitor view for a touch display (/?kiosk=1): fish and one talk target, the rest behind
+  // an operator corner. The default page is unchanged.
+  const KIOSK = PARAMS.get("kiosk") === "1";
+  if (KIOSK) document.documentElement.classList.add("kiosk");
   function jsonHeaders() {
     const h = { "Content-Type": "application/json" };
     if (TOKEN) h["X-Fish-Token"] = TOKEN;
@@ -105,11 +110,13 @@
       body: JSON.stringify({ down }),
     }).catch(() => {});
   }
-  pttButton.addEventListener("mousedown", (e) => { e.preventDefault(); setPtt(true); });
-  pttButton.addEventListener("touchstart", (e) => { e.preventDefault(); setPtt(true); }, { passive: false });
-  pttButton.addEventListener("touchend", (e) => { e.preventDefault(); setPtt(false); });
-  pttButton.addEventListener("touchcancel", () => setPtt(false));
-  window.addEventListener("mouseup", () => setPtt(false));   // release anywhere, not just on the button
+  if (!KIOSK) {
+    pttButton.addEventListener("mousedown", (e) => { e.preventDefault(); setPtt(true); });
+    pttButton.addEventListener("touchstart", (e) => { e.preventDefault(); setPtt(true); }, { passive: false });
+    pttButton.addEventListener("touchend", (e) => { e.preventDefault(); setPtt(false); });
+    pttButton.addEventListener("touchcancel", () => setPtt(false));
+    window.addEventListener("mouseup", () => setPtt(false));   // release anywhere, not just on the button
+  }
   const typingTag = (t) => t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName);
   // X11/Linux auto-repeat fires keyup+keydown PAIRS while a key is held, which would flap the
   // recording on/off. Debounce the release: a keyup schedules stop, but the auto-repeat keydown
@@ -442,10 +449,165 @@
   }
   requestAnimationFrame(frame);
 
+  // ---- visitor view (kiosk) ------------------------------------------------
+  // What the visitor sees is what the host is doing, not what the finger is doing: the
+  // target shows "listening" only while level events arrive (they flow only while the host
+  // records), "thinking" from the release to the reply, "speaking" for the length of the
+  // reply. All of it comes from events the page already receives.
+  const kiosk = (() => {
+    if (!KIOSK) return { conn() {}, event() {} };
+    const root = document.documentElement;
+    const HINT = {
+      ready: "Mantén para hablar",
+      listening: "Te escucho…",
+      waiting: "Un momento…",
+      thinking: "Pensando…",
+      speaking: "Estoy hablando…",
+      offline: "Vuelvo enseguida…",
+    };
+    const label = document.createElement("span");
+    label.id = "kioskHint";
+    pttButton.textContent = "";
+    pttButton.appendChild(label);
+    const say = document.createElement("div");
+    say.id = "kioskSay";
+    say.innerHTML = '<p id="kioskHeard"></p><p id="kioskReply"></p>';
+    document.querySelector(".stage-wrap").appendChild(say);
+    const heard = say.querySelector("#kioskHeard"), reply = say.querySelector("#kioskReply");
+
+    let online = false, state = "", pressedAt = 0, lastLevel = 0, speakUntil = 0;
+    let thinkTimer = null;
+    function show(next) {
+      if (next === state) return;
+      state = next;
+      for (const k of Object.keys(HINT)) root.classList.toggle("k-" + k, k === next);
+      label.textContent = HINT[next];
+    }
+    function settle() {                         // the state when nothing else is going on
+      if (!online) return show("offline");
+      if (performance.now() < speakUntil) return show("speaking");
+      show("ready");
+    }
+    function nudge() {                          // a press that cannot be taken right now
+      pttButton.classList.remove("k-nudge");
+      void pttButton.offsetWidth;               // restart the animation
+      pttButton.classList.add("k-nudge");
+    }
+
+    // One hold = from the first finger down to the last finger up. A second finger, a palm
+    // or a finger sliding off the target must not end it.
+    const fingers = new Set();
+    function down(e) {
+      e.preventDefault();
+      fingers.add(e.pointerId);
+      try { pttButton.setPointerCapture(e.pointerId); } catch (_) {}
+      if (fingers.size > 1) return;
+      if (!online || performance.now() < speakUntil || state === "thinking") { nudge(); return; }
+      pressedAt = performance.now();
+      lastLevel = 0;
+      setPtt(false);                            // clears a "host ended the last press" latch
+      setPtt(true);
+      show("waiting");
+    }
+    function up(e) {
+      if (!fingers.delete(e.pointerId) || fingers.size) return;
+      if (!pttDown) { settle(); return; }
+      const held = performance.now() - pressedAt;
+      setPtt(false);
+      if (lastLevel && held > 350) {
+        show("thinking");
+        clearTimeout(thinkTimer);
+        thinkTimer = setTimeout(settle, 45000);  // a turn that never answers must not stick
+      } else {
+        nudge();                                 // a tap, or the host was not recording
+        settle();
+      }
+    }
+    pttButton.addEventListener("pointerdown", down);
+    for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) {
+      pttButton.addEventListener(t, up);
+    }
+    // Nothing but the hold does anything on a public screen.
+    for (const t of ["contextmenu", "selectstart", "dragstart", "gesturestart"]) {
+      document.addEventListener(t, (e) => { if (!root.classList.contains("ops-open")) e.preventDefault(); });
+    }
+    document.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+
+    // Operator corner: five taps in the top-right corner within three seconds.
+    const corner = document.createElement("div");
+    corner.id = "opsCorner";
+    document.body.appendChild(corner);
+    const opsStatus = document.createElement("pre");
+    opsStatus.id = "opsStatus";
+    document.querySelector(".controls").prepend(opsStatus);
+    let taps = [], opsTimer = null, opsPoll = null;
+    async function refreshStatus() {
+      try {
+        const st = await (await fetch("/status", { cache: "no-store" })).json();
+        const link = st.link || {};
+        const b = st.backends || {};
+        opsStatus.textContent =
+          `${st.host}  ${st.ip}  up ${st.up_s}s\n` +
+          `link: ${link.desc || "?"}  [${link.health || "?"}]\n` +
+          `internet: ${st.online === undefined ? "?" : st.online ? "ok" : "OFFLINE"}` +
+          `   ready: ${st.ready ? "yes" : "no"}${st.wait ? "   WAIT-TO-SPEAK ON" : ""}\n` +
+          `stt ${b.stt || "?"}  llm ${b.llm || "?"}  tts ${b.tts || "?"}\nptt ${b.ptt || "?"}`;
+      } catch (_) {
+        opsStatus.textContent = "sin respuesta del pez (fish-brain)";
+      }
+    }
+    function ops(open) {
+      root.classList.toggle("ops-open", open);
+      clearTimeout(opsTimer); clearInterval(opsPoll);
+      if (open) {
+        refreshStatus(); loadMics();
+        opsPoll = setInterval(refreshStatus, 2000);
+        opsTimer = setTimeout(() => ops(false), 45000);
+      }
+    }
+    corner.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      const now = performance.now();
+      taps = taps.filter((t) => now - t < 3000);
+      taps.push(now);
+      if (taps.length >= 5) { taps = []; ops(!root.classList.contains("ops-open")); }
+    });
+
+    show("offline");
+    return {
+      conn(live) { online = live; if (!pttDown) settle(); },
+      event(ev) {
+        if (ev.type === "level") {
+          lastLevel = performance.now();
+          if (pttDown) {
+            show("listening");
+            pttButton.style.setProperty("--lvl", Math.min(1, ev.rms * 12).toFixed(3));
+          }
+        } else if (ev.type === "ptt" && !ev.held) {
+          fingers.clear();
+          if (state === "listening" || state === "waiting") show("thinking");
+        } else if (ev.type === "stt") {
+          if (ev.role === "user") {
+            heard.textContent = ev.text || "";
+            if ((ev.text || "").startsWith("…")) { clearTimeout(thinkTimer); nudge(); settle(); }
+          } else {
+            reply.textContent = ev.text || "";
+          }
+        } else if (ev.type === "speak") {
+          clearTimeout(thinkTimer);
+          speakUntil = performance.now() + (ev.duration_ms || 0) + 300;
+          show("speaking");
+          setTimeout(() => { if (!pttDown) settle(); }, (ev.duration_ms || 0) + 350);
+        }
+      },
+    };
+  })();
+
   // ---- transport ---------------------------------------------------------
   function setConn(state, text) {
     dot.className = state;            // "" | "live" | "off"
     statusEl.textContent = text;
+    if (KIOSK) kiosk.conn(state === "live");
   }
   function connect() {
     const es = new EventSource("/events");
@@ -459,6 +621,7 @@
       else if (ev.type === "stt") setTranscript(ev.role, ev.text);
       else if (ev.type === "ptt" && !ev.held) hostReleasedPtt();
       else if (ev.type === "draft") { speakText.value = ev.text || ""; speakText.focus(); }
+      if (KIOSK) kiosk.event(ev);
     };
   }
   connect();
