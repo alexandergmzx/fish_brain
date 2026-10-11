@@ -34,6 +34,9 @@ class Conversation:
         self._dropped: set[str] = set()
         # Rolling history of {"role","content"} (user/assistant only; system is fixed).
         self._history: list[dict[str, str]] = []
+        # Rules for the current visitor (the reading), sent as a second system message right
+        # after the persona. Empty = none; `reset()` clears them with the history.
+        self.extra_rules: str = ""
         # Stats from the last reply() call (used by `python -m fish_brain.ab`).
         self.last_latency_s: float = 0.0
         self.last_usage = None
@@ -41,12 +44,26 @@ class Conversation:
 
     def _messages(self, user_text: str) -> list[dict[str, str]]:
         msgs = [{"role": "system", "content": self.cfg.system_prompt}]
+        if self.extra_rules:
+            msgs.append({"role": "system", "content": self.extra_rules})
         msgs.extend(self._history)
         msgs.append({"role": "user", "content": user_text})
         return msgs
 
     def reset(self) -> None:
+        """Forget the history and the per-visitor rules (a new visitor)."""
         self._history.clear()
+        self.extra_rules = ""
+
+    def remember(self, user_text: str, answer: str) -> None:
+        """Append one user/assistant pair to the history (trimmed to the last N pairs), as
+        if `answer` had been the model's reply. Also seeds a turn that was spoken without
+        the model (the reading's question)."""
+        self._history.append({"role": "user", "content": user_text})
+        self._history.append({"role": "assistant", "content": answer})
+        max_msgs = self.cfg.max_history_turns * 2
+        if len(self._history) > max_msgs:
+            self._history = self._history[-max_msgs:]
 
     def _kwargs(self) -> dict:
         kwargs: dict = {}
@@ -108,10 +125,5 @@ class Conversation:
         print(f"[llm] {self.cfg.profile} {self.cfg.model} {self.last_latency_s:.2f}s",
               file=sys.stderr)
         answer = (resp.choices[0].message.content or "").strip()
-        self._history.append({"role": "user", "content": user_text})
-        self._history.append({"role": "assistant", "content": answer})
-        # Trim to the last N user+assistant pairs.
-        max_msgs = self.cfg.max_history_turns * 2
-        if len(self._history) > max_msgs:
-            self._history = self._history[-max_msgs:]
+        self.remember(user_text, answer)
         return answer
