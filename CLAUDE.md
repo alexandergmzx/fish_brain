@@ -391,6 +391,9 @@ Machine and tool facts only, each dated.
   (2026-10-11); on the shared power bank the board did not see it at all.
 - **Without linger the user manager, and PipeWire with it, stops 10 s after the last ssh
   logout**; after it starts, the USB speaker is the default output only 3 s later.
+- **The kiosk browser is the whole cost of the display** (2026-10-11): with it closed the board
+  idles at under 2 % CPU, Xorg at 0.4 %, and the hottest zone drops from 68 C to 48 C in four
+  minutes; the LightDM session and the supervisor are below the noise.
 
 **This desktop and the assistant's environment**
 
