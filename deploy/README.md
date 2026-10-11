@@ -274,30 +274,42 @@ With no display attached nothing of the kiosk runs, and the fish is the same.
 
 ## Fair-day test matrix
 
-Run it on battery, on the phone hotspot, with the speaker and remote the fair will use. Keep
-`journalctl --user -u fish-brain -f` open in an ssh session.
+Run it on battery, on the phone hotspot, with the speaker, the microphone and the display the
+fair will use, the display on its own power and switched on first. Keep
+`journalctl --user -u fish-brain -f` open in an ssh session. "Board LEDs" are the MCU's
+matrix (three lanes: mouth nearest the USB-C connector, neck, tail) and LED4 (green
+heartbeat, blue per command).
 
 | # | Test | How | Pass |
 |---|---|---|---|
-| 1 | Cold boot | Power on, touch nothing | The welcome phrase plays within about a minute; the summary line is in the log |
-| 2 | Remote button | Hold the voice key, ask something, release | The fish answers; a `[turn]` line with all five timings |
-| 3 | Web button | Phone on the hotspot, open the page with the token, hold to talk | Same as 2; the on-screen fish moves its mouth |
-| 4 | Page without token | Open `http://segunda.local:8723/` and press the button | Nothing is recorded or spoken |
+| 1 | Cold boot | Display on, then power the board; touch nothing | Waiting page, then the fish page; the welcome plays; `[fish] link=serial /dev/ttyHS1 …` in the log. Note the seconds from power to voice |
+| 2 | Touch turn | Hold the round button, ask, release | Button red while the host records, amber while it thinks, green while it speaks; a `[turn]` line with five timings and `link=ok`; the mouth lane of the matrix moves with the voice |
+| 3 | Phone turn | Phone on the hotspot, page with the token, hold to talk | Same as 2 |
+| 4 | Page without token | From a phone: `http://segunda.local:8723/` and press | Nothing is recorded or spoken |
 | 5 | Turn time | Read five `[turn]` lines | Release-to-voice mostly under about 5 s |
-| 6 | Hotspot data off | Switch mobile data off, ask something | "Se me fue la señal…" within about 10 s, about 2 s on the next tries |
-| 7 | Hotspot back | Data on again, ask something | `[cloud] online`, a normal answer, no restart needed |
-| 8 | Hotspot gone at boot | Reboot with the hotspot off, then turn it on | The fish starts anyway; answers once the board joins |
-| 9 | Stuck button | Hold the web button and lock the phone | One recording of at most 15 s, then it waits for a new press |
-| 10 | Service restart | `systemctl --user restart fish-brain` | Goodbye plays, then it comes back with **no** second welcome |
-| 11 | Clean stop | `systemctl --user stop fish-brain` | Goodbye, `STOP` in the log, motors at rest; `start` it again |
-| 12 | Crash recovery | `systemctl --user kill -s KILL fish-brain` | Back within about 5 s |
-| 13 | Router restart | `sudo systemctl restart arduino-router` mid-conversation | The voice continues; `[link] router is back; released /dev/ttyHS1 again` in the log; motors move on the next reply |
-| 14 | Link missing | Set `FISH_SERIAL_PORT=/dev/ttyNOPE` in `.env`, restart the fish | The fish still talks; `(degraded)` in the summary line and one `[link] … unavailable … voice-only mode` line. Set it back to `/dev/ttyHS1`, restart: the summary shows `link=serial /dev/ttyHS1` |
-| 15 | Mic unplugged | Pull the remote's dongle, press the web button | "No te escucho, revisa el micrófono."; works again after replug |
-| 16 | Speaker replug | Pull and replug the speaker, ask something | Sound returns without a restart (if not: `systemctl --user restart fish-brain`, and note it) |
-| 17 | "salir" | Say "salir" | The fish answers like any other phrase and stays on (`FISH_VOICE_QUIT=false`) |
-| 18 | Soak | 30 minutes of a turn every minute or two | No restart in the log, no growing delay, board not hot to the touch |
-| 19 | Battery | Full charge, leave it talking now and then | Runtime noted; longer than the fair shift |
+| 6 | Hotspot data off | Mobile data off, ask something | "Se me fue la señal…" within about 10 s, about 2 s on the next tries |
+| 7 | Hotspot back | Data on, ask something | `[cloud] online`, a normal answer, no restart |
+| 8 | Hotspot gone at boot | Boot with the hotspot off, then turn it on | The fish starts anyway; answers once the board joins |
+| 9 | Stuck press | Hold the button for 20 s | One recording of at most 15 s; the button returns by itself |
+| 10 | Press while it speaks | Press during an answer | The button shakes; nothing is recorded |
+| 11 | Service restart | `systemctl --user restart fish-brain` | Goodbye; the page shows grey, then comes back by itself; **no** second welcome |
+| 12 | Clean stop | `systemctl --user stop fish-brain` | Goodbye; matrix dark except the ticks; the display shows the waiting page; `start` it again |
+| 13 | Crash recovery | `systemctl --user kill -s KILL fish-brain` | Matrix dark within a second; back by itself; the first line of the new process is `STOP` |
+| 14 | Router restart | `sudo systemctl restart arduino-router` mid-answer | The voice continues; the matrix shows the boot animation, then the ticks; `[link] router is back; released /dev/ttyHS1 again`; the matrix moves on the next answer |
+| 15 | Tools under a running fish | `python -m fish_brain.app --check-link`, `tools/fw_check.py check --release-router` | Both refuse and name the holder; the matrix still moves on the next answer |
+| 16 | Link missing | `systemctl --user set-environment FISH_SERIAL_PORT=/dev/ttyNOPE`, restart | The fish talks; `(degraded)` in the summary line; `[turn] … link=off`. Then `unset-environment FISH_SERIAL_PORT`, restart |
+| 17 | Microphone unplugged | Pull the microphone, hold and speak, replug | Noted: with the board's own input as fallback the recording is silence and the fish says nothing. Works again after the replug |
+| 18 | Speaker replug | Pull and replug the speaker, ask | Sound returns without a restart (if not: restart, and note it) |
+| 19 | No display | Boot with the display unplugged | Same summary line; a phone turn works; `deploy/unoq_setup.sh kiosk status` shows no browser |
+| 20 | Screen stays on | Leave it untouched for 30 minutes | Still lit and responsive |
+| 21 | "salir" | Say "salir" | Answered like any phrase; the fish stays on (`FISH_VOICE_QUIT=false`) |
+| 22 | Soak | 30 minutes, a turn every minute or two | No restart, no growing delay, temperature steady |
+| 23 | Battery | Full charge, a turn now and then | Runtime noted; longer than the fair shift |
 
-If a row fails on the day: 2 → use the web button (3). 13/14 → the fish still talks without
-motors. 6–8 → move the phone closer. Anything else → `deploy/unoq_setup.sh status` and the log.
+If a row fails on the day: 2 → the phone page (3). 14/16 → the fish still talks without
+motors. 6–8 → move the phone closer. The display → see the kiosk table above; the fish does
+not need it. Anything else → `deploy/unoq_setup.sh status` and the log.
+
+Measured so far, without motors: rows 13 and 15 by hand on 2026-10-11
+(`docs/results/2026-10-11-unoq-firmware-leds.md`), row 2 once in echo mode
+(`docs/results/2026-10-11-kiosk-display.md`). Everything else is open.
