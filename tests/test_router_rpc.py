@@ -488,7 +488,8 @@ def test_serial_link_laptop_port_never_touches_the_router(router, sock_path, pty
         assert type(link) is serial_link.SerialLink
         assert link.describe() == f"serial {port}"
         link.mouth_pulse(238, 14)
-    assert read_pty(master, b"STOP\n") == b"MOUTH 238 14\nSTOP\n"
+    # One STOP when the link attaches, the command, and the STOP of the context exit.
+    assert read_pty(master, b"14\nSTOP\n") == b"\nSTOP\nMOUTH 238 14\nSTOP\n"
     assert router.frames == []
 
 
@@ -504,14 +505,14 @@ def test_serial_link_releases_watches_and_restores(sock_path, pty_port, monkeypa
     try:
         assert router.requests == [("$/serial/close", [port])]
         link.mouth_pulse(238, 14)
-        assert read_pty(master, b"14\n") == b"MOUTH 238 14\n"
+        assert read_pty(master, b"14\n") == b"\nSTOP\nMOUTH 238 14\n"
 
         router.stop()                                # the router restarts...
         router = FakeRouter(sock_path)
         assert wait_for(lambda: router.requests == [("$/serial/close", [port])])
         assert wait_for(link._stop_first.is_set)
         link.mouth_pulse(238, 20)                    # ...so the next command leads with STOP
-        assert read_pty(master, b"20\n") == b"STOP\nMOUTH 238 20\n"
+        assert read_pty(master, b"20\n") == b"\nSTOP\nMOUTH 238 20\n"
         link.mouth_pulse(238, 21)                    # only once
         assert read_pty(master, b"21\n") == b"MOUTH 238 21\n"
 
@@ -600,4 +601,101 @@ def test_resilient_link_late_error_does_not_drop_the_new_link():
 def test_open_link_accepts_transport_in_any_case(router, sock_path):
     link = serial_link.open_link(cfg_for(sock_path, transport=" Bridge "))
     assert isinstance(link, serial_link.BridgeLink)
+    link.close()
+
+
+# --- one holder per port, and whether the MCU answers ----------------------------------
+def test_second_link_is_refused_before_the_router_hears_of_it(sock_path, pty_port, monkeypatch):
+    """The trap this guards: a second opener ends with `$/serial/open` and the router takes
+    the UART back under the fish that is still talking."""
+    master, port = pty_port
+    monkeypatch.setattr(serial_link, "_is_unoq_port", lambda p: True)
+    router = FakeRouter(sock_path)
+    cfg = cfg_for(sock_path, port=port, transport="serial")
+    first = serial_link.SerialLink(cfg)
+    try:
+        assert router.requests == [("$/serial/close", [port])]
+        with pytest.raises(serial_link.LinkBusy) as err:
+            serial_link.SerialLink(cfg)
+        assert f"pid {os.getpid()}" in str(err.value)
+        assert router.requests == [("$/serial/close", [port])]      # no second word to it
+    finally:
+        first.close()
+    assert wait_for(lambda: ("$/serial/open", [port]) in router.requests)
+    again = serial_link.SerialLink(cfg)                             # free again after close
+    again.close()
+    router.stop()
+
+
+def test_laptop_port_takes_no_lock(pty_port, sock_path):
+    master, port = pty_port
+    cfg = cfg_for(sock_path, port=port, transport="serial")
+    a = serial_link.SerialLink(cfg)
+    b = serial_link.SerialLink(cfg)
+    a.close(), b.close()
+
+
+def test_link_tells_a_silent_mcu_from_an_answering_one(pty_port, sock_path, monkeypatch, capsys):
+    master, port = pty_port
+    cfg = cfg_for(sock_path, port=port, transport="serial")
+    cfg.max_cmd_hz = 0
+    clock = [100.0]
+    link = serial_link.SerialLink(cfg)
+    try:
+        assert link.health() == "ok"                     # nothing known yet
+        monkeypatch.setattr(serial_link.time, "monotonic", lambda: clock[0])
+        for n in range(25):                              # 25 lines over 2.5 s, nothing back
+            clock[0] += 0.1
+            link.mouth_pulse(238, 10)
+        assert link.health() == "silent"
+        assert "(MCU silent)" in link.describe()
+        assert capsys.readouterr().err.count("MCU silent") == 1     # said once
+        os.write(master, b"MOUTH 238 10\r\nMOUTH -> 1 step\r\n> ")
+        monkeypatch.undo()
+        time.sleep(0.1)
+        link.mouth_pulse(238, 10)
+        assert link.health() == "ok"
+        assert "answering again" in capsys.readouterr().err
+    finally:
+        link.close()
+
+
+def test_wait_reply(pty_port, sock_path):
+    master, port = pty_port
+    link = serial_link.SerialLink(cfg_for(sock_path, port=port, transport="serial"))
+    try:
+        assert link.wait_reply(0.2) is False
+        os.write(master, b"> ")
+        assert link.wait_reply(1.0) is True
+    finally:
+        link.close()
+    out = io.StringIO()
+    assert serial_link.MockSerialLink(SerialConfig(), stream=out).wait_reply(0.1) is None
+
+
+def test_link_log_records_both_directions(pty_port, sock_path, tmp_path):
+    master, port = pty_port
+    cfg = cfg_for(sock_path, port=port, transport="serial")
+    cfg.max_cmd_hz = 0
+    cfg.log_path = str(tmp_path / "link.log")
+    link = serial_link.SerialLink(cfg)
+    try:
+        link.mouth_pulse(238, 14)
+        os.write(master, b"MOUTH 238 14\r\n")
+        time.sleep(0.1)
+        link.mouth_pulse(-200, 20)
+    finally:
+        link.close()
+    lines = (tmp_path / "link.log").read_text().splitlines()
+    kinds = [ln.split(" ", 2)[1:] for ln in lines]
+    assert ["T", "MOUTH 238 14"] in kinds and ["T", "MOUTH -200 20"] in kinds
+    assert any(k == "R" and "MOUTH 238 14" in text for k, text in kinds)
+
+
+def test_link_log_that_cannot_open_is_only_a_note(pty_port, sock_path):
+    master, port = pty_port
+    cfg = cfg_for(sock_path, port=port, transport="serial")
+    cfg.log_path = "/nonexistent-dir/link.log"
+    link = serial_link.SerialLink(cfg)
+    link.mouth_pulse(238, 14)
     link.close()

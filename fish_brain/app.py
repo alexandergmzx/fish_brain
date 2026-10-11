@@ -141,7 +141,14 @@ def main(argv: list[str] | None = None) -> int:
             with open_link(cfg.serial, dry_run=args.dry_run) as link:
                 link.all_stop()
                 ok = link.attached
-                print(f"link {'ok' if ok else 'NOT ATTACHED'}: {link.describe()}")
+                # The firmware echoes every character: silence means the port opened but
+                # nothing is running behind it. None = this kind of link cannot tell.
+                answered = link.wait_reply(1.0) if ok else None
+                if answered is False:
+                    print(f"link open, MCU SILENT: {link.describe()}")
+                    return 1
+                print(f"link {'ok' if ok else 'NOT ATTACHED'}: {link.describe()}"
+                      + (", MCU answered" if answered else ""))
             return 0 if ok else 1
         except Exception as e:
             print(f"link FAILED ({cfg.serial.transport} {cfg.serial.port}): {e}", file=sys.stderr)

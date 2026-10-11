@@ -1,7 +1,8 @@
 """Link to the motor MCU: Uno R4 WiFi (laptop, `/dev/ttyACM0`) or UNO Q STM32U585 (`/dev/ttyHS1`).
 
 The firmware is a thin executor: newline-terminated, upper-cased commands at 115200 baud,
-PWM -255..255. It echoes every command back; we ignore inbound serial entirely.
+PWM -255..255. It echoes every command back. Replies are never used as acknowledgements;
+they are drained and counted, which tells whether the MCU is running at all.
 
 Safety: the firmware has no current sensing (only a 5 s MAX_RUN_TIME watchdog), so this
 link guarantees a STOP on close/exit/exception via the context-manager protocol.
@@ -19,8 +20,10 @@ Use `open_link(cfg, dry_run=...)` to get one of:
 from __future__ import annotations
 
 import errno
+import fcntl
 import os
 import sys
+import tempfile
 import threading
 import time
 from typing import Callable, Optional
@@ -53,6 +56,82 @@ def _note(msg: str) -> None:
 
 def _is_unoq_port(port: str) -> bool:
     return port.startswith("/dev/ttyHS")
+
+
+class LinkBusy(RuntimeError):
+    """Another process on this machine holds the motor port."""
+
+
+def link_lock_path(port: str) -> str:
+    """One lock file per port, shared with tools/uart_check.py and tools/fw_check.py."""
+    name = f"fish_brain-{os.path.basename(port)}.lock"
+    folder = "/run/lock"
+    if not (os.path.isdir(folder) and os.access(folder, os.W_OK)):
+        folder = tempfile.gettempdir()
+    return os.path.join(folder, name)
+
+
+def take_link_lock(port: str):
+    """Claim `port` for this process, or raise `LinkBusy` naming the holder.
+
+    On the UNO Q whoever opens the port also tells the router to let go of it and, when done,
+    to take it back. A second opener would hand the UART to the router under the first one, so
+    the claim comes before any word to the router. The lock dies with the process."""
+    path = link_lock_path(port)
+    f = open(path, "a+")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.seek(0)
+        holder = f.read().strip() or "unknown"
+        f.close()
+        raise LinkBusy(f"{port} is held by another fish process ({holder}); stop it first "
+                       "(systemctl --user stop fish-brain)") from None
+    f.seek(0)
+    f.truncate()
+    f.write(f"pid {os.getpid()} {os.path.basename(sys.argv[0] or 'python')}\n")
+    f.flush()
+    return f
+
+
+class _LinkLog:
+    """Optional record of every line written and every byte read back (`FISH_LINK_LOG`).
+    A failing log switches itself off; it never raises into a turn."""
+
+    MAX_BYTES = 8 * 1024 * 1024
+
+    def __init__(self, path: str):
+        self._path = path
+        self._lock = threading.Lock()
+        self._f = None
+        if path:
+            try:
+                self._f = open(path, "a", buffering=1)
+            except OSError as e:
+                _log(f"link log off: {e}")
+
+    def _write(self, kind: str, text: str) -> None:
+        if self._f is None:
+            return
+        try:
+            with self._lock:
+                self._f.write(f"{time.monotonic():.6f} {kind} {text}\n")
+                if self._f.tell() > self.MAX_BYTES:
+                    self._f.close()
+                    os.replace(self._path, self._path + ".1")
+                    self._f = open(self._path, "a", buffering=1)
+        except (OSError, ValueError):
+            self._f = None
+
+    def tx(self, data: bytes) -> None:
+        self._write("T", data.decode("ascii", "ignore").rstrip())
+
+    def rx(self, data: bytes) -> None:
+        if data:
+            self._write("R", repr(data))
+
+    def note(self, text: str) -> None:
+        self._write("#", text)
 
 
 class BaseLink:
@@ -128,6 +207,14 @@ class BaseLink:
     def describe(self) -> str:
         return "link"
 
+    def health(self) -> str:
+        """`ok`, `silent` (port open, nothing comes back from the MCU) or `off` (no link)."""
+        return "ok"
+
+    def wait_reply(self, timeout: float = 1.0) -> Optional[bool]:
+        """True/False: the MCU did or did not send anything back. None: this link cannot tell."""
+        return None
+
 
 class SerialLink(BaseLink):
     def __init__(self, cfg: SerialConfig):
@@ -137,6 +224,14 @@ class SerialLink(BaseLink):
         self._watchdog = None
         self._stop_first = threading.Event()      # the MCU was just reset: lead with STOP
         self._ser = None
+        self._lock_file = None
+        self._log_file = _LinkLog(cfg.log_path)
+        # MCU liveness, from the firmware's echo: None until something was written.
+        self._mcu_alive: Optional[bool] = None
+        self._unanswered = 0                      # lines written since the last byte came back
+        self._unanswered_since = 0.0
+        if _is_unoq_port(cfg.port):
+            self._lock_file = take_link_lock(cfg.port)    # before any word to the router
         if cfg.release_router and _is_unoq_port(cfg.port):
             self._release_router()
         try:
@@ -146,14 +241,25 @@ class SerialLink(BaseLink):
                                       rtscts=False)
         except Exception:
             self._router_cleanup()
+            if self._lock_file is not None:
+                self._lock_file.close()
+                self._lock_file = None
             raise
         # Give the board a moment after the port opens (USB-CDC reset on some boards).
         time.sleep(0.3)
         try:
             self._ser.reset_input_buffer()
+            # Whatever ran before us may have died mid-command: start from stopped.
+            self._ser.write(self._stop_line())
+            self._log_file.tx(b"STOP (attach)")
         except Exception:
             self.close()                          # do not leave the router without its port
             raise
+
+    def _stop_line(self) -> bytes:
+        # The leading line end closes any stray bytes left in the firmware's line buffer
+        # (an empty line does nothing there), so STOP arrives as STOP.
+        return self.cfg.newline + b"STOP" + self.cfg.newline
 
     # --- UNO Q: take the UART from the arduino-router daemon ---
     def _release_router(self) -> None:
@@ -239,14 +345,56 @@ class SerialLink(BaseLink):
         if self._stop_first.is_set():
             self._stop_first.clear()
             self._last_mouth = None
-            self._ser.write(b"STOP" + self.cfg.newline)
+            self._ser.write(self._stop_line())
+            self._log_file.tx(b"STOP (router is back)")
         self._ser.write(data)
-        # We never read replies back; drop whatever the firmware echoed so the OS
-        # buffer doesn't grow without bound during long sessions.
+        self._log_file.tx(data)
+        # Replies are not used as acknowledgements. They are drained so the OS buffer does
+        # not grow, and counted: the firmware echoes every character, so bytes coming back
+        # mean the MCU is running. The port is non-blocking (timeout=0).
         try:
-            self._ser.reset_input_buffer()
+            got = self._ser.read(4096)
         except Exception:
-            pass
+            got = b""
+        self._log_file.rx(got)
+        self._note_reply(bool(got))
+
+    def _note_reply(self, answered: bool) -> None:
+        now = time.monotonic()
+        if answered:
+            if self._mcu_alive is False:
+                _log(f"MCU answering again on {self.cfg.port}")
+                self._log_file.note("MCU answering again")
+            self._mcu_alive = True
+            self._unanswered = 0
+            return
+        if self._unanswered == 0:
+            self._unanswered_since = now
+        self._unanswered += 1
+        if (self._mcu_alive is not False and self._unanswered >= 20
+                and now - self._unanswered_since >= 2.0):
+            self._mcu_alive = False
+            _log(f"MCU silent: nothing comes back on {self.cfg.port} (in reset, in its boot "
+                 "animation, another sketch, or the router holds the port)")
+            self._log_file.note("MCU silent")
+
+    def wait_reply(self, timeout: float = 1.0) -> Optional[bool]:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                got = self._ser.read(4096)
+            except Exception:
+                return False
+            if got:
+                self._log_file.rx(got)
+                self._note_reply(True)
+                return True
+            time.sleep(0.02)
+        self._mcu_alive = False
+        return False
+
+    def health(self) -> str:
+        return "silent" if self._mcu_alive is False else "ok"
 
     def close(self) -> None:
         try:
@@ -255,9 +403,15 @@ class SerialLink(BaseLink):
         except Exception:
             pass
         self._router_cleanup()
+        if self._lock_file is not None:           # last: the router has its port back by now
+            try:
+                self._lock_file.close()
+            except Exception:
+                pass
+            self._lock_file = None
 
     def describe(self) -> str:
-        return f"serial {self.cfg.port}"
+        return f"serial {self.cfg.port}" + (" (MCU silent)" if self._mcu_alive is False else "")
 
 
 def _wait_for_router(path: str) -> bool:
@@ -416,8 +570,18 @@ class ResilientLink(BaseLink):
             _log("attached")
             return True
 
+    def health(self) -> str:
+        link = self._link
+        return link.health() if link is not None else "off"
+
+    def wait_reply(self, timeout: float = 1.0) -> Optional[bool]:
+        link = self._link
+        return link.wait_reply(timeout) if link is not None else None
+
     def _report_down(self, exc: BaseException) -> None:
-        if getattr(exc, "errno", None) == errno.EBUSY:
+        if isinstance(exc, LinkBusy):
+            reason = str(exc)
+        elif getattr(exc, "errno", None) == errno.EBUSY:
             reason = "EBUSY: router still holds it"
         else:
             reason = str(exc) or type(exc).__name__

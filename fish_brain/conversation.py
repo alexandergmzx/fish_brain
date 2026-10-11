@@ -170,7 +170,8 @@ class FishConversation:
             self.speaker.speak(reply)              # Speaker pushes the "fish" transcript + speaks
             times.update(self.speaker.last_timing)
         if times:
-            print("[turn] " + " ".join(f"{k}={v:.1f}s" for k, v in times.items()), flush=True)
+            print("[turn] " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
+                  + f" link={self.link.health()}", flush=True)
         return True
 
     def turn(self) -> bool:

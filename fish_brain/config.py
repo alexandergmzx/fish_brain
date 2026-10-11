@@ -66,6 +66,8 @@ class SerialConfig:
     release_router: bool = field(default_factory=lambda: _env_bool("FISH_ROUTER_RELEASE", True))
     bridge_method: str = field(default_factory=lambda: _env("FISH_BRIDGE_METHOD", "fish_cmd"))
     bridge_ping_method: str = field(default_factory=lambda: _env("FISH_BRIDGE_PING", "fish_ping"))
+    # A file that records every line written to the MCU and every byte read back. Empty = off.
+    log_path: str = field(default_factory=lambda: _env("FISH_LINK_LOG", ""))
 
 
 @dataclass
