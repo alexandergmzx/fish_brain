@@ -100,6 +100,9 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_PTT_MAX_S` | `15` | Longest recording; also ends a stuck button |
 | `FISH_MIC_SOURCE`, `FISH_MIC_DEVICE`, `FISH_SPEAKER_DEVICE` | system default | PipeWire source name; or a device number or part of its name |
 | `FISH_VIZ_HOST`, `FISH_VIZ_PORT`, `FISH_VIZ_TOKEN` | `127.0.0.1`, `8723`, none | Where the page listens; with a token, open it as `/?token=...` |
+| `FISH_VIZ_TRUST_LOCAL` | `false` | `true`: requests from the machine itself need no token (the board's own display) |
+| `FISH_KIOSK_MODE`, `FISH_KIOSK_OUTPUT` | empty | Board display: force a mode such as `1280x720`, pick an output; see `deploy/README.md` |
+| `FISH_LINK_LOG` | empty | A file that records every line sent to the MCU and every byte read back |
 | `FISH_VOICE_QUIT` | `true` | Saying "salir" ends the program |
 | `FISH_WELCOME_ONCE` | `false` | Greet once per boot instead of at every start |
 | `FISH_CLOUD_TIMEOUT`, `FISH_CLOUD_CONNECT_TIMEOUT` | `10`, `3` | Seconds before a cloud call gives up |

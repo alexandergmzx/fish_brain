@@ -57,6 +57,21 @@ EOF (`--text`), or Ctrl-C quit.
 - **Mic list without `pactl`.** On systems with PipeWire but no `pactl` the list comes from
   `pw-dump`.
 
+## Visitor view and status (2026-10-11)
+
+- **`/?kiosk=1`** is the visitor view for a touch display: the fish at full height and one
+  round hold-to-talk target. The states are derived in the page from events it already
+  gets: `level` events mean the host is really recording (listening), the release starts
+  "thinking", a `speak` event with `duration_ms` means speaking, the event stream's own
+  open/error means online or not. A hold lasts from the first finger down to the last finger
+  up. Context menu, selection, drag and zoom are switched off. Five taps in the top-right
+  corner open the normal controls and a status block for 45 s.
+- **`GET /status`** returns host, IP, uptime, link description and health (`ok`, `silent`,
+  `off`), internet, backends, and whether the speaker is registered. Never a key or a token.
+- **`FISH_VIZ_TRUST_LOCAL=true`** lets POSTs from 127.0.0.1 through without the token.
+- `fish_brain/kiosk.py` and `web/wait.html` put the page on the board's display; see
+  `deploy/README.md`.
+
 ## Rule for anyone changing the page
 
 Animation must feel alive: spring easing with overshoot, idle motion, secondary motion.

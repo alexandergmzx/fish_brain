@@ -12,3 +12,4 @@ Format: **Status** (proposed, accepted, replaced by NNNN) · **Date** · **Conte
 | [0002](0002-user-service-with-linger.md) | Run on the board as a systemd user service with linger | accepted | 2026-10-10 |
 | [0003](0003-speech-backends-behind-env.md) | Speech-to-text and text-to-speech backends are chosen by environment | accepted | 2026-10-10 |
 | [0004](0004-llm-profiles.md) | LLM profiles: Groq GPT-OSS and GPT-6 Luna | accepted | 2026-10-10 |
+| [0005](0005-kiosk-on-the-board-display.md) | The page on the board's own display in a bare X session; the screen starts a turn at the fair | accepted | 2026-10-11 |

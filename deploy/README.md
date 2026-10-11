@@ -212,6 +212,66 @@ On the hotspot, find the board from the phone at `http://segunda.local:8723/?tok
 
 Checks: `nmcli -f NAME,AUTOCONNECT-PRIORITY,DEVICE connection show`, `nmcli device wifi list`.
 
+## The fish page on the board's own display (kiosk)
+
+An HDMI touch display on the hub shows the visitor view of the page (`/?kiosk=1`): the fish
+at full height and one hold-to-talk target. Record: [ADR 0005](../docs/adr/0005-kiosk-on-the-board-display.md).
+
+**Display first.** Give the display its own power (not the hub's power bank) and switch it on
+**before** the board. Measured 2026-10-11: with the display fed from the shared bank the board
+saw no display at all (`DP-1 disconnected`); on its own bank, attached at power-up, it came up
+at 1920x1080 on two cold boots out of two. Plugging the display into a running board is not
+reliable on this kernel.
+
+**Set up, once.**
+
+```bash
+deploy/unoq_setup.sh kiosk on        # installs ~/.xsession (no sudo) and prints the next two lines
+sudo install -D -m 644 /home/arduino/fish_brain/deploy/kiosk/50-fish-kiosk.conf /etc/lightdm/lightdm.conf.d/50-fish-kiosk.conf
+sudo systemctl restart lightdm
+```
+
+The two `sudo` lines are the owner's. They make the board log `arduino` in by itself into a
+bare X session that runs only the page: no desktop, no App Lab, no screen locker, and an X
+server that never blanks. Undo:
+
+```bash
+sudo rm /etc/lightdm/lightdm.conf.d/50-fish-kiosk.conf && sudo systemctl restart lightdm
+deploy/unoq_setup.sh kiosk off       # removes ~/.xsession
+```
+
+**What the screen shows.**
+
+| On the screen | Meaning | Do |
+|---|---|---|
+| The fish and a round blue button | Working | — |
+| "El pez está despertando…" with a counter | The display works, `fish-brain` does not answer on port 8723 | `systemctl --user status fish-brain`, the journal; exit status 78 = a wrong line in `.env` |
+| Solid dark blue | The session runs, the browser has not started | `deploy/unoq_setup.sh kiosk status`, `journalctl -t fish-kiosk` |
+| The login screen | The kiosk session ended | `sudo systemctl restart lightdm` |
+| "No signal" | The board does not see the display | Power the display first, then the board; `FISH_KIOSK_MODE=1280x720` in `.env` if it is seen but dark |
+
+The button is grey while the page has no connection to the fish, purple for the instant
+before the host records, red while it records, amber while the fish thinks, green while it
+speaks. A press that cannot be taken (the fish is speaking, a tap that was too short) makes
+the button shake.
+
+**Operator corner.** Five taps in the top-right corner within three seconds open the
+controls of the normal page plus a status block (host, IP, link and MCU, internet, backends).
+It closes by itself after 45 s.
+
+**Other commands.**
+
+```bash
+deploy/unoq_setup.sh kiosk status    # display, root file, session, supervisor, browser
+deploy/unoq_setup.sh kiosk pause     # close the browser (the fish keeps running)
+deploy/unoq_setup.sh kiosk resume
+ssh -L 8723:127.0.0.1:8723 arduino@segunda.local   # the same page on the laptop, as a local client
+```
+
+The browser on the board needs no token: `FISH_VIZ_TRUST_LOCAL=true` in `.env` lets requests
+from the board itself through. Everything else on the network still needs `FISH_VIZ_TOKEN`.
+With no display attached nothing of the kiosk runs, and the fish is the same.
+
 ## Fair-day test matrix
 
 Run it on battery, on the phone hotspot, with the speaker and remote the fair will use. Keep
