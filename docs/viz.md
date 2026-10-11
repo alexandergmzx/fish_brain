@@ -47,8 +47,11 @@ EOF (`--text`), or Ctrl-C quit.
 
 - **Reachable from a phone.** `FISH_VIZ_HOST=0.0.0.0` (or `--viz-host`) makes the page reachable
   from other devices; the start-up line prints the address. Set `FISH_VIZ_TOKEN` with it and open
-  the page as `/?token=<value>`: the POST endpoints (`/speak`, `/ptt`, `/mic`, `/wait`) then
-  refuse requests without it. Without a token anyone on the network can make the fish talk.
+  the page as `/?token=<value>`: the POST endpoints (`/speak`, `/ptt`, `/mic`, `/wait`), the
+  event stream (`/events`) and the audio files (`/audio/<n>.wav`) then refuse requests without
+  it (`?token=` in the query or the `X-Fish-Token` header; loopback passes with
+  `FISH_VIZ_TRUST_LOCAL`). The page itself, `/status` and `/mics` stay open. Without a token
+  anyone on the network can make the fish talk.
 - **A press can end from the host.** A recording is cut at `FISH_PTT_MAX_S`; the host then
   ends the press and sends a `ptt` event (`{"type": "ptt", "held": false}`) so the button
   follows. A press older than the limit is treated as a lost release. The page also releases
