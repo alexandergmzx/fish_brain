@@ -110,6 +110,10 @@ class _LinkLog:
             except OSError as e:
                 _log(f"link log off: {e}")
 
+    @property
+    def on(self) -> bool:
+        return self._f is not None
+
     def _write(self, kind: str, text: str) -> None:
         if self._f is None:
             return
@@ -251,7 +255,8 @@ class SerialLink(BaseLink):
             self._ser.reset_input_buffer()
             # Whatever ran before us may have died mid-command: start from stopped.
             self._ser.write(self._stop_line())
-            self._log_file.tx(b"STOP (attach)")
+            self._log_file.note("attach")
+            self._log_file.tx(b"STOP")
         except Exception:
             self.close()                          # do not leave the router without its port
             raise
@@ -346,7 +351,8 @@ class SerialLink(BaseLink):
             self._stop_first.clear()
             self._last_mouth = None
             self._ser.write(self._stop_line())
-            self._log_file.tx(b"STOP (router is back)")
+            self._log_file.note("router is back")
+            self._log_file.tx(b"STOP")
         self._ser.write(data)
         self._log_file.tx(data)
         # Replies are not used as acknowledgements. They are drained so the OS buffer does
@@ -399,6 +405,9 @@ class SerialLink(BaseLink):
     def close(self) -> None:
         try:
             if self._ser is not None:
+                if self._log_file.on:             # the replies to the last lines, for the record
+                    time.sleep(0.05)
+                    self._log_file.rx(self._ser.read(4096))
                 self._ser.close()
         except Exception:
             pass
