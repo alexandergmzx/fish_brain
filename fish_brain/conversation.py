@@ -220,6 +220,24 @@ class FishConversation:
         return True
 
     # --- the loop --------------------------------------------------------------------
+    def _say_address(self) -> None:
+        """With FISH_SAY_ADDRESS and the page open to the network, say the last two octets
+        of the LAN address after the welcome (a phone on its own hotspot cannot resolve
+        `segunda.local`). Guarded like the welcome: never ends the loop."""
+        viz_cfg = self.cfg.viz
+        if (self.viz is None or not viz_cfg.say_address
+                or viz_cfg.host not in ("0.0.0.0", "::")):
+            return
+        try:
+            octets = self.viz.lan_ip().split(".")
+            if len(octets) != 4:
+                return
+            line = f"Búscame en el punto {octets[2]} punto {octets[3]}"
+            print(f"[viz] address line: {line}", flush=True)
+            self.speaker.speak(line)
+        except Exception as e:                      # best effort, like the welcome
+            print(f"[turn] could not say the address: {e}", flush=True)
+
     def _should_welcome(self) -> bool:
         c = self.cfg.canned
         if not (c.enabled and c.welcome):
@@ -240,6 +258,7 @@ class FishConversation:
         print("Conversation ready. (Ctrl-C or 'salir' to quit.)", flush=True)
         if self._should_welcome():
             self._apologize(self.cfg.canned.welcome)   # guarded: a dead speaker must not end us
+        self._say_address()
         clean = False
         try:
             while True:
