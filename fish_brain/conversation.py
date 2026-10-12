@@ -154,9 +154,11 @@ class FishConversation:
         times: dict[str, float] = {"rec": u.hold_s + u.upload_s}
         debug.turn_set(trigger="phone microphone")
         t0 = time.monotonic()
-        user = self._transcribe(u.path, origin="upload")   # unlinks the file
-        times["stt"] = time.monotonic() - t0
-        debug.turn_set(times=times)
+        try:
+            user = self._transcribe(u.path, origin="upload")   # unlinks the file
+        finally:
+            times["stt"] = time.monotonic() - t0
+            debug.turn_set(times=times)            # also when the stage failed
         return self._finish_turn(user, times)
 
     def _reading_turn(self, r) -> bool:
@@ -175,14 +177,14 @@ class FishConversation:
             if self.viz is not None:
                 self.viz.push_reading("ask")
             print("fish> (lectura: pregunta por el nombre)", flush=True)
-            self.speaker.speak(question)
+            said = self.speaker.speak(question)
             if not self.echo:
                 self.llm.remember(
                     f"[Lectura] El visitante muestra su gafete: se llama {r.name}.{look_note}"
                     " Pregúntale si es él o ella; cuando confirme, dile su futuro.", question)
             times.update(self.speaker.last_timing)
-            debug.turn_set(trigger="reading", times=times, outcome="read: ask",
-                           link=self.link.health())
+            debug.turn_set(trigger="reading", times=times, link=self.link.health(),
+                           outcome="read: ask" if said else "dropped: speaking")
             print("[turn] read=ask " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
                   + f" link={self.link.health()}", flush=True)
             return True
@@ -204,10 +206,10 @@ class FishConversation:
             return True
         if self.viz is not None:
             self.viz.push_reading("speaking")
-        self.speaker.speak(reply)
+        said = self.speaker.speak(reply)
         times.update(self.speaker.last_timing)
-        debug.turn_set(trigger="reading", times=times, outcome="read: tell",
-                       link=self.link.health())
+        debug.turn_set(trigger="reading", times=times, link=self.link.health(),
+                       outcome="read: tell" if said else "dropped: speaking")
         print("[turn] read=tell " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
               + f" link={self.link.health()}", flush=True)
         return True
@@ -271,9 +273,11 @@ class FishConversation:
             debug.turn_set(trigger=info.get("trigger", "button"), ended=info.get("ended", ""),
                            device=info.get("device", ""))
             t0 = time.monotonic()
-            user = self._transcribe(wav)
-            times["stt"] = time.monotonic() - t0
-            debug.turn_set(times=times)
+            try:
+                user = self._transcribe(wav)
+            finally:
+                times["stt"] = time.monotonic() - t0
+                debug.turn_set(times=times)        # also when the stage failed
             if cut and user:
                 # The visitor was still talking at the limit: the fish must know it heard a
                 # beginning, not a whole sentence (the echo repeats the words as they are).
@@ -300,6 +304,7 @@ class FishConversation:
             t0 = time.monotonic()
             reply = self.llm.reply(user)
             times["llm"] = time.monotonic() - t0
+            debug.turn_set(times=times)
             if self.llm.last_error and self.cfg.tts.backend != "loq":
                 # The LLM is unreachable and so, most likely, is cloud TTS: use the cached line.
                 raise cloud.CloudUnavailable(self.llm.last_error)

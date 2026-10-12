@@ -248,3 +248,30 @@ def test_hints_name_the_wrong_key_zeros_and_echo(make_hub, tmp_path):
     debug.key("/dev/input/event2", "XING WEI", 28, "KEY_ENTER", 1, True, True)
     debug.key("/dev/input/event2", "XING WEI", 28, "KEY_ENTER", 0, True, True)
     assert "BTN_LEFT arrived" not in repr(hub.state()["hints"])
+
+
+def test_a_short_token_is_scrubbed_only_where_a_token_is_written(monkeypatch):
+    cfg = Config()
+    cfg.viz.token = "ok"
+    hub = debug.DebugHub(cfg)
+    rec = hub.emit("turn", link="ok", text="open /?token=ok on the phone")
+    assert rec["link"] == "ok" and "token=ok" not in rec["text"]
+
+
+def test_a_phrase_spoken_from_another_thread_is_not_the_waiting_turns(make_hub):
+    hub = make_hub()
+    debug.turn_open()                                # the loop waits for a press
+    t = threading.Thread(target=lambda: debug.turn_set(perf={"result": "ok"}, outcome="spoken"))
+    t.start(); t.join()                              # /speak from an HTTP thread
+    debug.turn_set(outcome="too short")
+    debug.turn_close()
+    turn = hub.recent("turn")[-1]
+    assert turn["outcome"] == "too short" and "perf" not in turn
+
+
+def test_a_fifth_debug_page_is_refused_not_rotated(make_hub):
+    hub = make_hub()
+    pages = [hub.stream_open() for _ in range(debug.MAX_STREAMS)]
+    assert all(pages) and hub.stream_open() is None and not any(p["closed"] for p in pages)
+    hub.stream_close(pages[0])
+    assert hub.stream_open() is not None

@@ -96,6 +96,7 @@ class DebugActions:
         self._clock = clock
         self._armed_until = 0.0
         self._abort = threading.Event()
+        self._stops = 0                          # counts STOPs: a test started before one never runs
         self._running = False
         self._ping_n = 0
         self.restarting = False
@@ -135,6 +136,10 @@ class DebugActions:
             return 409, {"ok": False, "error": "busy"}
         if any(s.is_held() for s in getattr(self.convo, "sources", ())):
             return 409, {"ok": False, "error": "recording"}
+        if self.cfg.ptt.capture == "browser" and self.viz.mic_pages() > 0:
+            # A phone records by itself and only says so when it uploads: a test could land
+            # in the middle of a visitor's sentence. Not in this mode.
+            return 409, {"ok": False, "error": "a phone is the microphone"}
         item = _Item(fn, self._clock() + PICKUP_S, self._clock)
         if not self.viz.offer(item):
             return 409, {"ok": False, "error": "busy"}
@@ -144,6 +149,7 @@ class DebugActions:
         return (200 if item.result.get("ok") else 409), item.result
 
     def motor(self, part: str) -> tuple[int, dict]:
+        stops = self._stops                      # before anything else: a STOP from here on wins
         if not self._is_armed():
             return 403, {"ok": False, "error": "not armed"}
         try:
@@ -156,23 +162,27 @@ class DebugActions:
             if self._running:
                 return 409, {"ok": False, "error": "test running"}
             self._running = True
-        self._abort.clear()
+        if stops == self._stops:
+            self._abort.clear()
         try:
-            status, out = self._offer(lambda convo: self._run_motor(convo, part, lines), 4.0)
+            status, out = self._offer(
+                lambda convo: self._run_motor(convo, part, lines, stops), 4.0)
         finally:
             self._running = False
         self.hub.emit("action", what=f"motor {part}", lines=out.get("lines", []),
                       result=out.get("result") or out.get("error", ""))
         return status, out
 
-    def _run_motor(self, convo, part: str, lines: list[str]) -> dict:
+    def _run_motor(self, convo, part: str, lines: list[str], stops: int) -> dict:
+        if stops != self._stops or not self._is_armed():
+            return {"ok": False, "error": "stopped"}     # a STOP came since the request
         lock = convo.speaker._lock
         if not lock.acquire(blocking=False):
             return {"ok": False, "error": "speaking"}
         sent: list[str] = []
         stopped = False
         try:
-            if self._abort.is_set():
+            if self._abort.is_set() or stops != self._stops:
                 return {"ok": False, "error": "stopped"}
             first, rest = lines[0], lines[1:]
             try:
@@ -182,7 +192,7 @@ class DebugActions:
             finally:
                 # The return stroke always follows (the mouth's close pulse), unless STOP
                 # came: then nothing but STOP is sent.
-                if stopped or self._abort.is_set():
+                if stopped or self._abort.is_set() or stops != self._stops:
                     stopped = True
                     self.link.all_stop()
                 else:
@@ -248,11 +258,14 @@ class DebugActions:
     # ---- from the request's own thread ------------------------------------------------------
 
     def stop(self) -> tuple[int, dict]:
+        self._stops += 1
         self._abort.set()
         self._armed_until = 0.0
         error = ""
         try:
             self.link.all_stop()
+            if not self.link.attached:
+                error = "link off"               # nothing reached the MCU: say so
         except Exception as e:
             error = type(e).__name__
         speaking = self.convo.speaker._lock.locked() if self.convo is not None else False
@@ -260,30 +273,31 @@ class DebugActions:
         return 200, {"ok": not error, "error": error, "speaking": speaking}
 
     def ping(self) -> tuple[int, dict]:
-        """The motor-safe `PING <n>`: the firmware answers "Unknown command" (and echoes)."""
-        lock = self.convo.speaker._lock
-        if not lock.acquire(blocking=False):
-            return 409, {"ok": False, "error": "speaking"}
-        try:
-            if not self.link.attached:
-                return 409, {"ok": False, "error": "link off"}
-            self._ping_n += 1
-            inner = getattr(self.link, "_inner", None) or self.link
-            t0 = time.monotonic()
-            self.link.send(f"PING {self._ping_n}", throttle=False)
-            if getattr(inner, "_unanswered", None) == 0 and hasattr(inner, "_ser"):
-                answered = True              # the write's own read already saw bytes come back
-            else:
+        """The motor-safe `PING <n>`: the firmware answers "Unknown command" (and echoes).
+        Through the turn loop like the other tests, so no request thread ever holds the
+        speaker's lock or reads the port."""
+        def run(convo) -> dict:
+            lock = convo.speaker._lock
+            if not lock.acquire(blocking=False):
+                return {"ok": False, "error": "speaking"}
+            try:
+                if not self.link.attached:
+                    return {"ok": False, "error": "link off"}
+                self.link.wait_reply(0.05)       # what is still unread belongs to older lines
+                self._ping_n += 1
+                t0 = time.monotonic()
+                self.link.send(f"PING {self._ping_n}", throttle=False)
                 answered = self.link.wait_reply(0.3)
-            ms = round((time.monotonic() - t0) * 1000.0, 1)
-        except Exception as e:
-            return 500, {"ok": False, "error": type(e).__name__}
-        finally:
-            lock.release()
-        word = {True: "answered", False: "silent", None: "cannot tell"}[answered]
-        self.hub.emit("action", what="ping", result=word)
-        return 200, {"ok": True, "answered": answered, "result": word, "ms": ms,
-                     "health": self.link.health()}
+                ms = round((time.monotonic() - t0) * 1000.0, 1)
+            finally:
+                lock.release()
+            word = {True: "answered", False: "silent", None: "cannot tell"}[answered]
+            return {"ok": True, "answered": answered, "result": word, "ms": ms,
+                    "health": self.link.health()}
+
+        status, out = self._offer(run, 3.0)
+        self.hub.emit("action", what="ping", result=out.get("result") or out.get("error", ""))
+        return status, out
 
     # ---- restart ----------------------------------------------------------------------------
 

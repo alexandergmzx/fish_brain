@@ -110,6 +110,7 @@
       return;
     }
     if (r.seq) {
+      if (r.seq <= S.lastSeq) return;            // already have it (a replay after a reconnect)
       if (S.lastSeq && r.seq > S.lastSeq + 1 && r.seq - S.lastSeq < 100000) S.missed += r.seq - S.lastSeq - 1;
       S.lastSeq = Math.max(S.lastSeq, r.seq);
     }
@@ -164,16 +165,17 @@
   function render() {
     const all = dirty.has("all");
     const d = (n) => all || dirty.has(n);
-    if (d("bar")) renderBar();
-    if (d("hints")) renderHints();
-    if (d("pipe") || d("turns")) renderPipe();
-    if (d("turns")) renderTurns();
-    if (d("log")) renderLog();
-    if (d("panels") || d("keys")) renderInputs();
-    if (d("panels") || d("motors") || d("tx")) renderMotors();
-    if (d("panels")) { renderVoice(); renderCloud(); renderBoard(); renderConfig(); }
-    if (d("panels") || d("clients")) renderClients();
     dirty.clear();
+    const run = (fn) => { try { fn(); } catch (e) { console.error(fn.name, e); } };   // one panel never stops the others
+    if (d("bar")) run(renderBar);
+    if (d("hints")) run(renderHints);
+    if (d("pipe") || d("turns")) run(renderPipe);
+    if (d("turns")) run(renderTurns);
+    if (d("log")) run(renderLog);
+    if (d("panels") || d("keys")) run(renderInputs);
+    if (d("panels") || d("motors") || d("tx")) run(renderMotors);
+    if (d("panels")) { run(renderVoice); run(renderCloud); run(renderBoard); run(renderConfig); }
+    if (d("panels") || d("clients")) run(renderClients);
   }
 
   function chip(word, cls, title) { const c = el("span", "chip " + cls, word); if (title) c.title = title; return c; }
@@ -232,10 +234,11 @@
   }
 
   function renderHints() {
-    const hints = (S.state || {}).hints || [];
+    const raw = (S.state || {}).hints;
+    const hints = Array.isArray(raw) ? raw : [];   // a section that failed arrives as {error}
     const flagged = new Set(hints.filter((h) => h.level !== "info").map((h) => h.panel));
     for (const b of $("tabs").children) b.classList.toggle("flag", flagged.has(b.dataset.tab));
-    fill($("hints"), (Array.isArray(hints) ? hints : []).slice(0, 4).map((h) => {
+    fill($("hints"), hints.slice(0, 4).map((h) => {
       const li = el("li", h.level);
       li.appendChild(el("span", "", (h.level === "bad" ? "■ " : h.level === "warn" ? "▲ " : "○ ") + h.text));
       if (h.fix) li.appendChild(el("span", "fix", h.fix));
@@ -657,7 +660,8 @@
     b.textContent = "STOP…";
     const out = await post("/debug/stop", {});
     setArmed(0);
-    b.textContent = out.status === 200 ? "STOP sent " + new Date().toLocaleTimeString("en-GB") : "NOT DELIVERED";
+    b.textContent = out.status === 200 && out.ok ? "STOP sent " + new Date().toLocaleTimeString("en-GB")
+                                                  : "NOT DELIVERED" + (out.error ? " (" + out.error + ")" : "");
     if (out.speaking) msg($("motorMsg"), "STOP sent; the fish is speaking: its next pulse moves the mouth again until the phrase ends", 10000);
     setTimeout(() => { b.textContent = "STOP"; }, 4000);
     refresh();

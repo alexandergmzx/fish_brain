@@ -170,12 +170,35 @@ def test_a_failing_link_still_ends_in_the_close_pulse_and_never_raises(rig):
     assert not rig.convo.speaker._lock.locked()
 
 
-def test_ping_is_motor_safe(rig):
+def test_ping_is_motor_safe_and_runs_in_the_loop(rig):
     status, out = rig.act.ping()
     assert status == 200 and out["result"] == "cannot tell"      # the mock cannot answer
     assert rig.sent() == ["PING 1"]
-    with rig.convo.speaker._lock:
-        assert rig.act.ping()[0] == 409
+    rig.viz.set_listening(False)                     # mid-turn: no request thread takes the lock
+    assert rig.act.ping()[1]["error"] == "busy"
+
+
+def test_a_stop_that_arrives_after_the_request_wins(rig):
+    rig.act.arm(True)
+    seen = rig.act._stops
+    rig.act.stop()                                   # between the request and the loop
+    rig.act.arm(True)                                # even if somebody arms again at once
+    out = rig.act._run_motor(rig.convo, "mouth", ["MOUTH 238 104", "MOUTH -200 74"], seen)
+    assert out == {"ok": False, "error": "stopped"}
+    assert rig.sent() == ["STOP"]
+
+
+def test_stop_says_so_when_nothing_reached_the_mcu(rig, monkeypatch):
+    monkeypatch.setattr(type(rig.link), "attached", property(lambda self: False))
+    assert rig.act.stop()[1] == {"ok": False, "error": "link off", "speaking": False}
+
+
+def test_no_test_while_a_phone_is_the_microphone(rig, monkeypatch):
+    rig.cfg.ptt.capture = "browser"
+    monkeypatch.setattr(rig.viz, "mic_pages", lambda: 1)
+    rig.act.arm(True)
+    assert rig.act.motor("mouth")[1]["error"] == "a phone is the microphone"
+    assert rig.sent() == []
 
 
 def test_speaker_test_plays_a_rendered_phrase_and_nothing_else(rig, tmp_path, monkeypatch):

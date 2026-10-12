@@ -34,7 +34,10 @@ open. POSTs must be `application/json`. Without `--viz` there is no hub and no r
 | `POST /debug/motor {part}`, `/debug/restart {confirm: "restart"}` | Armed |
 
 Refusals are `{"ok": false, "error": "<word>"}`: `not armed`, `busy`, `speaking`, `recording`,
-`link off`, `test running`, `not picked up`, `not rendered`, `not a service…`.
+`link off`, `test running`, `not picked up`, `not rendered`, `not a service…`, `a phone is the
+microphone` (no test in browser-microphone mode while a phone is ready: it records by itself).
+Every test, the ping included, runs in the turn loop, so each is refused with `busy` during a
+turn. A fifth debug page is refused (503) rather than pushing an older one out.
 
 ## Records (`kind`)
 

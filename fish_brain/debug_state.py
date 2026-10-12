@@ -171,7 +171,7 @@ def _link(hub) -> dict:
     link = hub.link
     if link is None:
         return {"kind": "none", "desc": "not opened yet", "health": "", "attached": False}
-    inner = getattr(link, "_inner", None) or link
+    inner = getattr(link, "_link", None) or link
     out = {"kind": type(inner).__name__, "desc": link.describe(), "health": link.health(),
            "attached": bool(link.attached), "tx_total": hub.counters["tx"],
            "tx_dropped": hub.counters["tx_dropped"], "rx_bytes": hub.counters["rx_bytes"],

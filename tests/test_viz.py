@@ -684,6 +684,11 @@ def test_debug_posts_need_json_and_actions(server, dbg):
     with pytest.raises(urllib.error.HTTPError) as e:
         urllib.request.urlopen(req, timeout=3)
     assert e.value.code == 415                     # a form from another web page cannot press it
+    req = urllib.request.Request(server.url + "/debug/arm", data=b'{"on":true}', headers={
+        **tok, "Content-Type": "text/plain; application/json"})
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(req, timeout=3)
+    assert e.value.code == 415                     # nor a "simple" request dressed as JSON
     assert post(server.url + "/debug/arm", {"on": True})[0] == 403
     assert post(server.url + "/debug/arm", {"on": True}, tok)[0] == 409      # no actions yet
 

@@ -87,6 +87,7 @@ class DebugHub:
         self._secrets: list[str] = []
         self._streams: list[dict] = []       # debug pages connected, oldest first
         self._turn: dict | None = None       # the turn being built (the turn loop's thread)
+        self._turn_owner = 0
         self._turn_id = 0
         self._rec: dict | None = None        # the newest recording {wav, origin, t, turn, stats}
         self._key_other: dict[str, int] = {}
@@ -109,8 +110,13 @@ class DebugHub:
     def _collect_secrets(self, cfg) -> None:
         found = []
         token = getattr(getattr(cfg, "viz", None), "token", "") if cfg is not None else ""
-        if token:
+        self._token_forms = ()
+        if len(token) >= 8:
             found.append(token)
+        elif token:
+            # Too short to replace wherever it occurs ("ok", "fish" would wreck the records):
+            # only in the forms a token is written in.
+            self._token_forms = (f"token={token}", f"X-Fish-Token: {token}")
         for name, value in os.environ.items():
             if name.endswith("_API_KEY") and len(value) >= 8:
                 found.append(value)
@@ -120,6 +126,9 @@ class DebugHub:
         for s in self._secrets:
             if s in text:
                 text = text.replace(s, "•••")
+        for form in self._token_forms:
+            if form in text:
+                text = text.replace(form, form.split("=")[0].split(":")[0] + "=•••")
         for pat in _SECRET_PATTERNS:
             text = pat.sub("•••", text)
         return text
@@ -139,27 +148,37 @@ class DebugHub:
     def emit(self, kind: str, **fields) -> dict:
         rec = {"kind": kind, "t": round(time.time(), 3)}
         rec.update(self._clean(fields))
-        with self._lock:
-            self._seq += 1
-            rec["seq"] = self._seq
-            ring = self._rings.get(kind)
-            if ring is None:
-                ring = self._rings[kind] = deque(maxlen=100)
-            ring.append(rec)
-            if kind == "log" and len(self._boot_log) < BOOT_LINES:
-                self._boot_log.append(rec)
+        # While this thread holds the lock, anything it prints (an "Exception ignored" line
+        # from a finalizer, say) must pass the tee without coming back here.
+        was, self._local.busy = getattr(self._local, "busy", False), True
+        try:
+            with self._lock:
+                self._seq += 1
+                rec["seq"] = self._seq
+                ring = self._rings.get(kind)
+                if ring is None:
+                    ring = self._rings[kind] = deque(maxlen=100)
+                ring.append(rec)
+                if kind == "log" and len(self._boot_log) < BOOT_LINES:
+                    self._boot_log.append(rec)
+        finally:
+            self._local.busy = was
         return rec
 
     def since(self, seq: int, limit: int = 200) -> list[dict]:
         """Records newer than `seq`, oldest first, at most `limit` (the stream sends in ticks,
         so a page loading the whole history never holds the lock or the GIL for long)."""
-        with self._lock:
-            if seq >= self._seq:
-                return []
-            out = [r for ring in self._rings.values() for r in ring if r["seq"] > seq]
-            if seq < (self._boot_log[-1]["seq"] if self._boot_log else 0):
-                first = self._rings["log"][0]["seq"] if self._rings["log"] else 0
-                out.extend(r for r in self._boot_log if seq < r["seq"] < first)
+        was, self._local.busy = getattr(self._local, "busy", False), True
+        try:
+            with self._lock:
+                if seq >= self._seq:
+                    return []
+                out = [r for ring in self._rings.values() for r in ring if r["seq"] > seq]
+                if seq < (self._boot_log[-1]["seq"] if self._boot_log else 0):
+                    first = self._rings["log"][0]["seq"] if self._rings["log"] else 0
+                    out.extend(r for r in self._boot_log if seq < r["seq"] < first)
+        finally:
+            self._local.busy = was
         out.sort(key=lambda r: r["seq"])
         return out[:limit]
 
@@ -232,10 +251,16 @@ class DebugHub:
 
     def turn_open(self) -> None:
         self._turn = {"times": {}}
+        self._turn_owner = threading.get_ident()
+
+    def _my_turn(self) -> bool:
+        """A turn belongs to the thread that opened it (the turn loop). A phrase spoken from
+        an HTTP thread while the loop waits is nobody's turn."""
+        return self._turn is not None and self._turn_owner == threading.get_ident()
 
     def turn_set(self, **fields) -> None:
-        if self._turn is None:
-            self._turn = {"times": {}}
+        if not self._my_turn():
+            return
         times = fields.pop("times", None)
         if times:
             self._turn["times"].update({k: round(float(v), 3) for k, v in times.items()})
@@ -271,7 +296,7 @@ class DebugHub:
         size = p.stat().st_size
         self._rec = {"wav": p.read_bytes() if size <= RECORDING_MAX else None, "bytes": size,
                      "origin": origin, "t": round(time.time(), 3), "turn": None, "stats": None}
-        if self._turn is not None:
+        if self._my_turn():
             self._turn["has_rec"] = True
 
     def recording_bytes(self) -> bytes | None:
@@ -297,12 +322,14 @@ class DebugHub:
 
     # ---- debug pages ------------------------------------------------------------------------
 
-    def stream_open(self) -> dict:
+    def stream_open(self) -> dict | None:
+        """A place for one more debug page, or None when all are taken (the newcomer is
+        refused: evicting the oldest would make five tabs push each other out for ever)."""
         me = {"closed": False, "since": time.time()}
         with self._lock:
+            if len(self._streams) >= MAX_STREAMS:
+                return None
             self._streams.append(me)
-            while len(self._streams) > MAX_STREAMS:
-                self._streams.pop(0)["closed"] = True
         self.counters["last_viewer"] = time.monotonic()
         return me
 

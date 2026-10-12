@@ -783,7 +783,8 @@ def _make_handler(server: "VizServer"):
                 return
             # JSON only: a form post from some other web page in the same browser carries
             # another content type, and so can never press these buttons blindly.
-            if "application/json" not in (self.headers.get("Content-Type") or "").lower():
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if ctype != "application/json":
                 self._send_json({"ok": False, "error": "application/json expected"}, status=415)
                 return
             raw = self._read_body(server.MAX_JSON_BYTES)
@@ -803,11 +804,16 @@ def _make_handler(server: "VizServer"):
             """The debug page's own stream. This thread reads the hub's rings four times a
             second, so whoever produces a record only appends; `since` (or the browser's
             Last-Event-ID) is `<boot>-<seq>`, and anything else replays the rings."""
-            asked = (parse_qs(query).get("since", [""])[0]
-                     or self.headers.get("Last-Event-ID") or "")
-            boot, _, n = asked.rpartition("-")
-            seq = int(n) if boot == hub.boot and n.isdigit() else 0
+            seq = 0                               # the newer of the two: a browser's own
+            for asked in (parse_qs(query).get("since", [""])[0],     # reconnect keeps the old URL
+                          self.headers.get("Last-Event-ID") or ""):
+                boot, _, n = asked.rpartition("-")
+                if boot == hub.boot and n.isdigit():
+                    seq = max(seq, int(n))
             me = hub.stream_open()
+            if me is None:                        # four pages already: refuse, never rotate
+                self._send_json({"ok": False, "error": "too many debug pages"}, status=503)
+                return
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
