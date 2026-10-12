@@ -454,6 +454,7 @@ html.console #consoleBar .c-read button:active { transform: scale(0.94); }
 html.console #consoleBar .c-read button:disabled { opacity: 0.45; cursor: default; }
 html.console #consoleBar .c-read #readBtn { background: #6b46c1; }
 html.console #consoleBar .c-read label { display: flex; align-items: center; gap: 6px; flex-basis: 100%; }
+html.console #consoleBar .c-read label[hidden] { display: none; }   /* no consent tick unless FISH_READING_LOOK */
 html.console #consoleBar .c-read #readName {
     flex: 1 1 120px;
     min-width: 0;
