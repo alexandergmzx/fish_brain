@@ -38,7 +38,7 @@ data when warranted.
 | Board: MCU firmware | Big_mouth `braintip` (`unoq/BigMouthQ`) flashed 2026-10-11, no drivers attached: protocol transcript 122 of 122, pulses within 1 ms, 9,999 of 9,999 lines in a soak. LED matrix mirrors the nine L298 signals. PWM measured good on D3, D5, D6 |
 | Board: bring-up script | `tools/unoq_bringup.sh`: all tests passed 2026-10-11 |
 | Board: local speech-to-text | Slow: `tiny` 3.5 to 4.8 s, `base` 8 s, `small` 20 to 23 s per turn |
-| Board: push-to-talk | The remote's voice key (toggle: press, speak, press), and the page on the operator's phone or PC (the default view); both record through the remote's microphone (results 2026-10-12); the browser's own microphone over HTTPS (`FISH_MIC_CAPTURE=browser`) works from the laptop's Chrome but the board is back on `host` with the remote's microphone (2026-10-12). The touch display's kiosk is parked. `FISH_PTT_DEVICE=auto` also adopted the headset jack as a trigger (results 2026-10-11) |
+| Board: push-to-talk | The remote's OK button held (`KEY_ENTER`), and the page on the operator's phone or PC (the default view); both record through the remote's microphone (results 2026-10-12); the browser's own microphone over HTTPS (`FISH_MIC_CAPTURE=browser`) works from the laptop's Chrome but the board is back on `host` with the remote's microphone (2026-10-12). The touch display's kiosk is parked. `FISH_PTT_DEVICE=auto` also adopted the headset jack as a trigger (results 2026-10-11) |
 | Board: HDMI touch display | Unplugged since 2026-10-12 (ADR 0005 replaced by 0006): the browser cost 1.1 to 1.3 cores and 60 to 68 C; without it the board idles at 1 % and 41 to 44 C, a turn peaks at 30 % (results 2026-10-12). The LightDM session stays installed, it starts nothing |
 | The reading (la lectura) | Built (ADR 0007, proposed): badge photo on the phone → `gpt-6-luna` through the board (4.3 to 6.7 s, 1163 image tokens, surnames split, accents restored: `docs/results/2026-10-11-reading-badge.md`) → the fish asks "¿Tú eres X?" → the answer is a turn. Not yet tried with a real badge or on the phone |
 | Motors on the UNO Q (L298N), Billy Bass #2 calibration | Not started. Before wiring: 10 k pull-downs on D6, D3, D5 and on D7, D8 (D8 is pulled high in reset) |
@@ -398,10 +398,10 @@ Machine and tool facts only, each dated.
   (2026-10-11); on the shared power bank the board did not see it at all.
 - **Without linger the user manager, and PipeWire with it, stops 10 s after the last ssh
   logout**; after it starts, the USB speaker is the default output only 3 s later.
-- **The XING WEI remote's voice key is a fixed 0.12 s tap**, however long it is held (2026-10-12):
-  `FISH_PTT_MODE=toggle`. **Its microphone streams only while the key is physically held** and
-  sometimes delivers exact zeros, but mostly stays on, so the recording ends on a pause after
-  speech (`FISH_PTT_PAUSE_S=1.2`, `FISH_PTT_QUIET_RMS=0.04`): tap, talk, stop talking.
+- **The XING WEI remote's voice key is a fixed 0.12 s tap on every node**, however long it is
+  held (2026-10-12); its OK button (`KEY_ENTER`), arrows and mute report real press and release,
+  so the OK button is the hold-to-talk key. Its microphone mostly streams all the time (room
+  floor 0.01 to 0.03 RMS, speech 0.10 and up) and sometimes goes to exact zeros.
 - **The kiosk browser is the whole cost of the display** (2026-10-11): with it closed the board
   idles at under 2 % CPU, Xorg at 0.4 %, and the hottest zone drops from 68 C to 48 C in four
   minutes; the LightDM session and the supervisor are below the noise.
