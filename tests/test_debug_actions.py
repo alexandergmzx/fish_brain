@@ -294,7 +294,7 @@ def _values(rig):
 
 def test_switches_list_their_value_their_start_and_what_changed(rig):
     sw = _values(rig)
-    assert set(sw) == {"mode", "llm_profile", "stt", "tts", "gestures", "reading_look",
+    assert set(sw) == {"mode", "llm_profile", "stt", "stt_model", "tts", "gestures", "reading_look",
                        "voice_quit", "max_record_s", "mic", "motors"}
     assert sw["mode"]["value"] == "llm" and not any(w["changed"] for w in sw.values())
     assert rig.act.set("gestures", False) == (200, {"ok": True, "value": False})
@@ -304,6 +304,10 @@ def test_switches_list_their_value_their_start_and_what_changed(rig):
     assert rig.act.set("gestures", True)[1]["value"] is True and not _values(rig)["gestures"]["changed"]
     assert rig.act.set("max_record_s", 30)[1]["value"] == 30.0 and rig.cfg.ptt.max_record_s == 30.0
     assert rig.act.set("reading_look", True)[0] == 200 and rig.cfg.reading.look is True
+    rig.convo._stt = object()
+    assert rig.act.set("stt_model", "base")[0] == 200
+    assert rig.cfg.stt.model == "base" and rig.convo._stt is None
+    assert rig.act.set("stt_model", "large-v3")[0] == 400
     assert rig.act.set("mic", "browser")[0] == 200 and rig.cfg.ptt.capture == "browser"
     assert "HTTPS" in _values(rig)["mic"]["note"]
 

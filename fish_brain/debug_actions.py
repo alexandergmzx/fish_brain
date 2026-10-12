@@ -119,6 +119,12 @@ def _set_stt(a, value: str) -> str:
     return ""
 
 
+def _set_stt_model(a, value: str) -> str:
+    a.cfg.stt.model = value
+    a.convo._stt = None                          # the next local turn loads this model
+    return ""
+
+
 def _set_tts(a, value: str) -> str:
     import shutil
     if value == "loq" and not shutil.which(a.cfg.tts.loq_bin):
@@ -160,6 +166,8 @@ SWITCHES: dict = {
                     lambda a: a.cfg.llm.profile, _set_llm_profile),
     "stt": ("Speech-to-text", "choice", ("openai", "groq", "local"),
             lambda a: a.cfg.stt.backend, _set_stt),
+    "stt_model": ("Local speech model", "choice", ("tiny", "base", "small"),
+                  lambda a: a.cfg.stt.model, _set_stt_model),
     "tts": ("Voice", "choice", ("loq", "openai"), lambda a: a.cfg.tts.backend, _set_tts),
     "gestures": ("Gestures", "bool", (), lambda a: bool(_gest[0](a)), _gest[1]),
     "reading_look": ("Reading's look line", "bool", (), lambda a: bool(_look[0](a)), _look[1]),
@@ -177,7 +185,10 @@ def _switch_note(a, name: str, value) -> str:
     if name == "mode" and value == "echo":
         return "the fish only repeats what it hears"
     if name == "stt" and value == "local":
-        return "loads its model on the next turn; slow on the board (4 to 20 s a turn)"
+        return f"faster-whisper '{a.cfg.stt.model}' on this machine: loads on the next turn"
+    if name == "stt_model":
+        used = "" if a.cfg.stt.backend == "local" else "not in use (speech-to-text is not local) · "
+        return used + "on the board: tiny about 4 s a turn, base 8 s, small 20 s (measured 2026-10-10)"
     if name == "mic":
         if value == "browser" and not (a.cfg.viz.tls_cert and a.cfg.viz.tls_key):
             return "phones can only record over the HTTPS listener, which is off"
