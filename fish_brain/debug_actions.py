@@ -71,6 +71,124 @@ def build_lines(cfg, part: str) -> list[str]:
     return [check_line(" ".join(line.split())) for line in lines]
 
 
+# ---- the switches ---------------------------------------------------------------------------
+# name -> (label, kind, choices, read(actions), apply(actions, value) -> "" or why not).
+# `apply` runs in the turn loop, between turns.
+
+def _key_missing(env_name: str | None) -> str:
+    return "" if not env_name or os.environ.get(env_name, "").strip() else f"{env_name} is not set"
+
+
+def _fresh_llm(a) -> None:
+    a.convo._llm = None                          # the next turn builds a client for cfg.llm
+    from . import debug
+    debug.new_visitor()
+
+
+def _set_mode(a, value: str) -> str:
+    if value == "llm":
+        missing = _key_missing(a.cfg.llm.api_key_env)
+        if missing:
+            return missing
+    a.convo.echo = value == "echo"
+    _fresh_llm(a)
+    return ""
+
+
+def _set_llm_profile(a, value: str) -> str:
+    from .config import LLM_PROFILES, LLMConfig
+    missing = _key_missing(LLM_PROFILES[value]["api_key_env"])
+    if missing:
+        return missing
+    old = a.cfg.llm
+    a.cfg.llm = LLMConfig(profile=value, system_prompt=old.system_prompt,
+                          fallback_reply=old.fallback_reply,
+                          max_history_turns=old.max_history_turns)
+    _fresh_llm(a)
+    return ""
+
+
+def _set_stt(a, value: str) -> str:
+    from .config import STT_PROFILES
+    if value in STT_PROFILES:
+        missing = _key_missing(STT_PROFILES[value]["api_key_env"])
+        if missing:
+            return missing
+    a.cfg.stt.backend = value
+    a.convo._stt = None                          # the next turn builds the transcriber
+    return ""
+
+
+def _set_tts(a, value: str) -> str:
+    import shutil
+    if value == "loq" and not shutil.which(a.cfg.tts.loq_bin):
+        return f"{a.cfg.tts.loq_bin} is not installed here"
+    if value == "openai":
+        missing = _key_missing("OPENAI_API_KEY")
+        if missing:
+            return missing
+    a.cfg.tts.backend = value
+
+    def warm():                                  # off the turn loop: it can take seconds
+        try:
+            from . import canned, tts
+            tts.warm(a.cfg.tts)
+            canned.prerender_all(a.cfg)
+        except Exception:
+            pass
+    threading.Thread(target=warm, name="debug-voice-warm", daemon=True).start()
+    return ""
+
+
+def _attr(path: str):
+    section, field = path.split(".")
+    return (lambda a: getattr(getattr(a.cfg, section), field),
+            lambda a, v: setattr(getattr(a.cfg, section), field, v) or "")
+
+
+def _set_motors(a, value: str) -> str:
+    a.link.mute(value == "muted")
+    return ""
+
+
+_gest, _look, _quit, _limit = (_attr("gesture.enabled"), _attr("reading.look"),
+                               _attr("ptt.voice_quit"), _attr("ptt.max_record_s"))
+SWITCHES: dict = {
+    "mode": ("Mode", "choice", ("echo", "llm"),
+             lambda a: "echo" if getattr(a.convo, "echo", False) else "llm", _set_mode),
+    "llm_profile": ("LLM profile", "choice", ("groq", "luna"),
+                    lambda a: a.cfg.llm.profile, _set_llm_profile),
+    "stt": ("Speech-to-text", "choice", ("openai", "groq", "local"),
+            lambda a: a.cfg.stt.backend, _set_stt),
+    "tts": ("Voice", "choice", ("loq", "openai"), lambda a: a.cfg.tts.backend, _set_tts),
+    "gestures": ("Gestures", "bool", (), lambda a: bool(_gest[0](a)), _gest[1]),
+    "reading_look": ("Reading's look line", "bool", (), lambda a: bool(_look[0](a)), _look[1]),
+    "voice_quit": ("Voice quit word", "bool", (), lambda a: bool(_quit[0](a)), _quit[1]),
+    "max_record_s": ("Recording limit (s)", "number", (3.0, 60.0),
+                     lambda a: float(_limit[0](a)), _limit[1]),
+    "mic": ("Microphone", "choice", ("host", "browser"), lambda a: a.cfg.ptt.capture,
+            lambda a, v: setattr(a.cfg.ptt, "capture", v) or ""),
+    "motors": ("Motors", "choice", ("on", "muted"),
+               lambda a: "muted" if getattr(a.link, "muted", False) else "on", _set_motors),
+}
+
+
+def _switch_note(a, name: str, value) -> str:
+    if name == "mode" and value == "echo":
+        return "the fish only repeats what it hears"
+    if name == "stt" and value == "local":
+        return "loads its model on the next turn; slow on the board (4 to 20 s a turn)"
+    if name == "mic":
+        if value == "browser" and not (a.cfg.viz.tls_cert and a.cfg.viz.tls_key):
+            return "phones can only record over the HTTPS listener, which is off"
+        return "the phone records" if value == "browser" else "this machine's microphone records"
+    if name == "motors" and value == "muted":
+        return "every motor line is dropped; the fish only talks"
+    if name == "llm_profile":
+        return a.cfg.llm.model or ""
+    return ""
+
+
 def _tone(seconds: float = 1.5, rate: int = 22050) -> str:
     """A short 1 kHz tone as a temporary WAV (for the loop test without a rendered phrase)."""
     fd, name = tempfile.mkstemp(suffix=".wav", prefix="fish_tone_")
@@ -121,6 +239,7 @@ class DebugActions:
         self._running = False
         self._ping_n = 0
         self.last: dict = {}                     # what each test last said, for the Checks tab
+        self._start = {name: read(self) for name, (_l, _k, _c, read, _a) in SWITCHES.items()}
         self.restarting = False
         self._lock = threading.Lock()
         self._supervised = supervised
@@ -462,6 +581,53 @@ class DebugActions:
                       result="ok" if out.get("ok") else out.get("error", ""))
         return status, out
 
+    # ---- switches: the running fish only, never .env; a restart brings the start values back --
+
+    def switches(self) -> list[dict]:
+        out = []
+        for name, (label, kind, choices, read, _apply) in SWITCHES.items():
+            value = read(self)
+            out.append({"name": name, "label": label, "kind": kind, "choices": list(choices),
+                        "value": value, "start": self._start.get(name),
+                        "changed": value != self._start.get(name),
+                        "armed": name == "motors", "note": _switch_note(self, name, value)})
+        return out
+
+    def set(self, name, value) -> tuple[int, dict]:
+        if name not in SWITCHES:
+            return 400, {"ok": False, "error": "unknown switch"}
+        label, kind, choices, read, apply = SWITCHES[name]
+        if kind == "bool":
+            value = bool(value)
+        elif kind == "number":
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                return 400, {"ok": False, "error": "a number expected"}
+            if not choices[0] <= value <= choices[1]:
+                return 400, {"ok": False, "error": f"{choices[0]:g} to {choices[1]:g} expected"}
+        elif value not in choices:
+            return 400, {"ok": False, "error": f"one of {', '.join(choices)} expected"}
+        if name == "motors" and not self._is_armed():
+            return 403, {"ok": False, "error": "not armed"}
+        before = read(self)
+        if value == before:
+            return 200, {"ok": True, "value": value, "unchanged": True}
+
+        def run(convo) -> dict:
+            problem = apply(self, value)             # a word when it cannot be done
+            if problem:
+                return {"ok": False, "error": problem}
+            return {"ok": True, "value": read(self)}
+
+        status, out = self._offer(run, 5.0)
+        if out.get("ok"):
+            # In the journal too: a mode change is something to find later.
+            print(f"[debug] {label.lower()}: {before} -> {out['value']}", flush=True)
+        self.hub.emit("action", what=f"switch {name}",
+                      result=f"{before} -> {out['value']}" if out.get("ok") else out.get("error", ""))
+        return status, out
+
     # ---- restart ----------------------------------------------------------------------------
 
     def supervised(self) -> bool:
@@ -509,6 +675,8 @@ class DebugActions:
             return self.ping()
         if path == "/debug/mic":
             return self.mic(body.get("seconds"))
+        if path == "/debug/set":
+            return self.set(body.get("name"), body.get("value"))
         if path == "/debug/loop":
             return self.loop()
         if path == "/debug/voice":

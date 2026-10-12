@@ -175,7 +175,8 @@ def _link(hub) -> dict:
     out = {"kind": type(inner).__name__, "desc": link.describe(), "health": link.health(),
            "attached": bool(link.attached), "tx_total": hub.counters["tx"],
            "tx_dropped": hub.counters["tx_dropped"], "rx_bytes": hub.counters["rx_bytes"],
-           "rx_tail": hub.rx_tail[-600:], "mock": type(inner).__name__ == "MockSerialLink"}
+           "rx_tail": hub.rx_tail[-600:], "mock": type(inner).__name__ == "MockSerialLink",
+           "muted": bool(getattr(link, "muted", False))}
     for attr, name in (("_unanswered", "unanswered"), ("_mcu_alive", "mcu_alive")):
         if hasattr(inner, attr):
             out[name] = getattr(inner, attr)
@@ -297,6 +298,7 @@ def build(hub) -> dict:
     st["token"] = bool(cfg.viz.token)
     if hub.actions is not None:
         st["motor_lines"] = _section(hub.actions.planned_lines)
+        st["switches"] = _section(hub.actions.switches)
     st["model"] = _section(lambda: _model(hub))
     st["checks"] = _section(lambda: _checks(st, hub))
     if isinstance(st["checks"], list):
@@ -345,9 +347,9 @@ def hints(st: dict, hub) -> list[dict]:
             "check which source is selected against the default one")
 
     flags, be, mode = st.get("flags") or {}, st.get("backends") or {}, st.get("mode") or {}
-    if flags.get("echo") or be.get("echo"):
-        add("warn", "config", "ECHO mode: the fish only repeats what it hears.",
-            "remove --echo (on the board: the unit's drop-in), then restart")
+    if be.get("echo", flags.get("echo")):         # as it runs now, not as it was started
+        add("warn", "switches", "ECHO mode: the fish only repeats what it hears.",
+            "Switches tab: Mode → llm (a restart brings back what the unit says)")
     if flags.get("dry_run"):
         add("info", "motors", "DRY RUN: the mock link, nothing moves.")
     if mode.get("wait"):
@@ -358,6 +360,9 @@ def hints(st: dict, hub) -> list[dict]:
             "running fish is the old code.", "restart fish-brain")
 
     link = st.get("link") or {}
+    if link.get("muted"):
+        add("warn", "switches", "The motors are muted: every motor line is dropped.",
+            "Switches tab: Motors → on (armed)")
     if link.get("health") == "off":
         add("bad", "motors", f"Voice only: the motor link is not attached ({link.get('desc')}).",
             "check the port and the router; it retries by itself")

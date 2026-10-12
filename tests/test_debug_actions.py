@@ -284,3 +284,73 @@ def test_cloud_round_trip_reports_each_service_and_skips_what_is_not_used(rig):
     parts = rig.act.cloud()[1]["parts"]
     assert "skipped" in parts["stt"] and "skipped" in parts["llm"]
     assert rig.act.last["cloud"]["status"] == "skip"
+
+
+# ---- switches: the running fish only ----
+
+def _values(rig):
+    return {w["name"]: w for w in rig.act.switches()}
+
+
+def test_switches_list_their_value_their_start_and_what_changed(rig):
+    sw = _values(rig)
+    assert set(sw) == {"mode", "llm_profile", "stt", "tts", "gestures", "reading_look",
+                       "voice_quit", "max_record_s", "mic", "motors"}
+    assert sw["mode"]["value"] == "llm" and not any(w["changed"] for w in sw.values())
+    assert rig.act.set("gestures", False) == (200, {"ok": True, "value": False})
+    assert rig.cfg.gesture.enabled is False
+    sw = _values(rig)
+    assert sw["gestures"]["changed"] and sw["gestures"]["start"] is True
+    assert rig.act.set("gestures", True)[1]["value"] is True and not _values(rig)["gestures"]["changed"]
+    assert rig.act.set("max_record_s", 30)[1]["value"] == 30.0 and rig.cfg.ptt.max_record_s == 30.0
+    assert rig.act.set("reading_look", True)[0] == 200 and rig.cfg.reading.look is True
+    assert rig.act.set("mic", "browser")[0] == 200 and rig.cfg.ptt.capture == "browser"
+    assert "HTTPS" in _values(rig)["mic"]["note"]
+
+
+def test_a_switch_refuses_what_it_cannot_do(rig, monkeypatch):
+    assert rig.act.set("nope", 1)[0] == 400
+    assert rig.act.set("max_record_s", 500)[0] == 400 and rig.act.set("max_record_s", "x")[0] == 400
+    assert rig.act.set("stt", "whisper-9")[0] == 400
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert rig.act.set("stt", "groq")[1]["error"] == "GROQ_API_KEY is not set"
+    assert rig.act.set("llm_profile", "luna")[1]["error"] == "OPENAI_API_KEY is not set"
+    rig.cfg.tts.backend = "openai"
+    rig.cfg.tts.loq_bin = "no-such-loq-binary"
+    assert "not installed" in rig.act.set("tts", "loq")[1]["error"]
+    rig.viz.set_listening(False)                     # mid-turn
+    assert rig.act.set("gestures", False)[1]["error"] == "busy" and rig.cfg.gesture.enabled is True
+
+
+def test_mode_and_profile_switch_the_model_and_start_a_fresh_history(rig, monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "k-000000000")
+    monkeypatch.setenv("OPENAI_API_KEY", "k-111111111")
+    rig.convo.echo, rig.convo._llm, rig.convo._stt = True, object(), object()
+    rig.act._start["mode"] = "echo"
+    assert rig.act.set("mode", "llm")[0] == 200 and rig.convo.echo is False and rig.convo._llm is None
+    rig.convo._llm = object()
+    assert rig.act.set("llm_profile", "luna")[0] == 200
+    assert rig.cfg.llm.profile == "luna" and rig.cfg.llm.model == "gpt-6-luna" and rig.convo._llm is None
+    assert rig.act.set("stt", "openai")[0] in (200,) and rig.convo._stt is None or rig.cfg.stt.backend == "openai"
+    assert rig.act.set("mode", "echo")[0] == 200 and rig.convo.echo is True
+    monkeypatch.delenv("GROQ_API_KEY")
+    rig.cfg.llm.api_key_env = "GROQ_API_KEY"
+    assert rig.act.set("mode", "llm")[1]["error"] == "GROQ_API_KEY is not set" and rig.convo.echo is True
+
+
+def test_motors_can_be_muted_only_when_armed_and_stop_still_passes(rig, monkeypatch):
+    monkeypatch.setattr(debug, "_hub", rig.hub)      # the link's hooks report to this hub
+    assert rig.act.set("motors", "muted") == (403, {"ok": False, "error": "not armed"})
+    rig.act.arm(True)
+    assert rig.act.set("motors", "muted")[0] == 200 and rig.link.muted
+    assert rig.sent() == ["STOP"]                    # muting stops first
+    rig.link.mouth_pulse(238, 104)
+    rig.link.gesture("NECK", "230 650")
+    rig.link.all_stop()
+    assert rig.sent() == ["STOP", "STOP"]            # motor lines dropped, STOP passes
+    assert [r["flag"] for r in rig.hub.recent("tx")] .count("muted") == 2
+    assert rig.act.motor("mouth")[0] == 200 and "MOUTH 238 104" not in rig.sent()
+    assert rig.act.set("motors", "on")[0] == 200 and not rig.link.muted
+    rig.link.mouth_pulse(238, 104)
+    assert rig.sent()[-1] == "MOUTH 238 104"
