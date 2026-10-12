@@ -247,7 +247,8 @@ class FishConversation:
             wav = self._record()
             if not isinstance(wav, Path):
                 return self._handle_item(wav)
-            times["rec"] = time.monotonic() - t0
+            # The hold itself, not the wait for a press (the wait can be minutes long).
+            times["rec"] = ptt.wav_duration_s(wav)
             t0 = time.monotonic()
             user = self._transcribe(wav)
             times["stt"] = time.monotonic() - t0
