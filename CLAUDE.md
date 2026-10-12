@@ -69,7 +69,8 @@ chains are not covered by it. So:
 8. **The debug view's motor tests, speaker test and restart are Alexander's to press** (ADR 0009:
    armed on the page for 60 s; a test is a validated timed stroke and its return, run by the
    turn loop; STOP is never armed). Claude tests them on the mock link only and never calls
-   `/debug/motor`, `/debug/say` or `/debug/restart` against the board or the laptop fish.
+   `/debug/motor`, `/debug/say`, `/debug/loop`, `/debug/voice` or `/debug/restart` against the
+   board or the laptop fish (the loop makes sound; the voice render with `loq` is Wine here).
 
 ## What is in use
 
@@ -98,7 +99,7 @@ together.
 | Motor link | pyserial, or MessagePack-RPC through the UNO Q's router; a mock for `--dry-run`; a wrapper that keeps the fish talking without motors | [`serial_link.py`](fish_brain/serial_link.py), [`router_rpc.py`](fish_brain/router_rpc.py) |
 | Turn loop | One turn in stages; no error inside a turn ends the loop | [`conversation.py`](fish_brain/conversation.py) |
 | The page | Browser view on a phone or PC. The default view is the fish's face, "El Pez Adivino", for the visitor who holds the phone: the fish in its sea, the state on a sign (a button with `?talk=1` or without a remote), speech bubbles; the operator's sheet (status words, the badge photo, the name) opens by holding the corner shell. `?kiosk=1` the visitor view for a display, `?debug=1` the developer page with every tool, `?lite=1` a still scene; HTTPS as a second listener behind `FISH_VIZ_TLS_CERT`; the phone's microphone; the token on `/events` and `/audio` | [`viz.py`](fish_brain/viz.py), [`web/`](fish_brain/web/), [`docs/viz.md`](docs/viz.md) |
-| The debug view | `/debug` on a desktop: the log, every key of the remote, one record per turn, the lines sent and the bytes back, the board, hints; tests, and armed motor pulses and restart (ADR 0009) | [`debug.py`](fish_brain/debug.py), [`debug_state.py`](fish_brain/debug_state.py), [`debug_actions.py`](fish_brain/debug_actions.py), [`web/debug.*`](fish_brain/web/), [`docs/debug.md`](docs/debug.md) |
+| The debug view | `/debug` on a desktop: the bring-up checks (speaker, sink, microphone, remote, link, service), what each model is sent and answers, the log, every key of the remote, one record per turn, the lines sent and the bytes back, the board, hints; tests, and armed motor pulses and restart (ADR 0009) | [`debug.py`](fish_brain/debug.py), [`debug_state.py`](fish_brain/debug_state.py), [`debug_actions.py`](fish_brain/debug_actions.py), [`web/debug.*`](fish_brain/web/), [`docs/debug.md`](docs/debug.md) |
 | Entry point | Flags, start-up checks, one-shots | [`app.py`](fish_brain/app.py) |
 
 Other repos. **They stay untouched; this repo only calls them.**

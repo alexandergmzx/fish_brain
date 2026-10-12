@@ -26,7 +26,9 @@ failed playback still animated the phone, what the MCU answered was thrown away.
    phone never receives a debug record. `/status` and `/events` are unchanged.
 4. The newest microphone recording is kept in memory, replaced by the next one, and served
    only at `/debug/rec.wav`.
-5. The view may act (the owner's choice): a link ping with the motor-safe `PING <n>`, a
+5. The view may act (the owner's choice): the bring-up checks read by the fish itself, with
+   three tests (a speaker-to-microphone loop, a voice render, a cloud round trip; added
+   2026-10-12), a link ping with the motor-safe `PING <n>`, a
    microphone check, a speaker test with a phrase that is already rendered (never a
    synthesis, nothing to the motors), and, **armed on the page for 60 s**, motor test pulses
    and a restart of the service.
@@ -43,8 +45,12 @@ failed playback still animated the phone, what the MCU answered was thrown away.
 8. Restart only where the process is a systemd service: `SIGINT` to the main thread, the
    unit's own stop signal, so the goodbye and STOP run and `Restart=always` starts the fish
    again; if it has not ended after 12 s, STOP and a hard exit.
-9. Never to a page: key values, the token, the certificate paths, the badge photo, the LLM
-   history. Every record is scrubbed where it enters a ring. Letters and digits typed on an
+9. Never to a page: key values, the token, the certificate paths, the badge photo.
+   *Amended 2026-10-12 (the owner's word):* the view shows what the models are given and
+   what they answer, in full: the LLM's messages with its kept history, speech-to-text's raw
+   text, the voice's text, the badge call's parsed name and look. These records hold
+   visitors' words and full names; they travel only on the guarded debug routes, are scrubbed
+   like every record, and are cleared when a reading starts (a new visitor). Every record is scrubbed where it enters a ring. Letters and digits typed on an
    adopted keyboard are counted, never named. All data and actions follow the token rule;
    POSTs must be JSON, so another web page in the same browser cannot fire them.
 
