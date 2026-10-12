@@ -537,10 +537,8 @@ def page_event(h, data: str):
     if data.startswith('{"type": "level"'):
         h.emit("level", rms=json.loads(data).get("rms", 0.0))
         return
-    ev = json.loads(data)
-    if ev.get("type") == "speak":
-        ev = {k: v for k, v in ev.items() if k not in ("mouth", "gestures")}
-    h.emit("page", ev=ev)
+    # A reply keeps its mouth track and gestures: the debug page's fish moves with them.
+    h.emit("page", ev=json.loads(data))
 
 
 @_safe

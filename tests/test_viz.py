@@ -706,7 +706,7 @@ def test_debug_stream_replays_the_rings_and_phones_get_nothing_new(server, dbg):
     assert len(server._subscribers) == 1           # and takes none of the phones' places
 
 
-def test_page_events_are_copied_for_the_debug_page(server):
+def test_page_events_are_copied_for_the_debug_page(server, tmp_path):
     from fish_brain import debug
     hub = debug.install(server.cfg)
     try:
@@ -715,6 +715,13 @@ def test_page_events_are_copied_for_the_debug_page(server):
         server.push_level(0.12)
         assert hub.recent("page")[-1]["ev"] == {"type": "stt", "role": "user", "text": "hola"}
         assert hub.recent("level")[-1]["rms"] == 0.12
+        phone = server._subscribe()
+        server.announce_speech(tiny_wav(tmp_path / "s.wav"), 400, [(0, "NECK", "230 650")],
+                               [(0, 0.5), (400, 0.0)])
+        mine = hub.recent("page")[-1]["ev"]              # the debug page's fish moves with these
+        assert mine["type"] == "speak" and mine["mouth"] == [[0, 0.5], [400, 0.0]]
+        assert mine["gestures"] == [[0, "NECK", "230 650"]]
+        assert json.loads(phone.get_nowait())["mouth"] == mine["mouth"]     # the phones' event as before
     finally:
         debug.uninstall()
 
