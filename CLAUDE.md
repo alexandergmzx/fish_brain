@@ -191,8 +191,9 @@ check its replies against this table.
   laptop's behaviour.** Nothing hard-codes `/dev/ttyHS1`, a socket path or a home directory.
 - `.env` holds plain `KEY=value` lines. Keys live only there and are never printed: not in
   logs, the start-up line, the web page or its events.
-- Set `FISH_VIZ_TOKEN` whenever the page listens on `0.0.0.0`; once visitor names travel in
-  events (ADR 0007) the event stream and the audio need it too.
+- `FISH_VIZ_TOKEN` is optional: on his own password-protected hotspot the board runs with it empty
+  (his word, 2026-10-11), so every endpoint is open and the URL is just `/?console=1`. Set it only
+  on a network with strangers; it then guards the POSTs, the event stream and the audio.
 - The switches that differ between targets: `FISH_SERIAL_PORT`, `FISH_SERIAL_TRANSPORT`,
   `FISH_SERIAL_REQUIRED`, `FISH_STT_BACKEND`, `FISH_TTS_BACKEND`, `FISH_LLM_PROFILE`,
   `FISH_PTT_DEVICE`, `FISH_PTT_KEY`, `FISH_PTT_MODE`, `FISH_VIZ_HOST`, `FISH_WELCOME_ONCE`,
