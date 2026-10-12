@@ -30,7 +30,9 @@
         <button id="tokenBtn" type="button">Use</button>
     </div>
 
-    <ul id="hints"></ul>
+    <!-- Hints: one line (how many, the worst one); a click folds them all out. -->
+    <div id="hintBar" hidden><span id="hintLine"></span><button id="hintToggle" type="button">open</button></div>
+    <ul id="hints" hidden></ul>
 
     <section id="pipe">
         <div class="stages" id="stages"></div>
@@ -40,10 +42,24 @@
 
     <main>
         <section class="col" id="colTurns">
+            <!-- The fish: its sprite follows the reply being spoken, the lamps every line the
+                 link really sent to the motors (as the board's LED matrix does). -->
+            <div id="fishBox">
+                <canvas id="fish" width="289" height="244"></canvas>
+                <div class="fishside">
+                    <div id="fishState">…</div>
+                    <div class="lamps">
+                        <span class="lamp" id="lampMouth">MOUTH</span>
+                        <span class="lamp" id="lampNeck">NECK</span>
+                        <span class="lamp" id="lampTail">TAIL</span>
+                    </div>
+                    <div id="lastLine" class="note">no line sent yet</div>
+                </div>
+            </div>
             <h2>Turns <small id="turnCount"></small></h2>
             <div class="scroll"><table id="turns"><thead><tr>
-                <th>#</th><th>time</th><th>trigger</th><th>rec</th><th>rms</th><th>stt</th>
-                <th>llm</th><th>tts</th><th>play</th><th>outcome</th><th>heard</th>
+                <th class="n">#</th><th>time</th><th class="n">rec</th><th class="n">stt</th>
+                <th class="n">llm</th><th class="n">tts</th><th>outcome</th>
             </tr></thead><tbody id="turnRows"></tbody></table></div>
             <h2>Turn detail</h2>
             <div class="scroll detail" id="turnDetail">Click a turn.</div>
@@ -51,16 +67,12 @@
 
         <section class="col" id="colPanels">
             <nav id="tabs">
-                <button data-tab="checks" class="on">Checks</button>
-                <button data-tab="switches">Switches</button>
-                <button data-tab="inputs">Inputs</button>
-                <button data-tab="voice">Voice</button>
-                <button data-tab="motors">Motors</button>
-                <button data-tab="model">Model</button>
-                <button data-tab="cloud">Cloud</button>
-                <button data-tab="board">Board</button>
-                <button data-tab="config">Config</button>
-                <button data-tab="clients">Clients</button>
+                <button data-tab="checks" data-panels="checks" class="on">Checks</button>
+                <button data-tab="live" data-panels="inputs motors">Live</button>
+                <button data-tab="model" data-panels="model cloud">Model</button>
+                <button data-tab="voice" data-panels="voice">Voice</button>
+                <button data-tab="switches" data-panels="switches">Switches</button>
+                <button data-tab="system" data-panels="board config clients">System</button>
             </nav>
             <div class="scroll" id="panels">
                 <div class="panel" id="p-checks">
@@ -195,6 +207,7 @@
                through Python: they are in the journal only.</p>
         </section>
     </main>
+    <div id="toast" role="status" aria-live="polite" hidden></div>
     <script src="/debug.js"></script>
 </body>
 </html>

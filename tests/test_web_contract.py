@@ -39,8 +39,9 @@ def test_every_id_debug_js_looks_up_exists_in_debug_html():
     have = set(re.findall(r'\bid="([\w-]+)"', html))
     assert len(wanted) > 40
     assert sorted(wanted - have) == []
-    tabs = set(re.findall(r'data-tab="(\w+)"', html))
-    assert tabs == {m[2:] for m in re.findall(r'id="(p-\w+)"', html)}
+    # every panel belongs to exactly one tab, and every tab's panels exist
+    in_tabs = [p for group in re.findall(r'data-panels="([\w ]+)"', html) for p in group.split()]
+    assert sorted(in_tabs) == sorted(m[2:] for m in re.findall(r'id="(p-\w+)"', html))
 
 
 def test_debug_page_takes_text_only_as_text_and_calls_only_routed_paths():

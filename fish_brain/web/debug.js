@@ -42,7 +42,7 @@
 
   // ---- store -------------------------------------------------------------------------------
   const S = { state: null, boot: "", log: [], keys: [], presses: {}, turns: [], tx: [], acts: [],
-              llm: [], stt: [], tts: [], vision: [], modelOnly: null, openCalls: new Set(), seenCall: 0,
+              llm: [], stt: [], tts: [], vision: [], modelOnly: null, helloSeq: 0, caughtUp: false, openCalls: new Set(), seenCall: 0,
               levels: [], sel: null, live: "", logOff: new Set(), logPaused: false,
               logWindow: null, armedUntil: 0, lastSeq: 0, missed: 0, connected: false };
   const dirty = new Set(["all"]);
@@ -72,10 +72,20 @@
     fill(node, pairs.filter((p) => p).flatMap(([k, v, cls]) =>
       [el("span", "k", k), el("span", "v" + (cls ? " " + cls : ""), v === undefined || v === null || v === "" ? "—" : v)]));
   }
-  function msg(node, text, ms) {
-    node.textContent = text || "";
-    if (ms) setTimeout(() => { if (node.textContent === text) node.textContent = ""; }, ms);
+  // One place for what an action answered (the old per-panel spots are gone).
+  let toastTimer = null;
+  function msg(_node, text, ms) {
+    const t = $("toast");
+    if (!text) return;
+    t.textContent = text;
+    t.className = /refused|NOT DELIVERED|no connection|failed/.test(text) ? "warn" : "";
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, ms || 6000);
   }
+  // Which tab explains a part of the fish (hints and chips name the old panel).
+  const TAB_OF = { checks: "checks", inputs: "live", motors: "live", model: "model", cloud: "model",
+                   voice: "voice", switches: "switches", board: "system", config: "system", clients: "system" };
 
   // ---- the stream ------------------------------------------------------------------------------
   let es = null, lastMsgAt = 0;
@@ -100,6 +110,9 @@
 
   function take(r) {
     if (r.kind === "hb") return;
+    // Records replayed from the rings on connect are history: the fish and its lamps only
+    // follow what arrives once the page has caught up.
+    if (r.seq && r.seq > S.helloSeq) S.caughtUp = true;     // (no clocks compared: by sequence)
     if (r.kind === "hello") {
       if (S.boot && S.boot !== r.boot) {         // the fish restarted: history starts again
         push(S.log, { kind: "log", t: Date.now() / 1000, mark: true,
@@ -109,6 +122,8 @@
         mark("all");
       }
       S.boot = r.boot;
+      S.helloSeq = r.seq || 0;                     // what existed when this stream opened
+      S.caughtUp = false;
       return;
     }
     if (r.seq) {
@@ -122,7 +137,7 @@
       case "press": S.presses[r.dev + "|" + r.key] = r; mark("keys"); break;
       case "turn": push(S.turns, r, CAP.turn); S.live = ""; mark("turns", "pipe"); soon(); break;
       case "perf": S.perf = r; mark("motors"); break;
-      case "tx": push(S.tx, r, CAP.tx); mark("tx"); break;
+      case "tx": push(S.tx, r, CAP.tx); if (S.caughtUp) fish.line(r); mark("tx"); break;
       case "level": S.levels.push(r.rms); if (S.levels.length > 200) S.levels.shift();
                     S.live = "recording"; mark("pipe"); wakeLevel(); break;
       case "action": case "http": push(S.acts, r, CAP.act); mark("clients"); break;
@@ -134,12 +149,94 @@
         const ev = r.ev || {};
         if (ev.type === "listen") S.live = ev.ready ? "waiting" : (S.live === "recording" ? "thinking" : S.live);
         else if (ev.type === "stt" && ev.role === "user") S.live = "thinking";
-        else if (ev.type === "speak") { S.live = "speaking"; setTimeout(() => { if (S.live === "speaking") { S.live = "waiting"; mark("pipe"); } }, (ev.duration_ms || 0) + 300); }
+        else if (ev.type === "speak") { if (S.caughtUp) fish.speak(ev); S.live = "speaking"; setTimeout(() => { if (S.live === "speaking") { S.live = "waiting"; mark("pipe"); } }, (ev.duration_ms || 0) + 300); }
         mark("pipe");
         break;
       }
     }
   }
+
+  // ---- the fish: the sprite follows the reply, the lamps the lines really sent ----------------
+  // The same rules as the phone page (fish.js): one whole-fish PNG per (neck, mouth, tail);
+  // the mouth is the reply's loudness track through a critically damped spring; a NECK line
+  // with one direction holds or returns the head, a chain is a passing window; TAIL flaps.
+  const fish = (() => {
+    const cv = $("fish"), ctx = cv.getContext("2d");
+    const imgs = new Map();
+    const name = (n, m, t) => "neck" + (n ? "Out" : "Rest") + "_mouth" + m + "_tail" + (t ? "Flap" : "Rest") + ".png";
+    for (let n = 0; n < 2; n++) for (let m = 0; m < 4; m++) for (let t = 0; t < 2; t++) {
+      const im = new Image();
+      im.onload = () => { imgs.set(name(n, m, t), im); wake(); };
+      im.src = "/img/" + name(n, m, t);
+    }
+    const mouth = { value: 0, vel: 0 };
+    let track = null, clock0 = 0, trackEnd = 0, windows = [], neck = [], running = false, last = 0;
+    function speak(ev) {
+      const age = Math.max(0, Number(ev.age_ms) || 0), now = performance.now();
+      if (Array.isArray(ev.mouth) && ev.mouth.length && age <= ev.mouth[ev.mouth.length - 1][0]) {
+        track = ev.mouth; clock0 = now - age; trackEnd = track[track.length - 1][0];
+      }
+      for (const [tMs, ch, body] of ev.gestures || []) {
+        const nums = String(body).trim().split(/\s+/).map(Number);
+        let total = 0, pos = false, neg = false;
+        for (let i = 0; i + 1 < nums.length; i += 2) { total += nums[i + 1] || 0; if (nums[i] > 0) pos = true; else if (nums[i] < 0) neg = true; }
+        const start = now - age + tMs;
+        if (String(ch).toUpperCase() === "NECK" && pos !== neg) neck.push({ start, out: pos });
+        else windows.push({ ch: String(ch).toUpperCase(), start, end: start + total });
+      }
+      neck.sort((a, b) => a.start - b.start);
+      wake();
+    }
+    function level(now) {
+      if (!track) return 0;
+      const t = now - clock0;
+      if (t > trackEnd + 150) { track = null; return 0; }
+      let v = 0;
+      for (const [at, lv] of track) { if (at <= t) v = lv; else break; }
+      return Math.min(1, v * 2.5);
+    }
+    const active = (ch, now) => windows.some((w) => w.ch === ch && now >= w.start && now < w.end);
+    function neckOut(now) { let out = false; for (const e of neck) { if (e.start <= now) out = e.out; else break; } return out || active("NECK", now); }
+    function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      const f = -104 * (mouth.value - level(now)) - 20 * mouth.vel;
+      mouth.vel += f * dt; mouth.value = Math.max(0, Math.min(1, mouth.value + mouth.vel * dt));
+      windows = windows.filter((w) => now < w.end + 50);
+      const m = Math.round(mouth.value * 3), n = neckOut(now) ? 1 : 0, t = active("TAIL", now) ? 1 : 0;
+      const im = imgs.get(name(n, m, t)) || imgs.get(name(0, m, 0)) || imgs.get(name(0, 0, 0));
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      if (im) ctx.drawImage(im, 0, 0, cv.width, cv.height);
+      const busy = track || mouth.value > 0.01 || windows.length || neck.some((e) => e.start > now);
+      if (busy) requestAnimationFrame(frame); else running = false;   // asleep when nothing moves
+    }
+    function wake() { if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); } }
+
+    // The lamps: lit for as long as the line it was sent drives the motor.
+    const lamps = { MOUTH: $("lampMouth"), NECK: $("lampNeck"), TAIL: $("lampTail") }, timers = {};
+    function line(r) {
+      const parts = String(r.line).trim().split(/\s+/), ch = (parts[0] || "").toUpperCase();
+      $("lastLine").textContent = clockMs(r.t) + "  " + r.line + (r.flag ? "  (" + r.flag + ")" : "");
+      if (ch === "STOP" || ch === "S") { for (const k in lamps) lamps[k].classList.remove("lit", "hollow"); return; }
+      const lamp = lamps[ch];
+      if (!lamp) return;
+      let ms = 0;
+      for (let i = 2; i < parts.length; i += 2) ms += Number(parts[i]) || 0;
+      lamp.classList.add("lit");
+      lamp.classList.toggle("hollow", !!r.flag);            // muted or dropped: told, not sent
+      clearTimeout(timers[ch]);
+      timers[ch] = setTimeout(() => lamp.classList.remove("lit", "hollow"), Math.max(160, ms));
+    }
+    function state() {
+      const st = S.state || {}, mode = st.mode || {};
+      const word = !S.connected ? "offline" : track ? "speaking" : S.live || (mode.speaking ? "speaking" : mode.recording ? "recording" : mode.listening ? "waiting" : "busy");
+      const box = $("fishState");
+      box.textContent = word + (word === "waiting" ? " for a press" : "…");
+      box.className = word;
+      $("lampMouth").parentElement.classList.toggle("muted", !!(st.link || {}).muted);
+      if ((st.link || {}).muted) $("lastLine").textContent = "MOTORS MUTED: lines are dropped";
+    }
+    return { speak, line, state };
+  })();
 
   // ---- the slow state --------------------------------------------------------------------------
   let stateTimer = null;
@@ -175,6 +272,7 @@
     const d = (n) => all || now.has(n);
     const run = (fn) => { try { fn(); } catch (e) { console.error(fn.name, e); } };   // one panel never stops the others
     if (d("bar")) run(renderBar);
+    if (d("bar") || d("pipe") || d("panels")) run(fish.state);
     if (d("hints")) run(renderHints);
     if (d("pipe") || d("turns")) run(renderPipe);
     if (d("turns")) run(renderTurns);
@@ -186,7 +284,12 @@
     if (d("panels") || d("clients")) run(renderClients);
   }
 
-  function chip(word, cls, title) { const c = el("span", "chip " + cls, word); if (title) c.title = title; return c; }
+  function chip(word, cls, title, tab) {
+    const c = el("span", "chip " + cls, word);
+    if (title) c.title = title;
+    if (tab) c.addEventListener("click", () => showTab(tab));
+    return c;
+  }
   const lastTurn = () => S.turns[S.turns.length - 1];
 
   function renderBar() {
@@ -219,49 +322,61 @@
     const chips = [];
     const health = link.health || "?";
     chips.push(chip((health === "ok" ? "● " : "■ ") + "LINK " + (link.mock ? "mock" : health),
-                    health === "ok" ? "ok" : "bad", link.desc));
-    chips.push(chip((be.online === false ? "■ NET offline" : "● NET ok"), be.online === false ? "bad" : "ok"));
+                    health === "ok" ? "ok" : "bad", link.desc, "live"));
+    chips.push(chip((be.online === false ? "■ NET offline" : "● NET"), be.online === false ? "bad" : "ok", "internet", "model"));
     const other = Object.keys(remote.other_keys || {}).length;
     if (remote.present) {
       const n = (remote.devices || []).length;
-      chips.push(chip((n ? (other ? "▲ " : "● ") : "■ ") + "TRIG " + n + " dev" + (other ? " · other keys" : ""),
-                      !n ? "bad" : other ? "warn" : "ok", remote.keys));
-    } else chips.push(chip("○ TRIG " + (be.ptt || "page"), "unknown"));
+      chips.push(chip((n ? (other ? "▲ " : "● ") : "■ ") + "TRIG" + (n ? "" : " none") + (other ? " other key" : ""),
+                      !n ? "bad" : other ? "warn" : "ok", remote.keys, "live"));
+    } else chips.push(chip("○ TRIG " + (be.ptt || "page"), "unknown", "", "live"));
     const zeros = rec && rec.zero_frac > 0.95, quiet = rec && rec.rms !== undefined && rec.rms < 0.005;
-    chips.push(chip(rec && rec.samples ? (zeros ? "■ MIC zeros" : quiet ? "▲ MIC silent" : "● MIC rms " + rec.rms)
-                    : "○ MIC no recording", !rec || !rec.samples ? "unknown" : zeros ? "bad" : quiet ? "warn" : "ok"));
+    chips.push(chip(rec && rec.samples ? (zeros ? "■ MIC zeros" : quiet ? "▲ MIC silent" : "● MIC")
+                    : "○ MIC", !rec || !rec.samples ? "unknown" : zeros ? "bad" : quiet ? "warn" : "ok", "the last recording", "live"));
     for (const k of ["stt", "llm", "tts"]) {
       const v = times[k], name = k === "llm" ? (be.echo ? "echo" : be.llm_profile) : be[k];
       chips.push(chip((v > SLOW[k] ? "▲ " : "● ") + k.toUpperCase() + " " + (name || "") + (v !== undefined ? " " + secs(v) + "s" : ""),
-                      v > SLOW[k] ? "warn" : v !== undefined ? "ok" : "unknown"));
+                      v > SLOW[k] ? "warn" : v !== undefined ? "ok" : "unknown", "last turn", k === "tts" ? "voice" : "model"));
     }
     const perf = S.perf || {};
-    chips.push(chip(perf.result && perf.result !== "ok" ? "■ SPK " + perf.result : "● SPK " + (be.player || ""),
-                    perf.result && perf.result !== "ok" ? "bad" : "ok"));
+    chips.push(chip(perf.result && perf.result !== "ok" ? "■ SPK " + perf.result : (be.player === "SilentPlayer" ? "○ SPK silent" : "● SPK"),
+                    perf.result && perf.result !== "ok" ? "bad" : "ok", "playback", "voice"));
     const hot = Math.max(0, ...(sys.thermal || []).map((z) => z.c));
-    chips.push(chip((hot > 70 ? "▲ " : "● ") + "BOARD " + (hot ? hot.toFixed(0) + "C " : "") + "load " + ((sys.load || [])[0] ?? "?"),
-                    hot > 70 ? "warn" : "ok"));
+    chips.push(chip((hot > 70 ? "▲ " : "● ") + (hot ? hot.toFixed(0) + " C" : "BOARD"),
+                    hot > 70 ? "warn" : "ok", "the machine", "system"));
     const cs = st.checks_summary;
     if (cs) chips.unshift(chip((cs.failed ? "■ " : cs.warned ? "▲ " : "● ") + "CHECKS " + cs.passed + "/" + cs.of,
-                               cs.failed ? "bad" : cs.warned ? "warn" : "ok", cs.failed + " failed, " + cs.warned + " warnings"));
+                               cs.failed ? "bad" : cs.warned ? "warn" : "ok", cs.failed + " failed, " + cs.warned + " warnings", "checks"));
     fill($("hChips"), chips);
   }
 
   function renderHints() {
     const raw = (S.state || {}).hints;
     const hints = Array.isArray(raw) ? raw : [];   // a section that failed arrives as {error}
-    const flagged = new Set(hints.filter((h) => h.level !== "info").map((h) => h.panel));
+    const flagged = new Set(hints.filter((h) => h.level !== "info").map((h) => TAB_OF[h.panel] || h.panel));
     for (const b of $("tabs").children) b.classList.toggle("flag", flagged.has(b.dataset.tab));
-    fill($("hints"), hints.slice(0, 4).map((h) => {
+    const order = { bad: 0, warn: 1, info: 2 };
+    hints.sort((x, y) => order[x.level] - order[y.level]);
+    $("hintBar").hidden = !hints.length;
+    if (!hints.length) { $("hints").hidden = true; return; }
+    const worst = hints[0];
+    $("hintBar").className = worst.level;
+    $("hintLine").textContent = (worst.level === "bad" ? "■ " : worst.level === "warn" ? "▲ " : "○ ") +
+      (hints.length > 1 ? hints.length + " hints · " : "") + worst.text + (worst.fix ? "  → " + worst.fix : "");
+    $("hintToggle").hidden = hints.length < 2;
+    $("hintToggle").textContent = $("hints").hidden ? "all " + hints.length : "fold";
+    fill($("hints"), hints.map((h) => {
       const li = el("li", h.level);
       li.appendChild(el("span", "", (h.level === "bad" ? "■ " : h.level === "warn" ? "▲ " : "○ ") + h.text));
       if (h.fix) li.appendChild(el("span", "fix", h.fix));
       const b = el("button", "", "show");
-      b.addEventListener("click", () => showTab(h.panel));
+      b.addEventListener("click", () => showTab(TAB_OF[h.panel] || h.panel));
       li.appendChild(b);
       return li;
     }));
   }
+  $("hintToggle").addEventListener("click", () => { $("hints").hidden = !$("hints").hidden; mark("hints"); });
+  $("hintLine").addEventListener("click", () => { const h = ((S.state || {}).hints || [])[0]; if (h) showTab(TAB_OF[h.panel] || h.panel); });
 
   // The stage a turn ended in, by its outcome.
   const DIED = { "too short": 1, "silence": 1, "mic error": 1, "not understood": 2, "offline": 3,
@@ -315,19 +430,18 @@
       const t = S.turns[i], x = t.times || {}, rec = t.rec || {};
       const tr = el("tr", S.sel === t ? "sel" : (i === S.turns.length - 1 ? "new" : ""));
       const bad = !/^(spoken|read: ask|read: tell|draft)/.test(t.outcome || "");
-      const cells = [t.id, clock(t.t), t.trigger || "", secs(x.rec), rec.rms !== undefined ? rec.rms : "",
-                     secs(x.stt), secs(x.llm), secs(x.tts), secs(x.play_start), t.outcome || "", (t.user || "").slice(0, 60)];
+      const cells = [t.id, clock(t.t), secs(x.rec), secs(x.stt), secs(x.llm), secs(x.tts), t.outcome || ""];
+      tr.title = (t.trigger || "") + (rec.rms !== undefined ? " · rms " + rec.rms : "") + (t.user ? " · heard: " + t.user : "");
       cells.forEach((c, j) => {
-        const td = el("td", "", c);
-        if (j === 9) td.className = bad ? "bad" : "ok";
-        if (j === 4 && rec.zero_frac > 0.95) td.className = "bad";
-        if ((j === 5 && x.stt > SLOW.stt) || (j === 6 && x.llm > SLOW.llm) || (j === 7 && x.tts > SLOW.tts)) td.className = "warn";
-        if (j === 10) td.className = "clip";
+        const td = el("td", j === 1 || j === 6 ? "" : "n", c);
+        if (j === 6) td.className = bad ? "bad" : "ok";
+        if ((j === 3 && x.stt > SLOW.stt) || (j === 4 && x.llm > SLOW.llm) || (j === 5 && x.tts > SLOW.tts)) td.className = "n warn";
         tr.appendChild(td);
       });
       tr.addEventListener("click", () => selectTurn(t));
       rows.push(tr);
     }
+    if (!rows.length) { const tr = el("tr", "empty"); const td = el("td", "", "no turn yet: each press of the remote becomes a row"); td.colSpan = 7; tr.appendChild(td); rows.push(tr); }
     fill($("turnRows"), rows);
     if (S.sel) renderDetail(S.sel);
   }
@@ -799,10 +913,19 @@
 
   // ---- tabs, arm, STOP ---------------------------------------------------------------------------
   function showTab(name) {
-    for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.tab === name);
-    for (const p of $("panels").children) p.hidden = p.id !== "p-" + name;
+    let panels = null;
+    for (const b of $("tabs").children) {
+      const on = b.dataset.tab === name;
+      b.classList.toggle("on", on);
+      if (on) panels = b.dataset.panels.split(" ");
+    }
+    if (!panels) return showTab("checks");
+    for (const p of $("panels").children) p.hidden = !panels.includes(p.id.slice(2));
+    $("panels").scrollTop = 0;
+    try { localStorage.setItem("fishDebugTab", name); } catch (_) {}
   }
   $("tabs").addEventListener("click", (e) => { if (e.target.dataset && e.target.dataset.tab) showTab(e.target.dataset.tab); });
+  try { showTab(localStorage.getItem("fishDebugTab") || "checks"); } catch (_) { showTab("checks"); }
 
   let armTick = null;
   function setArmed(seconds) {

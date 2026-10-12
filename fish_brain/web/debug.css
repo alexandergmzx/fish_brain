@@ -145,7 +145,7 @@ body.armed #armBar { transform: scaleX(1); animation: drain 60s linear 1 forward
 .pipe-label { margin-top: 5px; font: 12px var(--mono); color: var(--hoja-tenue); }
 
 /* ---- three columns, each scrolling by itself ---------------------------------------------- */
-main { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.2fr) minmax(0, 1.15fr); }
+main { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(380px, 0.85fr) minmax(0, 1.5fr) minmax(320px, 1fr); }
 .col { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--hoja-linea); background: var(--hoja); }
 .scroll { flex: 1 1 0; min-height: 0; overflow: auto; }
 #colTurns .scroll.detail { flex: 0 0 34%; padding: 8px 10px; font: 12px/1.5 var(--mono); white-space: pre-wrap; background: var(--hoja-campo); }
@@ -213,3 +213,42 @@ details.bad > summary { color: var(--hoja-mal); }
 .switches select, .switches input[type="number"] { padding: 3px 6px; border: 1px solid var(--hoja-linea); border-radius: 6px; background: var(--hoja-campo); color: inherit; font: inherit; }
 .switches input[type="number"] { width: 70px; }
 .switches tr.changed td:first-child { color: var(--hoja-aviso); font-weight: 700; }
+
+/* ---- the tidy-up: the fish, a one-line bar, folded hints, one place for results --------------- */
+#bar { flex-wrap: nowrap; gap: 6px 12px; }
+.who { flex: none; }
+.chips { flex-wrap: nowrap; min-width: 0; overflow: hidden; }
+.chip { cursor: default; }
+.chips .chip { cursor: pointer; }
+.right { flex: none; }
+@media (max-width: 1700px) { #bar { flex-wrap: wrap; } .chips { flex-wrap: wrap; overflow: visible; } }
+.msg { display: none; }
+#hintBar { display: flex; align-items: center; gap: 10px; padding: 4px 10px; border-bottom: 1px solid var(--hoja-linea); background: #1d2229; font-size: 13px; }
+#hintBar.bad { border-left: 4px solid var(--hoja-mal); }
+#hintBar.warn { border-left: 4px solid var(--hoja-aviso); }
+#hintBar.info { border-left: 4px solid var(--hoja-linea); }
+#hintLine { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#hintBar button { padding: 0 10px; }
+#fishBox { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-bottom: 1px solid var(--hoja-linea); background: var(--hoja-campo); }
+#fish { flex: none; width: 190px; height: auto; border-radius: 10px; background: linear-gradient(180deg, #8fe6f0, #3fc9e6); }
+.fishside { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+#fishState { font: 700 17px/1.2 var(--mono); }
+#fishState.speaking, #fishState.recording { color: var(--hoja-bien); }
+#fishState.thinking { color: var(--hoja-aviso); }
+#fishState.offline { color: var(--hoja-mal); }
+.lamps { display: flex; gap: 6px; }
+.lamp { padding: 3px 9px; border: 2px solid var(--hoja-linea); border-radius: 999px; font: 700 11px/1.3 var(--mono); color: var(--hoja-tenue); opacity: 0.55; transition: opacity 0.25s ease, transform 0.2s var(--spring); }
+.lamp.lit { opacity: 1; transform: scale(1.08); color: var(--hoja); background: var(--hoja-bien); border-color: var(--hoja-bien); }
+.lamp.lit.hollow { color: var(--hoja-aviso); background: none; border-color: var(--hoja-aviso); border-style: dashed; }
+.lamps.muted .lamp { text-decoration: line-through; }
+#lastLine { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#turns { table-layout: fixed; }
+#turns th, #turns td { overflow: hidden; text-overflow: ellipsis; }
+#turns th.n, td.n { text-align: right; }
+#turns th:nth-child(1) { width: 30px; } #turns th:nth-child(2) { width: 76px; }
+#turns th:nth-child(3), #turns th:nth-child(4), #turns th:nth-child(5), #turns th:nth-child(6) { width: 46px; }
+.panel + .panel { margin-top: 18px; padding-top: 4px; border-top: 1px solid var(--hoja-linea); }
+.empty td, .empty { color: var(--hoja-tenue); font-style: italic; }
+#toast { position: fixed; left: 50%; bottom: 14px; max-width: 80vw; padding: 8px 16px; border: 1px solid var(--hoja-linea); border-radius: 10px; background: #232b35; font: 13px/1.4 var(--mono); transform: translateX(-50%); animation: toastIn 0.3s var(--spring) 1; z-index: 5; }
+#toast.warn { border-color: var(--hoja-aviso); color: var(--hoja-aviso); }
+@keyframes toastIn { from { transform: translateX(-50%) translateY(16px); opacity: 0; } }

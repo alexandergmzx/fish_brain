@@ -8,6 +8,7 @@ its limits: [ADR 0009](adr/0009-a-debug-view-that-acts.md).
 
 | Part | Shows |
 |---|---|
+| Fish | Top left: the sprite follows the reply being spoken (the reply's mouth track and gestures, as on the phone), a state word, and three lamps (MOUTH, NECK, TAIL) that light for every line the link really sent; a muted or dropped line lights its lamp hollow |
 | Bar | Host, uptime, commit, mode badges (`ECHO`, `DRY-RUN`, `WAIT`, `no token`, "code changed: restart"), a chip per part (link, internet, trigger, microphone, the three models, speaker, board), ARM and STOP |
 | Hints | A sentence and the fix: a key that is not the configured one, no remote, a key that only taps, a recording of zeros or near silence, echo / dry-run / wait-to-speak, code on disk newer than the process, link off, MCU silent, offline, a missing key name, playback failed, a slow stage, the board in USB device mode |
 | Checks | The bring-up checks as PASS / FAIL / WARN rows with the value found and the fix (`fish_brain/debug_checks.py`): USB host role and devices; a playback card, the sound server, the default sink, its volume and mute; a capture card, the default source, `FISH_MIC_SOURCE`; the remote's devices and readable input nodes; the port, the link, the router's socket; `loq`, canned phrases, key names, internet; service, linger, groups, `.env`; the last result of each test. Rows that do not apply on this machine read `skip` and are not counted. Three buttons: speaker → microphone loop, voice render, cloud round trip |
@@ -20,6 +21,11 @@ its limits: [ADR 0009](adr/0009-a-debug-view-that-acts.md).
 | Motors | Link, the lines sent, the bytes back from the MCU, the last performance; ping; the armed tests |
 | Cloud, Board, Config, Clients | Models and key names; temperature, load, USB, the unit, restart; the configuration in effect with its `FISH_*` names; pages, dropped events, refused requests |
 | Log | Every printed line with its time and tag; filter, search, pause, copy |
+
+The middle column has six tabs: **Checks**, **Live** (inputs and motors), **Model** (with the
+cloud facts), **Voice**, **Switches**, **System** (board, service, configuration, pages). Hints
+fold into one line; every action answers in one toast at the bottom; the chosen tab is
+remembered in the browser.
 
 ## Routes
 
