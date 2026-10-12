@@ -39,7 +39,7 @@ data when warranted.
 | Board: bring-up script | `tools/unoq_bringup.sh`: all tests passed 2026-10-11 |
 | Board: local speech-to-text | Slow: `tiny` 3.5 to 4.8 s, `base` 8 s, `small` 20 to 23 s per turn |
 | Board: push-to-talk | The page on the operator's phone or PC (the default view), hold-to-talk with the board's microphone; the browser's own microphone over HTTPS (`FISH_MIC_CAPTURE=browser`, the board's default since 2026-10-11) works from the laptop's Chrome; not yet tried on his phone. The touch display's kiosk is parked. `FISH_PTT_DEVICE=auto` also adopted the headset jack as a trigger (results 2026-10-11) |
-| Board: HDMI touch display | Parked (ADR 0005, replaced by 0006): works on its own power, on before the board, but the browser costs 1.1 to 1.3 cores and 42 to 55 C idle (results 2026-10-11); not taken to the fair |
+| Board: HDMI touch display | Unplugged since 2026-10-12 (ADR 0005 replaced by 0006): the browser cost 1.1 to 1.3 cores and 60 to 68 C; without it the board idles at 1 % and 41 to 44 C, a turn peaks at 30 % (results 2026-10-12). The LightDM session stays installed, it starts nothing |
 | The reading (la lectura) | Built (ADR 0007, proposed): badge photo on the phone → `gpt-6-luna` through the board (4.3 to 6.7 s, 1163 image tokens, surnames split, accents restored: `docs/results/2026-10-11-reading-badge.md`) → the fish asks "¿Tú eres X?" → the answer is a turn. Not yet tried with a real badge or on the phone |
 | Motors on the UNO Q (L298N), Billy Bass #2 calibration | Not started. Before wiring: 10 k pull-downs on D6, D3, D5 and on D7, D8 (D8 is pulled high in reset) |
 | Fair | **2026-10-17**. Billy Bass #2 first; the Spin Master hat body only if it arrives. Interface: the page on the operator's phone (ADR 0006) |
