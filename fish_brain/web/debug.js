@@ -169,9 +169,10 @@
 
   // ---- render ----------------------------------------------------------------------------------
   function render() {
-    const all = dirty.has("all");
-    const d = (n) => all || dirty.has(n);
+    const now = new Set(dirty);                  // what changed, taken before the set is emptied
     dirty.clear();
+    const all = now.has("all");
+    const d = (n) => all || now.has(n);
     const run = (fn) => { try { fn(); } catch (e) { console.error(fn.name, e); } };   // one panel never stops the others
     if (d("bar")) run(renderBar);
     if (d("hints")) run(renderHints);
