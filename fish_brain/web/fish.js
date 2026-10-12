@@ -1222,8 +1222,8 @@
       const ask = (st && st.mic_capture === "browser") || MIC_PARAM === "browser";
       if (!ask || wanted) return;
       wanted = true;
-      if (!CAN) gate("micrófono del pez" + (MIC_PARAM === "host" ? " (?mic=host)" : window.isSecureContext ? "" : " (sin https)"), "off");
-      else gate("🎙️ Activar micrófono");
+      if (!CAN) { wanted = false; return; }       // plain http or ?mic=host: no button, the board records
+      gate("🎙️ Activar micrófono");
     };
     (async () => {
       try { api.status(await (await fetch("/status", { cache: "no-store" })).json()); } catch (_) {}
