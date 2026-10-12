@@ -419,4 +419,5 @@ the text above disagree, this section is right.
 | Phase 4 pass line | Each PWM pin shows output on an LED or meter | Measured from the MCU by reading the pins back; see `docs/results/2026-10-11-unoq-firmware-leds.md` |
 | Push-to-talk | A remote | The touch display on the board (ADR 0005) |
 | Push-to-talk (2026-10-11, ADR 0006) | The touch display (ADR 0005) | The page on the operator's phone; the display parked |
-| Mic (row above) | The board's PipeWire source | The phone's microphone through the page once Phase 6 Stage 4 lands; the board's stays as the fallback |
+| Mic (row above) | The board's PipeWire source | The remote's own microphone (2026-10-12): the RedOctane draws too much current and the phone's browser microphone is built but off |
+| Push-to-talk key (2026-10-12) | The remote's voice key | The remote's OK button held (`KEY_ENTER`): the voice key reports only a 0.12 s tap on every node |

@@ -101,7 +101,7 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_ROUTER_RELEASE`, `FISH_ROUTER_SOCKET` | `true`, `/var/run/arduino-router.sock` | UNO Q: ask the router to release `/dev/ttyHS*` before opening it |
 | `FISH_PTT_DEVICE` | off | Push-to-talk from an input device: a `/dev/input/...` path, `name:<part of its name>`, or `auto` |
 | `FISH_PTT_KEY`, `FISH_PTT_MODE` | `KEY_VOICECOMMAND`, `hold` | Which key; `hold` to talk or `toggle` (press to start, press to stop) |
-| `FISH_PTT_MAX_S` | `15` | Longest recording; also ends a stuck button |
+| `FISH_PTT_MAX_S` | `15` | Longest recording (45 on the board); at the limit the clip is still answered and the LLM is told the visitor was still talking |
 | `FISH_PTT_DEAD_S` | `0` | End a recording once the microphone stream has delivered only digital zeros for this many seconds after sound (a remote whose microphone streams only while its key is held) |
 | `FISH_PTT_PAUSE_S`, `FISH_PTT_QUIET_RMS` | `0`, `0.04` | End a recording after this long a pause once speech (chunks above the RMS) was heard: tap, talk, stop talking |
 | `FISH_MIC_SOURCE`, `FISH_MIC_DEVICE`, `FISH_SPEAKER_DEVICE` | system default | PipeWire source name; or a device number or part of its name |
@@ -148,8 +148,8 @@ Measurements are in [`docs/results/`](docs/results/).
 |---|---|
 | Power | A power bank into the hub's power input, the hub's cable into the board. **The cable matters**: with one cable the board stayed in USB device mode and saw nothing on the hub; with a newer one it became the host at once. Check with `cat /sys/class/typec/port0/data_role` (want `[host]`) and `lsusb` |
 | Speaker | Any USB speaker. The one tested is playback-only and also has media keys |
-| Microphone | Any USB microphone (tested: RedOctane USB Microphone) |
-| Push-to-talk | The page opened from the operator's phone or PC (the fair's interface, ADR 0006), a button on an input device (`FISH_PTT_DEVICE`), or the hold-to-talk target on an HDMI touch display (parked, see "Screen" below) |
+| Microphone | The 2.4 GHz remote's own microphone (XING WEI, a PipeWire source; `FISH_MIC_SOURCE`). The RedOctane USB microphone tested earlier draws more current than the board gives |
+| Push-to-talk | The remote's OK button held (`FISH_PTT_DEVICE=name:XING WEI`, `FISH_PTT_KEY=KEY_ENTER`; its voice key only taps and cannot be held), the page opened from the operator's phone or PC (ADR 0006), or the target on an HDMI touch display (parked, see "Screen" below) |
 | Display (optional) | HDMI touch display on the hub. **Give it its own power and switch it on before the board**: fed from the hub's power bank the board did not see it |
 
 PipeWire picks a USB speaker and microphone as the defaults by itself. Volume:

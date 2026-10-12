@@ -333,7 +333,8 @@ heartbeat, blue per command).
 | # | Test | How | Pass |
 |---|---|---|---|
 | 1 | Cold boot | Hotspot on, then power the board; touch nothing | The welcome plays; `[fish] link=serial /dev/ttyHS1 …` in the log; the phone opens the page and the dot is green. Note the seconds from power to voice |
-| 2 | Phone turn, board microphone | Hold the round target on the phone (the default view), ask toward the fish, release | Target red while the host records, amber while it thinks, green while it speaks; a `[turn]` line with five timings and `link=ok`; the mouth lane of the matrix moves with the voice. No restart needed to fall back to this row from any other |
+| 2 | Remote turn | Hold the remote's OK button, talk into the remote, release | The pill on the phone page reads "Te escucho…" then "Pensando…" then "Estoy hablando…"; a `[turn]` line with five timings and `link=ok`; the mouth lane of the matrix moves with the voice |
+| 2b | Phone turn, remote microphone | `?talk=1` on the page: hold the round target, ask into the remote, release | Same as 2; no restart needed to fall back to this row from any other |
 | 3 | Phone turn, phone microphone | `Activar micrófono` once, then as 2 with the phone held toward the visitor | Same as 2, plus an `[utt]` line; `?mic=host` brings row 2 back without a restart |
 | 4 | Page without token | From a phone: `http://segunda.local:8723/` and press | Nothing is recorded or spoken |
 | 5 | Turn time | Read five `[turn]` lines | Release-to-voice mostly under about 5 s |
@@ -348,7 +349,7 @@ heartbeat, blue per command).
 | 14 | Router restart | `sudo systemctl restart arduino-router` mid-answer | The voice continues; the matrix shows the boot animation, then the ticks; `[link] router is back; released /dev/ttyHS1 again`; the matrix moves on the next answer |
 | 15 | Tools under a running fish | `python -m fish_brain.app --check-link`, `tools/fw_check.py check --release-router` | Both refuse and name the holder; the matrix still moves on the next answer |
 | 16 | Link missing | `systemctl --user set-environment FISH_SERIAL_PORT=/dev/ttyNOPE`, restart | The fish talks; `(degraded)` in the summary line; `[turn] … link=off`. Then `unset-environment FISH_SERIAL_PORT`, restart |
-| 17 | Microphone unplugged | Pull the microphone, hold and speak, replug | Noted: with the board's own input as fallback the recording is silence and the fish says nothing. Works again after the replug |
+| 17 | Remote unplugged | Pull the remote's dongle, hold the page target and speak, replug | Noted: with the board's own input as fallback the recording is silence and the fish says nothing; the remote key is gone until the replug. Works again after the replug |
 | 18 | Speaker replug | Pull and replug the speaker, ask | Sound returns without a restart (if not: restart, and note it) |
 | 19 | Display attached by mistake | Boot with a display plugged in | The fish is the same; `deploy/unoq_setup.sh kiosk status`: the parked kiosk may start a browser, `kiosk pause` closes it |
 | 20 | Phone stays on | Leave the phone untouched for 30 minutes (auto-lock off, on a power bank) | Page still green and responsive; a turn works |
