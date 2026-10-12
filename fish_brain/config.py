@@ -385,6 +385,10 @@ class PTTConfig:
     # hold = record while pressed; toggle = one press starts, the next stops.
     mode: str = field(default_factory=lambda: _env("FISH_PTT_MODE", "hold"))
     max_record_s: float = field(default_factory=lambda: _env_float("FISH_PTT_MAX_S", 15.0))
+    # Who records the turn: host = this machine's microphone (the laptop's behaviour);
+    # browser = the page records with the phone's microphone and uploads a WAV
+    # (POST /utterance), needs --viz and a secure context on the phone (https).
+    capture: str = field(default_factory=lambda: _env("FISH_MIC_CAPTURE", "host"))
     grab: bool = field(default_factory=lambda: _env_bool("FISH_PTT_GRAB", False))
     # Saying salir/quit/exit ends the program (text mode always can).
     voice_quit: bool = field(default_factory=lambda: _env_bool("FISH_VOICE_QUIT", True))

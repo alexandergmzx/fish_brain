@@ -5,7 +5,9 @@ Two input modes:
   - text  (--text):  type the user turn (skips mic + STT)
 
 Push-to-talk can come from the browser button (--viz), a remote's button (FISH_PTT_DEVICE),
-or the keyboard; the first two can be active together.
+or the keyboard; the first two can be active together. With FISH_MIC_CAPTURE=browser the
+page records with the phone's microphone and uploads the WAV: it arrives through the viz
+inbox as an `Utterance` and takes the same path as a recording from here.
 
 Nothing that goes wrong inside a turn ends the loop: a failed cloud call, a missing
 microphone or a bad audio file makes the fish say a short canned line and listen again.
@@ -67,6 +69,8 @@ class FishConversation:
         parts = [s.name for s in self.sources]
         if self.button is not None:
             parts[-1] = self.button.describe()
+        if self.viz is not None and self.cfg.ptt.capture == "browser":
+            parts[0] = "web+browser-mic"             # the page records, this side transcribes
         return "+".join(parts)
 
     @property
@@ -91,8 +95,9 @@ class FishConversation:
         on_level = (lambda lvl: self.viz.push_level(lvl)) if self.viz is not None else None
         if self.sources:
             if self.viz is not None:
-                print("[ptt] mantén pulsado 'Hablar' (navegador o control) para grabar…",
-                      flush=True)
+                where = ("teléfono: la página graba" if self.cfg.ptt.capture == "browser"
+                         else "navegador o control")
+                print(f"[ptt] mantén pulsado 'Hablar' ({where}) para grabar…", flush=True)
                 self.viz.set_listening(True)
             try:
                 return ptt.record_multi(
@@ -106,11 +111,22 @@ class FishConversation:
     def _handle_item(self, item) -> bool:
         """An input item that is not a recording (offered by the page). The single dispatch
         point for such items; returns whether the loop goes on."""
-        from .reading import Reading
+        from .reading import Reading, Utterance
         if isinstance(item, Reading):
             return self._reading_turn(item)
+        if isinstance(item, Utterance):
+            return self._utterance_turn(item)
         print(f"[turn] unknown input item {type(item).__name__}", flush=True)
         return True
+
+    def _utterance_turn(self, u) -> bool:
+        """A recording the page made with the phone's microphone and uploaded. From here on
+        it is a normal voice turn: the hold plus the upload stand for the recording time."""
+        times: dict[str, float] = {"rec": u.hold_s + u.upload_s}
+        t0 = time.monotonic()
+        user = self._transcribe(u.path)           # unlinks the file
+        times["stt"] = time.monotonic() - t0
+        return self._finish_turn(user, times)
 
     def _reading_turn(self, r) -> bool:
         """A visitor's name arrived (ADR 0007). A new visitor: the history is reset and the
@@ -211,7 +227,11 @@ class FishConversation:
             t0 = time.monotonic()
             user = self._transcribe(wav)
             times["stt"] = time.monotonic() - t0
+        return self._finish_turn(user, times)
 
+    def _finish_turn(self, user: str, times: dict[str, float]) -> bool:
+        """The rest of a turn once the user's text is known (typed, transcribed here, or
+        transcribed from an uploaded recording): quit words, the LLM or the echo, speaking."""
         if user.lower().strip(" .!¡") in _QUIT_WORDS and (
                 self.text_input or self.cfg.ptt.voice_quit):
             return False

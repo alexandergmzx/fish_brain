@@ -138,3 +138,58 @@ def test_canned_lines_go_through_the_speaker_lock(make, capsys):
     convo._apologize(convo.cfg.canned.no_mic)
     assert said == [convo.cfg.canned.no_signal]
     assert "already speaking" in capsys.readouterr().out
+
+
+# --- an uploaded recording (the phone's microphone) ----------------------------------
+import wave
+
+from fish_brain.reading import Utterance
+
+
+class FakeSTT:
+    def __init__(self, text="hola"):
+        self.text = text
+        self.calls = []
+
+    def transcribe(self, path):
+        self.calls.append(str(path))
+        return self.text
+
+
+def loud_wav(path, seconds=1.0):
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\x00\x20" * int(16000 * seconds))     # well above silence_rms
+    return path
+
+
+def test_uploaded_recording_is_a_voice_turn(make, tmp_path, capsys):
+    wav = loud_wav(tmp_path / "fish_in_test.wav")
+    convo, viz, spoken = make(Utterance(path=wav, hold_s=1.0, upload_s=0.25))
+    convo._stt = FakeSTT("hola")
+    assert convo.turn() is True
+    assert spoken == ["hola"]                        # echo mode repeats the transcript
+    assert convo._stt.calls == [str(wav)]
+    assert not wav.exists()                          # unlinked after transcribing
+    out = capsys.readouterr().out
+    assert "you> hola" in out
+    turn_line = [l for l in out.splitlines() if l.startswith("[turn] ")][-1]
+    assert "rec=1.2s" in turn_line or "rec=1.3s" in turn_line      # hold + upload
+    assert ("user", "hola") in viz.transcripts
+
+
+def test_uploaded_recording_with_a_quit_word_ends_the_loop(make, tmp_path):
+    wav = loud_wav(tmp_path / "fish_in_quit.wav")
+    convo, viz, spoken = make(Utterance(path=wav, hold_s=0.5, upload_s=0.1))
+    convo._stt = FakeSTT("salir")
+    convo.cfg.ptt.voice_quit = True
+    assert convo.turn() is False and spoken == [] and not wav.exists()
+
+
+def test_ptt_summary_names_the_browser_mic(make, tmp_path):
+    convo, viz, spoken = make(object())
+    assert convo.ptt_summary() == "web"
+    convo.cfg.ptt.capture = "browser"
+    assert convo.ptt_summary() == "web+browser-mic"

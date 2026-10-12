@@ -8,6 +8,7 @@ fish says is letters only, and the journal line carries timings and confidence, 
 
 `Reading` is the item the page offers the turn loop (through the viz inbox); the loop
 speaks "¿Tú eres X?" or, for a confirmed (typed) name, tells the future at once.
+`Utterance` is the other item: a recording uploaded from the phone's microphone.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import re
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from . import cloud
 from .config import LLM_PROFILES, Config
@@ -63,6 +65,17 @@ class Reading:
     first_name: str
     look: str | None = None
     confirmed: bool = False
+
+
+@dataclass
+class Utterance:
+    """An input item for the turn loop: a recording the page made with the phone's
+    microphone and uploaded (`POST /utterance`). `path` is a temporary WAV the loop
+    unlinks after transcribing; `hold_s` how long the target was held, `upload_s` how long
+    the body took to arrive (together they stand for the turn's `rec` time)."""
+    path: Path
+    hold_s: float = 0.0
+    upload_s: float = 0.0
 
 
 _NAME_CHARS = re.compile(r"[^A-Za-zÀ-ÖØ-öø-ÿ' -]+")
