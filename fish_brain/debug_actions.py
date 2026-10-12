@@ -22,17 +22,24 @@ Safety, in code terms:
 """
 from __future__ import annotations
 
+import math
 import os
 import re
 import signal
+import struct
+import tempfile
 import threading
 import time
+import wave
 from pathlib import Path
 
 ARM_S = 60.0
 PICKUP_S = 0.5            # an offered test not started by then is dropped
 TOTAL_MS_MAX = 1500       # one test line, all its pairs together
 RESTART_GRACE_S = 12.0    # after the stop signal: STOP and a hard exit if still alive
+LOOP_MIN_RMS = 0.02       # the bring-up script's floor for "the microphone heard it"
+LOOP_OVER_ROOM = 3.0      # and this many times the room (estimate: the remote's floor is noisy)
+VOICE_PHRASE = "Probando la voz del pez."
 _LINE = re.compile(r"^(MOUTH|NECK|TAIL)((?: -?\d{1,3} [1-9]\d{0,3}){1,2})$")
 
 
@@ -62,6 +69,20 @@ def build_lines(cfg, part: str) -> list[str]:
     else:
         raise ValueError(f"unknown part {part!r}")
     return [check_line(" ".join(line.split())) for line in lines]
+
+
+def _tone(seconds: float = 1.5, rate: int = 22050) -> str:
+    """A short 1 kHz tone as a temporary WAV (for the loop test without a rendered phrase)."""
+    fd, name = tempfile.mkstemp(suffix=".wav", prefix="fish_tone_")
+    os.close(fd)
+    n = int(seconds * rate)
+    with wave.open(name, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"".join(struct.pack("<h", int(9000 * math.sin(2 * math.pi * 1000 * i / rate)))
+                               for i in range(n)))
+    return name
 
 
 def _line_ms(line: str) -> int:
@@ -99,6 +120,7 @@ class DebugActions:
         self._stops = 0                          # counts STOPs: a test started before one never runs
         self._running = False
         self._ping_n = 0
+        self.last: dict = {}                     # what each test last said, for the Checks tab
         self.restarting = False
         self._lock = threading.Lock()
         self._supervised = supervised
@@ -297,6 +319,147 @@ class DebugActions:
 
         status, out = self._offer(run, 3.0)
         self.hub.emit("action", what="ping", result=out.get("result") or out.get("error", ""))
+        if out.get("ok"):
+            self._note("ping", {True: "pass", False: "fail", None: "skip"}[out["answered"]],
+                       f"{out['result']} in {out['ms']} ms", "LED4 must blink green")
+        return status, out
+
+    def _note(self, key: str, status: str, detail: str, fix: str = "") -> None:
+        self.last[key] = {"status": status, "detail": f"{detail} · {time.strftime('%H:%M:%S')}",
+                          "fix": fix}
+
+    # ---- the bring-up tests that make sound, take time or cost a call ----------------------
+
+    def loop(self) -> tuple[int, dict]:
+        """Speaker to microphone: the room, then a rendered phrase (or a tone) played while
+        recording. Never changes the volume, nothing goes to the motors."""
+        def run(convo) -> dict:
+            from . import ptt
+            from .debug import wav_stats
+            if type(convo.player).__name__ == "SilentPlayer":
+                return {"ok": False, "error": "no audio (silent player)"}
+            lock = convo.speaker._lock
+            if not lock.acquire(blocking=False):
+                return {"ok": False, "error": "speaking"}
+            made = None
+            try:
+                room_wav = ptt.record_for(0.5, self.cfg.ptt)
+                try:
+                    room = wav_stats(Path(room_wav).read_bytes()).get("rms", 0.0)
+                finally:
+                    Path(room_wav).unlink(missing_ok=True)
+                files = sorted((f for f in self.cfg.canned.cache_dir.glob("*.wav")
+                                if not f.name.endswith(".new.wav")),
+                               key=lambda p: p.stat().st_mtime)
+                src, what = (files[-1], files[-1].name.split("-")[0]) if files else (None, "a tone")
+                if src is None:
+                    src = made = _tone()
+                convo.player.play(src)
+                try:
+                    wav = ptt.record_for(2.0, self.cfg.ptt, on_level=lambda lvl: self.hub.emit(
+                        "level", rms=round(lvl, 4)))
+                finally:
+                    stop = getattr(convo.player, "stop", None)
+                    if stop is not None:
+                        stop()
+                try:
+                    self.hub.recording(wav, "loop test")
+                finally:
+                    Path(wav).unlink(missing_ok=True)
+                rec = self.hub.recording_stats() or {}
+            finally:
+                if made is not None:
+                    Path(made).unlink(missing_ok=True)
+                lock.release()
+            rms, zeros = rec.get("rms", 0.0), rec.get("zero_frac", 0.0)
+            verdict = ("zeros" if zeros > 0.95 else
+                       "heard" if rms >= max(LOOP_MIN_RMS, LOOP_OVER_ROOM * room) else
+                       "too quiet at the microphone")
+            return {"ok": True, "verdict": verdict, "played": what, "room": round(room, 4),
+                    "level": rms, "zero_frac": zeros}
+
+        status, out = self._offer(run, 12.0)
+        if out.get("ok"):
+            self._note("loop", "pass" if out["verdict"] == "heard" else "fail",
+                       f"{out['verdict']}: room {out['room']}, playing {out['level']} "
+                       f"({out['played']}), zeros {round(out['zero_frac'] * 100)} %",
+                       "hold the microphone near the speaker; check the sink's volume and the source")
+        self.hub.emit("action", what="loop test", result=out.get("verdict") or out.get("error", ""))
+        return status, out
+
+    def voice(self) -> tuple[int, dict]:
+        """Render one short phrase with the configured voice, timed, never played."""
+        def run(convo) -> dict:
+            from . import tts
+            lock = convo.speaker._lock
+            if not lock.acquire(blocking=False):
+                return {"ok": False, "error": "speaking"}
+            fd, name = tempfile.mkstemp(suffix=".wav", prefix="fish_dbg_")
+            os.close(fd)
+            Path(name).unlink(missing_ok=True)
+            t0 = time.monotonic()
+            try:
+                tts.synthesize(VOICE_PHRASE, self.cfg.tts, out_path=name)
+                return {"ok": True, "seconds": round(time.monotonic() - t0, 2),
+                        "backend": self.cfg.tts.backend}
+            except Exception as e:
+                return {"ok": False, "error": type(e).__name__,
+                        "seconds": round(time.monotonic() - t0, 2)}
+            finally:
+                Path(name).unlink(missing_ok=True)
+                lock.release()
+
+        status, out = self._offer(run, 30.0)
+        if "seconds" in out:
+            self._note("voice", "pass" if out.get("ok") else "fail",
+                       f"{self.cfg.tts.backend}: " + (f"{out['seconds']} s" if out.get("ok")
+                                                      else f"{out['error']} after {out['seconds']} s"),
+                       "see the [tts] record in the Model tab and the log")
+        self.hub.emit("action", what="voice render",
+                      result=f"{out.get('seconds')} s" if out.get("ok") else out.get("error", ""))
+        return status, out
+
+    def cloud(self) -> tuple[int, dict]:
+        """One call to each cloud model in use, with its real key: ok and seconds, or the
+        error's type. The LLM call leaves the conversation's history alone."""
+        def run(convo) -> dict:
+            from .config import STT_PROFILES
+            parts: dict = {}
+            if self.cfg.stt.backend in STT_PROFILES:
+                wav = _tone(0.6)
+                t0 = time.monotonic()
+                try:
+                    convo.stt.transcribe(wav)
+                    parts["stt"] = {"ok": True, "seconds": round(time.monotonic() - t0, 2)}
+                except Exception as e:
+                    parts["stt"] = {"ok": False, "error": type(e).__name__,
+                                    "status": getattr(e, "status_code", None)}
+                finally:
+                    Path(wav).unlink(missing_ok=True)
+            else:
+                parts["stt"] = {"skipped": f"{self.cfg.stt.backend} runs here"}
+            if getattr(convo, "echo", False):
+                parts["llm"] = {"skipped": "echo mode: no model is called"}
+            else:
+                try:
+                    parts["llm"] = {"ok": True, **convo.llm.probe()}
+                except Exception as e:
+                    parts["llm"] = {"ok": False, "error": type(e).__name__,
+                                    "status": getattr(e, "status_code", None)}
+            return {"ok": True, "parts": parts}
+
+        status, out = self._offer(run, 25.0)
+        if out.get("ok"):
+            parts = out["parts"]
+            bad = [k for k, v in parts.items() if v.get("ok") is False]
+            words = [f"{k}: " + (v.get("skipped") or (f"{v['seconds']} s" if v.get("ok") else
+                     f"{v['error']}" + (f" {v['status']}" if v.get("status") else "")))
+                     for k, v in parts.items()]
+            ran = [v for v in parts.values() if "ok" in v]
+            self._note("cloud", "fail" if bad else "pass" if ran else "skip", "; ".join(words),
+                       "a key (401), the model's name (404) or the network: see the Model tab")
+        self.hub.emit("action", what="cloud round trip",
+                      result="ok" if out.get("ok") else out.get("error", ""))
         return status, out
 
     # ---- restart ----------------------------------------------------------------------------
@@ -346,6 +509,12 @@ class DebugActions:
             return self.ping()
         if path == "/debug/mic":
             return self.mic(body.get("seconds"))
+        if path == "/debug/loop":
+            return self.loop()
+        if path == "/debug/voice":
+            return self.voice()
+        if path == "/debug/cloud":
+            return self.cloud()
         if path == "/debug/say":
             return self.say(body.get("name"))
         if path == "/debug/motor":
