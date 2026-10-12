@@ -163,6 +163,63 @@ EOF (`--text`), or Ctrl-C quit.
 - **One-shot**: `python -m fish_brain.app --tts openai --llm luna --read-badge foto.jpg`
   prints the result as JSON before any voice warm-up.
 
+## The phone's microphone (2026-10-11)
+
+- **What it is**: with `FISH_MIC_CAPTURE=browser` (default `host`, the laptop's behaviour)
+  the page records the turn with the phone's own microphone and uploads it; the board's
+  microphone is no longer opened for a turn. It needs `--viz` (the program exits 78
+  without it) and a secure context on the phone: the HTTPS listener (`FISH_VIZ_TLS_*`), or
+  `localhost` on the laptop. `/status.mic_capture` tells the page which mode is on.
+- **The gate**: a button `Activar micrófono` (`#micGate`: on the strip in the console, under
+  the target in the plain and kiosk views) appears only in browser mode and only when
+  `window.isSecureContext` and `navigator.mediaDevices` exist. Its `click` handler (a tap
+  grants user activation; a touch `pointerdown` does not) asks `getUserMedia` for one
+  channel with echo cancellation, noise suppression and automatic gain, creates an
+  `AudioContext` with no `sampleRate` option, loads `/rec.js` into its `audioWorklet` and
+  connects source → `fish-rec` → a `GainNode` at 0 → destination (the graph must reach the
+  destination to run). It also requests `navigator.wakeLock` for the screen (errors ignored)
+  and re-acquires it when the page becomes visible. On `NotAllowedError` or any failure the
+  gate reads `micrófono del pez` and every hold keeps the `/ptt` path: the fallback is per
+  device and needs no restart. The target shows a thin teal rim while this device records.
+- **The worklet** (`web/rec.js`): an `AudioWorkletProcessor` named `fish-rec` whose
+  `process()` posts a copy of its mono input block (Float32, the context's rate) to the page
+  and returns true. The page keeps a 300 ms ring of recent chunks while idle, so the first
+  syllable of a hold is not lost. During the first hold of at least a second it counts the
+  samples received per wall-clock second; under 90 % of `ctx.sampleRate` it rebuilds the
+  graph on a `ScriptProcessorNode(4096)` and the strip reads `mic rate anomaly`.
+- **A hold in browser mode**: `pointerdown` → `ctx.resume()`, the ring is prepended and the
+  chunks collected; the RMS of each chunk feeds the level meter, the kiosk `listening` state
+  and the target's `--lvl` ring locally through a slightly under-damped spring (no `level`
+  events come from the host in this mode); `/ptt` is never POSTed. `pointerup` →
+  `ctx.resume()` again, 250 ms more are collected, then the clip is judged: a hold under
+  350 ms or a clip whose peak chunk RMS is under 0.003 is dropped with a nudge; otherwise the
+  samples are downsampled from the context's rate to 16 kHz by linear interpolation (44.1 and
+  48 kHz both), clamped to Int16 and prefixed with a 44-byte RIFF/WAVE header (PCM, mono,
+  16-bit, 16 kHz). A hold longer than `/status.max_record_s` ends itself and uploads, like
+  a host recording. The page hidden (lock screen, another app) drops the clip, stops the
+  tracks and shows the gate again; a track that reports `ended` or `muted` at the next
+  `pointerdown` does the same, and that hold goes to the host.
+- **The upload**: `fetch("POST /utterance")` (a beacon caps its body at 64 KiB) with
+  `X-Fish-Token`, `Content-Type: audio/wav` and `X-Fish-Hold-Ms` (the hold's length). The
+  host answers `403` without the token, `413` over 1 MiB, `400` with a short reason when
+  the body is not a WAV, is not mono 16-bit, is outside 8 to 48 kHz or is longer than
+  `FISH_PTT_MAX_S + 1`, `409 busy` when the turn loop is not listening (the file is
+  removed), `200 {ok}` when the `Utterance(path, hold_s, upload_s)` entered the inbox. The
+  WAV is written with `tempfile.mkstemp(suffix=".wav", prefix="fish_in_")`, exactly as a
+  host recording, and the turn loop transcribes it on the same path and unlinks it. The
+  journal shows `[utt] 16000 Hz 4.9 s 160044 B upload=0.21s` (never the audio) and a
+  `[turn] rec=… stt=…` line where `rec` is the hold plus the upload. The page shows
+  `thinking` on 200, a nudge on 409 or a dropped clip, and `Sin conexión con el pez…` on a
+  network error. The start-up line says `ptt=web+browser-mic`.
+- **The `listen` event**: `{"type": "listen", "ready": bool}` is published whenever the
+  turn loop starts or stops waiting for input (the same flag as `/status.listening`). In
+  browser mode a press while the host is not ready is nudged with the finger still down
+  instead of after the upload; a page that missed the event learns from the 409.
+- **`?mic=`**: `?mic=host` forces the `/ptt` path on that device (the board's microphone
+  through the page, for a test or when the phone's is unusable); `?mic=browser` shows the
+  gate even when `/status` says `host`, for a laptop test on `http://127.0.0.1:8723`, which
+  is a secure context.
+
 ## Rule for anyone changing the page
 
 Animation must feel alive: spring easing with overshoot, idle motion, secondary motion.
