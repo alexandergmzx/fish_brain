@@ -79,7 +79,7 @@ EOF (`--text`), or Ctrl-C quit.
 
 ## Console view (2026-10-11)
 
-- **`/?console=1&token=<value>`** is the operator's view on a phone in portrait (ADR 0006): the
+- **`/` (the default view; `/?console=1` is accepted too; `?token=<value>` when one is set)** is the operator's view on a phone in portrait (ADR 0006): the
   fish at about 30 vh, the round hold target under it, and a strip along the bottom that is
   always visible. The console implies the kiosk layout and shares its pointer handlers, its
   state machine and the operator sheet; the laptop in landscape gets the same three rows.

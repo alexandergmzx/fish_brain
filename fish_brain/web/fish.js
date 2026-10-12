@@ -73,7 +73,9 @@
   // Visitor view for a touch display (/?kiosk=1): fish and one talk target, the rest behind
   // an operator corner. The operator console (/?console=1) is the same machine on a phone in
   // portrait: the kiosk layout plus a status strip, muted. The default page is unchanged.
-  const CONSOLE = PARAMS.get("console") === "1";
+  // The console is the default view (ADR 0006); ?debug=1 brings the old full page back and
+  // ?kiosk=1 the visitor view for a touch display.
+  const CONSOLE = PARAMS.get("kiosk") !== "1" && PARAMS.get("debug") !== "1";
   const KIOSK = PARAMS.get("kiosk") === "1" || CONSOLE;
   if (KIOSK) document.documentElement.classList.add("kiosk");
   if (CONSOLE) document.documentElement.classList.add("console");

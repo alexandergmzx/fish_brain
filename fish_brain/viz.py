@@ -122,7 +122,7 @@ class VizServer:
         remote = host in ("0.0.0.0", "::")
         if self._tls_httpd is not None:
             tls_port = self.tls_port_bound
-            console = "/?console=1&token=…" if self.cfg.viz.token else "/?console=1"
+            console = "/?token=…" if self.cfg.viz.token else "/"
             print(f"[viz] phone: https://{host}:{tls_port}{console}", flush=True)
             if remote:
                 name = socket.gethostname()

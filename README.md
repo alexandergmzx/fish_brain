@@ -228,7 +228,7 @@ only local choice that is close to usable.
 ### The phone as the interface, or a screen
 
 At the fair the page is opened on the operator's phone (`FISH_VIZ_HOST=0.0.0.0`, a
-`FISH_VIZ_TOKEN`, the console view `/?console=1`); the board drives no display
+`FISH_VIZ_TOKEN`, the console view, the page's default; `/?debug=1` is the old full page); the board drives no display
 ([ADR 0006](docs/adr/0006-the-phone-is-the-interface.md)). The display below is parked.
 
 With an HDMI touch display on the hub the board shows the visitor view of the page

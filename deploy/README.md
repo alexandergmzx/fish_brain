@@ -209,8 +209,8 @@ with nobody logged in. No `sudo` on this image. Saving does not need the phone t
 not drop your ssh session; `connect` (or `nmcli connection up fish-hotspot`) does drop it if you
 came in over the home Wi-Fi.
 
-On the hotspot, open the page from the phone at `http://segunda.local:8723/?console=1&token=<FISH_VIZ_TOKEN>`
-or, where `.local` does not resolve, at `http://<board ip>:8723/?console=1&token=<FISH_VIZ_TOKEN>`.
+On the hotspot, open the page from the phone at `http://segunda.local:8723/?token=<FISH_VIZ_TOKEN>`
+or, where `.local` does not resolve, at `http://<board ip>:8723/?token=<FISH_VIZ_TOKEN>`.
 An Android phone that is itself the hotspot most likely cannot resolve `.local` (its own network is
 mobile data) and hands out a different `192.168.x.0/24` each time the hotspot is enabled: use the IP
 form there. The board can say its address after the welcome (`FISH_SAY_ADDRESS=true`, once it lands);
@@ -244,7 +244,7 @@ exit 78 (no restart loop): `deploy/unoq_setup.sh status` shows the path it looke
 Per device, once (Chrome, Android or desktop; remembered 7 days, so accept again on fair
 morning):
 
-1. Open `https://<board ip>:8724/?console=1&token=<FISH_VIZ_TOKEN>`.
+1. Open `https://<board ip>:8724/?token=<FISH_VIZ_TOKEN>`.
 2. "Your connection is not private" → Advanced → Proceed (unsafe).
 3. `Activar micrófono` → Allow.
 
@@ -333,7 +333,7 @@ heartbeat, blue per command).
 | # | Test | How | Pass |
 |---|---|---|---|
 | 1 | Cold boot | Hotspot on, then power the board; touch nothing | The welcome plays; `[fish] link=serial /dev/ttyHS1 …` in the log; the phone opens the page and the dot is green. Note the seconds from power to voice |
-| 2 | Phone turn, board microphone | Hold the round target on the phone (`?console=1`), ask toward the fish, release | Target red while the host records, amber while it thinks, green while it speaks; a `[turn]` line with five timings and `link=ok`; the mouth lane of the matrix moves with the voice. No restart needed to fall back to this row from any other |
+| 2 | Phone turn, board microphone | Hold the round target on the phone (the default view), ask toward the fish, release | Target red while the host records, amber while it thinks, green while it speaks; a `[turn]` line with five timings and `link=ok`; the mouth lane of the matrix moves with the voice. No restart needed to fall back to this row from any other |
 | 3 | Phone turn, phone microphone | `Activar micrófono` once, then as 2 with the phone held toward the visitor | Same as 2, plus an `[utt]` line; `?mic=host` brings row 2 back without a restart |
 | 4 | Page without token | From a phone: `http://segunda.local:8723/` and press | Nothing is recorded or spoken |
 | 5 | Turn time | Read five `[turn]` lines | Release-to-voice mostly under about 5 s |
@@ -357,7 +357,7 @@ heartbeat, blue per command).
 | 23 | Battery | Full charge, a turn now and then | Runtime noted; longer than the fair shift |
 
 If a row fails on the day: 3 → row 2 (`?mic=host`, no restart). The phone → the laptop on the
-hotspot, or `ssh -L 8723:127.0.0.1:8723 arduino@segunda.local` and `http://localhost:8723/?console=1`.
+hotspot, or `ssh -L 8723:127.0.0.1:8723 arduino@segunda.local` and `http://localhost:8723/`.
 14/16 → the fish still talks without motors. 6–8 → move the phone closer. Anything else →
 `deploy/unoq_setup.sh status` and the log. Restarting `fish-brain` during the fair: ask first.
 
