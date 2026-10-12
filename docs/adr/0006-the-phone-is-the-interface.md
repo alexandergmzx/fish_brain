@@ -81,3 +81,4 @@ both cloud speech-to-text backends).
 - The service unit is unchanged (`--viz` already). If the kiosk is ever revived it keeps using the
   http listener.
 - ADR 0005 is replaced by this record; its files stay as parked code and docs.
+- Since [ADR 0008](0008-the-phone-is-the-fishs-face.md) the default view is the fish's face for the visitor; the console of this record is its operator sheet.

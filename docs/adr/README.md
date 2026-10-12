@@ -15,3 +15,4 @@ Format: **Status** (proposed, accepted, replaced by NNNN) · **Date** · **Conte
 | [0005](0005-kiosk-on-the-board-display.md) | The page on the board's own display in a bare X session; the screen starts a turn at the fair | replaced by 0006 | 2026-10-11 |
 | [0006](0006-the-phone-is-the-interface.md) | The operator's phone is the fair's interface: trigger, microphone and badge camera over HTTPS; the board's display parked | proposed | 2026-10-11 |
 | [0007](0007-the-reading.md) | The reading: a badge photo becomes a name through a vision model on the board; the fish asks before telling the future; memory only | proposed | 2026-10-11 |
+| [0008](0008-the-phone-is-the-fishs-face.md) | The phone is the fish's face in the visitor's hands; the remote is the control; the operator's controls are a sheet behind a held shell | proposed | 2026-10-12 |

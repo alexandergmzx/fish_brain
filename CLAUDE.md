@@ -93,7 +93,7 @@ together.
 | Conductor | Plays the audio and sends each command at its time | [`conductor.py`](fish_brain/conductor.py), [`speak.py`](fish_brain/speak.py) |
 | Motor link | pyserial, or MessagePack-RPC through the UNO Q's router; a mock for `--dry-run`; a wrapper that keeps the fish talking without motors | [`serial_link.py`](fish_brain/serial_link.py), [`router_rpc.py`](fish_brain/router_rpc.py) |
 | Turn loop | One turn in stages; no error inside a turn ends the loop | [`conversation.py`](fish_brain/conversation.py) |
-| The page | Browser view on a phone or PC: hold-to-talk, mic picker, transcript, the visitor view (`?kiosk=1`). The operator console (the default view; `?debug=1` the old page): hold-to-talk, the badge photo, the name; HTTPS as a second listener behind `FISH_VIZ_TLS_CERT`; the phone's microphone; the token on `/events` and `/audio` | [`viz.py`](fish_brain/viz.py), [`web/`](fish_brain/web/), [`docs/viz.md`](docs/viz.md) |
+| The page | Browser view on a phone or PC. The default view is the fish's face, "El Pez Adivino", for the visitor who holds the phone: the fish in its sea, the state on a sign (a button with `?talk=1` or without a remote), speech bubbles; the operator's sheet (status words, the badge photo, the name) opens by holding the corner shell. `?kiosk=1` the visitor view for a display, `?debug=1` the developer page with every tool, `?lite=1` a still scene; HTTPS as a second listener behind `FISH_VIZ_TLS_CERT`; the phone's microphone; the token on `/events` and `/audio` | [`viz.py`](fish_brain/viz.py), [`web/`](fish_brain/web/), [`docs/viz.md`](docs/viz.md) |
 | Entry point | Flags, start-up checks, one-shots | [`app.py`](fish_brain/app.py) |
 
 Other repos. **They stay untouched; this repo only calls them.**
@@ -132,6 +132,7 @@ Changed only by a record in [`docs/adr/`](docs/adr/). Do not reopen without new 
 | Board transport | Ask the router to release the port; Bridge RPC as alternative (ADR 0001) | 2026-10-10 |
 | Board start-up | systemd user service with linger (ADR 0002) | 2026-10-10 |
 | Turn trigger at the fair | The page on the operator's phone or PC; the phone's microphone when the browser has one, the board's otherwise, no restart between them; the display parked (ADR 0006, proposed, replaces 0005) | 2026-10-11 |
+| The page at the fair | The fish's face in the visitor's hands; the remote is the control; the operator's controls are a sheet behind a held shell; original drawing only (ADR 0008, proposed) | 2026-10-12 |
 | The reading's model | `gpt-6-luna` through the board, strict JSON, the photo in memory only; measured 2026-10-11 | 2026-10-11 |
 | The reading | A badge photo read by a vision model through the board (`luna`); the fish asks the name by voice before telling the future; the photo lives in memory only; badge-only by default, a look line only with a consent tick (ADR 0007, proposed) | 2026-10-11 |
 | Motor port | One holder at a time: a lock taken before the router is asked for anything | 2026-10-11 |
@@ -169,7 +170,7 @@ check its replies against this table.
 |---|---|---|
 | [`fish_brain/`](fish_brain/) | yes | The package; modules as in "What is in use" |
 | [`tests/`](tests/) | yes | Unit tests that need no hardware and no network |
-| [`tools/`](tools/) | yes | `fw_check.py` (firmware checker: replies, timing, soak, one-line send), `uart_check.py` (link soak test), `unoq_checks.sh` (board checks), `unoq_bringup.sh` (board tests with PASS/FAIL), `sketches/` (MCU test sketches: two echo sketches and the pin probe; the fish firmware is in Big_mouth) |
+| [`tools/`](tools/) | yes | `sprite_clean.py` (clears a cut-out's leftovers from the on-screen sprites), `fw_check.py` (firmware checker: replies, timing, soak, one-line send), `uart_check.py` (link soak test), `unoq_checks.sh` (board checks), `unoq_bringup.sh` (board tests with PASS/FAIL), `sketches/` (MCU test sketches: two echo sketches and the pin probe; the fish firmware is in Big_mouth) |
 | [`deploy/`](deploy/) | yes | The unit, the board set-up script, the MCU flash helper (`unoq_fw.sh`), the kiosk session (`kiosk/`, parked since ADR 0006), the board's example environment. **The repo is the source of truth for the board: never hand-edit it without the same change here** |
 | [`docs/`](docs/) | yes | `BRAINTIP.md`, `UNOQ_BRIDGE_RPC_EXPLAINED.md`, `viz.md`, `adr/`, `results/` |
 | `gui/` | yes | June prototypes; parked |
@@ -183,6 +184,7 @@ check its replies against this table.
 
 - The other repos are not edited from here.
 - Animation in the browser must feel alive: springs, idle motion, nothing meter-like.
+- The page's drawing is original: nothing copied from the cartoon that inspired its look.
 - No motors without him present (see Safety).
 
 ### Configuration and secrets
@@ -283,7 +285,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q tests   # expect 
 
 # laptop, no hardware (cloud voice, so Wine is not involved)
 .venv/bin/python -m fish_brain.app --dry-run --text --no-audio --tts openai   # type a turn; expect TX lines and a [turn] line
-.venv/bin/python -m fish_brain.app --dry-run --echo --viz --tts openai        # hold the button in the browser, it repeats you; the console is the default view; ?debug=1 the old page
+.venv/bin/python -m fish_brain.app --dry-run --echo --viz --tts openai        # hold the button in the browser, it repeats you; the fish's face is the default view; ?debug=1 the developer page
 FISH_MIC_CAPTURE=browser .venv/bin/python -m fish_brain.app --dry-run --echo --viz --tts openai   # the browser's own microphone (localhost is a secure context)
 .venv/bin/python -m fish_brain.app --dry-run --text --no-audio --tts openai --llm luna --read-badge foto.jpg   # the badge call alone, prints the JSON (needs the key)
 .venv/bin/python -m fish_brain.ab --no-vote                                   # both LLM profiles: latency and cost
@@ -433,7 +435,7 @@ Nothing here is started or extended without his word.
 
 - **Before any `braintip` change:** [`docs/BRAINTIP.md`](docs/BRAINTIP.md)
 - **Before touching the link or the router:** [`docs/UNOQ_BRIDGE_RPC_EXPLAINED.md`](docs/UNOQ_BRIDGE_RPC_EXPLAINED.md), [ADR 0001](docs/adr/0001-release-the-uart-through-the-router.md)
-- **Before touching the page, the phone or the reading:** [`docs/viz.md`](docs/viz.md), [ADR 0006](docs/adr/0006-the-phone-is-the-interface.md), [ADR 0007](docs/adr/0007-the-reading.md)
+- **Before touching the page, the phone or the reading:** [`docs/viz.md`](docs/viz.md), [ADR 0006](docs/adr/0006-the-phone-is-the-interface.md), [ADR 0007](docs/adr/0007-the-reading.md), [ADR 0008](docs/adr/0008-the-phone-is-the-fishs-face.md)
 - **Board set-up:** [`deploy/README.md`](deploy/README.md) · **Sketches:** [`tools/sketches/README.md`](tools/sketches/README.md)
 - **Decisions:** [`docs/adr/`](docs/adr/) · **Measurements:** [`docs/results/`](docs/results/)
 - **User guide:** [`README.md`](README.md)

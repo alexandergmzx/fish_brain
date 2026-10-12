@@ -14,7 +14,7 @@ wide/easily the mouth opens); mouth smoothing is a fixed critically-damped sprin
 Whole-fish composites (not stacked layers) because an open
 mouth looks different when the neck is also out; sprites are named
 `neck{Rest|Out}_mouth{0..3}_tail{Rest|Flap}.png` and missing ones fall back to a simpler pose
-(see `web/img/README.md`). Bubbles draw on top. Because the greeting plays before any browser
+(see `web/img/README.md`). The canvas is transparent: the sea behind the fish is the page's. Bubbles draw on top. Because the greeting plays before any browser
 connects, `viz.py` **replays the last `speak` event to a browser that connects within 30 s**, so
 the on-screen fish still performs the greeting. The host plays the audio; the page's own sound
 is the "Sonido en navegador" toggle, off by default (on a phone next to the fish a second voice
@@ -77,23 +77,45 @@ EOF (`--text`), or Ctrl-C quit.
 - `fish_brain/kiosk.py` and `web/wait.html` put the page on the board's display; see
   `deploy/README.md` (parked since ADR 0006: the page runs on the operator's phone).
 
-## Console view (2026-10-11)
+## The fish's face (the default view; 2026-10-12, [ADR 0008](adr/0008-the-phone-is-the-fishs-face.md))
 
-- **`/` (the default view; `/?console=1` is accepted too; `?token=<value>` when one is set)** is the operator's view on a phone in portrait (ADR 0006): the
-  fish at about 30 vh, the round hold target under it, and a strip along the bottom that is
-  always visible. The console implies the kiosk layout and shares its pointer handlers, its
-  state machine and the operator sheet; the laptop in landscape gets the same three rows.
-- **The strip** shows, in words: the link (`pez conectado` / `pez callado` / `sin pez`), the
-  internet, the microphone source (`mic del tablero` or `mic del teléfono`, with the ptt
-  summary and `espera activada` when wait-to-speak is on), and `escuchando` while
-  `/status.listening` is true (polled every 3 s) or while `level` events arrive; then the
-  two transcript lines (heard, reply) in readable type and a gear that opens the sheet in one
-  tap. The five corner taps still work. An unreachable `/status` reads `sin respuesta del
-  cerebro`.
-- **Hidden in the console**: the mic picker row (with the meter), the sensitivity slider, the
-  WAV test row, the bubbles toggle and `Sonido en navegador`. The console is muted and draws
-  no bubbles: the fish speaks on the board, the phone shows. `Esperar para hablar` and the
-  text box stay in the sheet.
+- **`/` (`?token=<value>` when one is set)** is what a visitor holds: one sea from edge to
+  edge, the sign "El Pez Adivino", the plaque hanging from its nail and swinging, the reply
+  and what was heard as speech bubbles, and the talk target standing in the sand. It keeps the
+  class names `html.kiosk.console` and shares the visitor view's pointer handlers, state
+  machine and sheet. Wide and low (`min-width: 700px` in landscape: a laptop, a display) the
+  fish is on the left and the bubbles on the right.
+- **The talk target** (`#pttButton`) says the state in words, with a drawing, a colour and a
+  motion each: `¡Pregúntame algo!` (idle), `Un segundito…`, `Te escucho…`, `Déjame pensar…`,
+  `¡Escúchame!`, `Leyendo tu gafete…` / `¿Tú eres…?`, `Ahorita vuelvo…`. While listening two
+  rings and a lean follow the voice (`--lvl`, set on `.talk`; a host level goes through a
+  spring in the page first, the remote's microphone being nearly two-valued). Three nested
+  boxes carry the motion so none overrides another: the state's loop on `.talk-loop`, the
+  lean on `.talk-lean`, press and nudge on the button. Until the first `/status` answer
+  (`html.st`) the target is not shown, so it never appears as a button and then turns into
+  a sign.
+- **Speech bubbles**: `#cReply` and `#cHeard`, filled by one `say()` in both this view and
+  `?kiosk=1`. No text, no bubble. The length picks the size (`data-len` `s` up to 28
+  characters, `m` up to 110, `l` beyond, clamped to a few lines: the voice carries the rest);
+  a line that starts with `…` (a refusal such as `… (no te entendí)`) is small and dashed and
+  fades after 4 s. Both clear when the page enters listening or reading, so the next visitor
+  starts clean. Their row has a fixed height: a long reply never moves the target.
+- **The shell** (`#consoleGear`, top right) opens the operator's sheet when held for 0.8 s; it
+  opens as it is held, a tap only wobbles it. The pearl in it is the connection (`#conn-dot`:
+  amber blinking, green breathing, red). A red `!` beside it (`html.ops-warn`) means: link not
+  `ok`, no internet, `/status` unreachable, or wait-to-speak on. The five corner taps are off
+  in this view (`?kiosk=1` keeps them).
+- **The sheet** (`.controls` under `html.ops-open`, at the top so the keyboard does not cover
+  it) shows, in words: the link (`pez conectado` / `pez callado` / `sin pez`), the internet,
+  the microphone source (`mic del tablero` or `mic del teléfono`, with the ptt summary and
+  `espera activada`), `escuchando` while `/status.listening` is true (polled every 3 s) or
+  while `level` events arrive, `sin respuesta del cerebro` when `/status` is unreachable; then
+  the reading row, `Esperar para hablar`, the text box and the technical block. It closes on
+  `Cerrar`, on a touch outside, 0.9 s after an accepted badge or name, or 45 s after the last
+  touch or keystroke in it (never under a running request or a field with text in it).
+- **Not in this view's sheet**: the mic picker row (with the meter), the sensitivity slider,
+  the WAV test row, the bubbles toggle and `Sonido en navegador`. The view is muted and draws
+  no canvas bubbles: the fish speaks on the board, the phone shows.
 - **The token leaves the address bar.** A `?token=` in the URL is stored in `sessionStorage`
   (`fishToken`) and removed with `history.replaceState`, the other parameters kept; a reload
   keeps it, a new tab needs the link again. With a token set, `GET /events` and
@@ -114,11 +136,13 @@ EOF (`--text`), or Ctrl-C quit.
   page never refuses presses for a reply that has already ended. Each reply's audio URL is
   unique, so a `speak` whose URL the page has already seen is a replay even when the host
   sends no `age_ms`: the page then takes the age from its own clock.
-- **Lightness.** The connection dot breathes on `opacity` and `transform`, never on
-  `box-shadow`. The console draws at 20 frames a second and, while nothing moves (no mouth
-  track, mouth closed, no gesture, no bubbles), draws the resting pose once and then polls
-  every 250 ms instead of asking for animation frames; a `speak`, a `level` or a gesture wakes
-  it. The hold target keeps its breathing and its spring states throughout.
+- **Lightness.** Only `transform` and `opacity` are animated or transitioned, anywhere in
+  `fish.css` (`tests/test_web_contract.py` holds this). The loops are few and small: the
+  plaque, three kelp, three bubbles, the talk target, the pearl; clouds and light are painted
+  once. `?lite=1` stops every loop. The canvas draws at 20 frames a second and, while nothing
+  moves (no mouth track, mouth closed, no gesture, no bubbles), draws the resting pose once
+  and then polls every 250 ms instead of asking for animation frames; a `speak`, a `level` or
+  a gesture wakes it. Nothing about the page's cost is measured on a phone yet.
 - In kiosk and console a non-passive `touchstart` cancels the touch default on the target
   (the iOS loupe on a long press); the pointer handlers are untouched.
 
@@ -131,7 +155,7 @@ EOF (`--text`), or Ctrl-C quit.
   with the question seeded into the LLM history and the per-visitor rules
   (`ReadingConfig.rules`) attached to the persona for that visitor. A name typed on the
   console skips the question: the fish tells the future at once.
-- **The row on the strip**: `Foto del gafete` (the camera, through a hidden file input with
+- **The row in the sheet**: `Foto del gafete` (the camera, through a hidden file input with
   `capture="environment"`), `Galería` (the same input without `capture`: Android Chrome
   shows the camera tile with it and the gallery without), the name field with `Leer el
   futuro`, and, only when `/status.reading_look` is true, the tick `Describir su look (con
@@ -170,8 +194,8 @@ EOF (`--text`), or Ctrl-C quit.
   microphone is no longer opened for a turn. It needs `--viz` (the program exits 78
   without it) and a secure context on the phone: the HTTPS listener (`FISH_VIZ_TLS_*`), or
   `localhost` on the laptop. `/status.mic_capture` tells the page which mode is on.
-- **The gate**: a button `Activar micrófono` (`#micGate`: on the strip in the console, under
-  the target in the plain and kiosk views) appears only in browser mode and only when
+- **The gate**: a button `Activar micrófono` (`#micGate`: above the talk target on the main surface in every view, because it comes
+  back whenever the phone slept) appears only in browser mode and only when
   `window.isSecureContext` and `navigator.mediaDevices` exist. Its `click` handler (a tap
   grants user activation; a touch `pointerdown` does not) asks `getUserMedia` for one
   channel with echo cancellation, noise suppression and automatic gain, creates an
@@ -186,7 +210,7 @@ EOF (`--text`), or Ctrl-C quit.
   and returns true. The page keeps a 300 ms ring of recent chunks while idle, so the first
   syllable of a hold is not lost. During the first hold of at least a second it counts the
   samples received per wall-clock second; under 90 % of `ctx.sampleRate` it rebuilds the
-  graph on a `ScriptProcessorNode(4096)` and the strip reads `mic rate anomaly`.
+  graph on a `ScriptProcessorNode(4096)` and the sheet reads `mic rate anomaly`.
 - **A hold in browser mode**: `pointerdown` → `ctx.resume()`, the ring is prepended and the
   chunks collected; the RMS of each chunk feeds the level meter, the kiosk `listening` state
   and the target's `--lvl` ring locally through a slightly under-damped spring (no `level`
@@ -249,13 +273,20 @@ EOF (`--text`), or Ctrl-C quit.
   gate even when `/status` says `host`, for a laptop test on `http://127.0.0.1:8723`, which
   is a secure context.
 
-- **With a remote on the board** (`/status` `backends.ptt` names `evdev`) the hold target becomes a
-  status pill that cannot be pressed, with "Pulsa el control para hablar" as its idle text; the
-  state words (listening, thinking, speaking) still show on it. `?talk=1` keeps the hold target on a
-  device that has no remote at hand.
+- **With a remote on the board** (`/status` `backends.ptt` names `evdev`) the talk target is a
+  sign that cannot be pressed (`html.notalk`), with "¡Pregúntame algo! / Mantén apretado OK en
+  el control y habla" as its idle text; the state words still show on it. `?talk=1` keeps the
+  hold-to-talk button on a device that has no remote at hand (the laptop as a spare).
 
 ## Rule for anyone changing the page
 
 Animation must feel alive: spring easing with overshoot, idle motion, secondary motion.
-Nothing meter-like or mechanical.
+Nothing meter-like or mechanical, and no drawn value set straight from an input.
+
+The drawing is original: nothing copied from the cartoon that inspired the look (no
+character, logo, lettering or font). Fonts are open ones, recorded in `web/FONTS.md`.
+
+Every id `fish.js` looks up must exist in `index.html`, and `fish.js` replaces the whole
+`class` of `#conn-dot`, `#micGate`, `#readMsg` and the four status spans and empties
+`#pttButton`: style those by id and put the target's drawings in the `talkParts` template.
 

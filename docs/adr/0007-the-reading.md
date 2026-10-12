@@ -62,3 +62,4 @@ spoken. Loquendo renders a short sentence in about 0.75 s when warm.
 - Loquendo's time on a four-sentence prophecy and its pronunciation of names are measured before
   the fair; the fish says the given name only.
 - The speech-to-text keywords gain "sí, no, me llamo" so the one-word answer is heard.
+- Since [ADR 0008](0008-the-phone-is-the-fishs-face.md) the default view is the fish's face for the visitor; the reading row is in the operator's sheet, behind the held shell.

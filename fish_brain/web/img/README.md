@@ -4,7 +4,12 @@ Drop your **transparent PNGs** here. They are served at `/img/<name>.png` and dr
 [`../fish.js`](../fish.js), which runs a small **state machine**: each frame it picks **one
 whole-fish composite PNG** for the current `(neck, mouth, tail)` state. All PNGs should be the
 **same dimensions** (full canvas) so successive poses line up; they're drawn "contain"-scaled
-and centered on a solid `#91b9bc` background.
+and centered on a transparent canvas, over the page's sea. The nail must sit at the top
+centre: the page swings the canvas around it.
+
+A cut-out with leftovers of its old background (a rim, specks) shows on the sea:
+`python tools/sprite_clean.py` reports them and `--write` clears them (it only ever makes
+pixels transparent). The committed set was keyed out of `#91b9bc` and cleaned that way.
 
 We use whole-fish composites (not stacked layers) on purpose: an **open mouth looks different
 when the neck is also out** (the head pose moves the mouth), so each pose is its own image.

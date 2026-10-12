@@ -231,8 +231,12 @@ only local choice that is close to usable.
 ### The phone as the interface, or a screen
 
 At the fair the page is opened on the operator's phone (`FISH_VIZ_HOST=0.0.0.0`, a
-`FISH_VIZ_TOKEN`, the console view, the page's default; `/?debug=1` is the old full page); the board drives no display
-([ADR 0006](docs/adr/0006-the-phone-is-the-interface.md)). The display below is parked.
+`FISH_VIZ_TOKEN`); the board drives no display
+([ADR 0006](docs/adr/0006-the-phone-is-the-interface.md)). The page's default view is the fish's face, "El Pez Adivino", for
+the visitor who holds the phone: the fish in its sea, the state on a sign, speech bubbles; the
+operator's sheet (status, the badge photo, the name) opens by holding the corner shell
+([ADR 0008](docs/adr/0008-the-phone-is-the-fishs-face.md)). `/?talk=1` gives a hold-to-talk button when a remote is on the board,
+`/?debug=1` the developer page with every tool, `/?lite=1` a still scene. The display below is parked.
 
 With an HDMI touch display on the hub the board shows the visitor view of the page
 (`/?kiosk=1`) by itself: the fish and one hold-to-talk target. Set-up, what each screen state
