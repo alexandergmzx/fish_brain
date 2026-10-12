@@ -792,6 +792,7 @@ def _make_handler(server: "VizServer"):
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-cache")   # a reload on a phone must fetch the new page
             self.end_headers()
             self.wfile.write(body)
 
