@@ -229,8 +229,13 @@ class FishConversation:
                 or viz_cfg.host not in ("0.0.0.0", "::")):
             return
         try:
-            octets = self.viz.lan_ip().split(".")
-            if len(octets) != 4:
+            ip = self.viz.lan_ip()
+            octets = ip.split(".")
+            if len(octets) != 4 or ip.startswith(("127.", "169.254.")):
+                # No route yet (the service starts before the Wi-Fi is associated): a
+                # loopback or link-local address would be a false one. Say nothing.
+                print(f"[viz] no LAN address yet ({ip}): the address line is skipped",
+                      flush=True)
                 return
             line = f"Búscame en el punto {octets[2]} punto {octets[3]}"
             print(f"[viz] address line: {line}", flush=True)
