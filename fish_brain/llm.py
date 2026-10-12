@@ -102,10 +102,17 @@ class Conversation:
         `last_*` fields alone, never retries and gives up after 6 s."""
         client = self._client.with_options(max_retries=0, timeout=6.0)
         kwargs = {k: v for k, v in self._kwargs().items() if k != "temperature"}
+        messages = [{"role": "user", "content": "Responde solo: ok"}]
+        sent = {"profile": self.cfg.profile, "model": self.cfg.model, "messages": messages,
+                "params": {"max_completion_tokens": 16, **kwargs}, "probe": True}
         t0 = time.monotonic()
-        resp = client.chat.completions.create(
-            model=self.cfg.model, max_completion_tokens=16,
-            messages=[{"role": "user", "content": "Responde solo: ok"}], **kwargs)
+        try:
+            resp = client.chat.completions.create(
+                model=self.cfg.model, max_completion_tokens=16, messages=messages, **kwargs)
+        except Exception as e:
+            debug.model("llm", sent, error=e, seconds=time.monotonic() - t0)
+            raise
+        debug.model("llm", sent, resp=resp, seconds=time.monotonic() - t0)
         return {"seconds": round(time.monotonic() - t0, 2), "model": self.cfg.model,
                 "reply": (resp.choices[0].message.content or "").strip()[:40]}
 

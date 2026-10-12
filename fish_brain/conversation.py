@@ -169,7 +169,10 @@ class FishConversation:
         from . import reading
         times: dict[str, float] = {}
         look_note = f" Lleva: {r.look}." if r.look else ""
-        debug.new_visitor()                        # /debug forgets the earlier visitor's prompts
+        if r.confirmed:
+            # A typed name: /debug forgets the earlier visitor's prompts here. With a badge
+            # that happened before the photo was read (viz.read_badge), so its own record stays.
+            debug.new_visitor()
         if not self.echo:
             self.llm.reset()
             self.llm.extra_rules = self.cfg.reading.rules

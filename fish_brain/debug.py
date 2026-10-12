@@ -323,6 +323,7 @@ class DebugHub:
         with self._lock:
             for kind in MODEL_KINDS:
                 self._rings[kind].clear()
+        self.emit("visitor")                 # a page that is open forgets them too
 
     # ---- the newest recording ---------------------------------------------------------------
 

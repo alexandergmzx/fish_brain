@@ -256,7 +256,7 @@ def run(st: dict, hub, root: str = "/", snd="ask") -> list[dict]:
     else:
         row("Microphone", "The last recording has signal", "skip", "no recording yet")
     if phone:
-        tls = any(r["field"] == "tls" and r["value"] == "on" for r in st.get("config") or [])
+        tls = bool(cfg.viz.tls_cert and cfg.viz.tls_key)
         row("Microphone", "Phones can record (HTTPS)", ok(tls), "on" if tls else "off",
             "FISH_MIC_CAPTURE=browser needs FISH_VIZ_TLS_CERT and FISH_VIZ_TLS_KEY")
 
@@ -291,8 +291,11 @@ def run(st: dict, hub, root: str = "/", snd="ask") -> list[dict]:
             "the MCU's serial node is gone: cable, or the board did not boot its MCU side")
         row("Link", "Attached", ok(link.get("attached")), link.get("desc", ""),
             "the fish talks without motors and retries; see the [link] lines in the log")
-        row("Link", "The MCU answers", ok(link.get("health") == "ok"),
-            f"health {link.get('health')}, {link.get('rx_bytes', 0)} bytes back",
+        seen = link.get("mcu_alive") is True or link.get("rx_bytes", 0) > 0
+        row("Link", "The MCU answers", "fail" if link.get("health") != "ok" else
+            "pass" if seen else "warn",
+            f"health {link.get('health')}, {link.get('rx_bytes', 0)} bytes back"
+            + ("" if seen else " (nothing sent yet: press Ping in the Motors tab)"),
             "LED4 must blink green; try Ping in the Motors tab")
     if board:
         sock = Path(root) / str(cfg.serial.router_socket).lstrip("/")

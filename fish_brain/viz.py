@@ -380,6 +380,7 @@ class VizServer:
         if self._reader is None:
             return 503, {"ok": False, "error": "no reader"}
         want_look = bool(self.cfg.reading.look and want_look)
+        debug.new_visitor()        # /debug forgets the earlier visitor before this one is read
         self._say_canned(self.cfg.canned.reading_wait)
         try:
             res = self._reader(jpeg, want_look)

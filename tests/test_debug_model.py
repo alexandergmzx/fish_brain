@@ -86,6 +86,7 @@ def test_the_probe_leaves_the_conversation_alone(hub, convo):
     before = (list(convo._history), convo.last_error, convo.last_usage)
     out = convo.probe()
     assert out["reply"] == "¡Hola!" and (list(convo._history), convo.last_error, convo.last_usage) == before
+    assert hub.recent("llm")[-1]["probe"] is True           # and it shows in the Model tab
     assert convo.calls[-1]["messages"] == [{"role": "user", "content": "Responde solo: ok"}]
 
 
@@ -138,6 +139,7 @@ def test_a_badge_reading_is_recorded_without_the_photo_and_without_a_print(hub, 
     assert res.full_name not in out.out + out.err          # the journal never carries the name
     debug.new_visitor()
     assert hub.recent("vision") == [] and hub.recent("llm") == []
+    assert hub.since(0, 500)[-1]["kind"] == "visitor"      # an open page is told to forget too
 
 
 def test_a_key_in_an_error_text_is_scrubbed(monkeypatch):

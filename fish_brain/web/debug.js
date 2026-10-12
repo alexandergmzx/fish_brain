@@ -42,7 +42,7 @@
 
   // ---- store -------------------------------------------------------------------------------
   const S = { state: null, boot: "", log: [], keys: [], presses: {}, turns: [], tx: [], acts: [],
-              llm: [], stt: [], tts: [], vision: [], modelOnly: null,
+              llm: [], stt: [], tts: [], vision: [], modelOnly: null, openCalls: new Set(), seenCall: 0,
               levels: [], sel: null, live: "", logOff: new Set(), logPaused: false,
               logWindow: null, armedUntil: 0, lastSeq: 0, missed: 0, connected: false };
   const dirty = new Set(["all"]);
@@ -105,7 +105,7 @@
         push(S.log, { kind: "log", t: Date.now() / 1000, mark: true,
                       text: "──── the fish restarted (pid " + r.pid + ") ────" }, CAP.log);
         S.turns = []; S.keys = []; S.tx = []; S.lastSeq = 0; S.sel = null;
-        S.llm = []; S.stt = []; S.tts = []; S.vision = [];
+        S.llm = []; S.stt = []; S.tts = []; S.vision = []; S.modelOnly = null; S.openCalls.clear();
         mark("all");
       }
       S.boot = r.boot;
@@ -127,6 +127,9 @@
                     S.live = "recording"; mark("pipe"); wakeLevel(); break;
       case "action": case "http": push(S.acts, r, CAP.act); mark("clients"); break;
       case "llm": case "stt": case "tts": case "vision": push(S[r.kind], r, 50); mark("model"); break;
+      case "visitor":                              // a reading started: the earlier visitor's records go
+        S.llm = []; S.stt = []; S.tts = []; S.vision = []; S.modelOnly = null; S.openCalls.clear();
+        mark("model"); break;
       case "page": {
         const ev = r.ev || {};
         if (ev.type === "listen") S.live = ev.ready ? "waiting" : (S.live === "recording" ? "thinking" : S.live);
@@ -692,11 +695,14 @@
     $("llmCount").textContent = llm.length ? llm.length + (only ? " of this turn" : " kept") : "none yet";
     fill($("llmRows"), llm.map((r, i) => {
       const d = el("details", r.error || r.sent === false ? "bad" : "");
-      if (i === 0) d.open = true;
+      // Open what the reader opened; a call that is new since the last paint opens once.
+      if (i === 0 && r.seq > S.seenCall) { S.seenCall = r.seq; S.openCalls.add(r.seq); }
+      d.open = S.openCalls.has(r.seq);
+      d.addEventListener("toggle", () => { d.open ? S.openCalls.add(r.seq) : S.openCalls.delete(r.seq); });
       const tok = r.tokens ? " · " + (r.tokens.prompt ?? "?") + "+" + (r.tokens.completion ?? "?") + " tok" : "";
       d.appendChild(el("summary", "", clockMs(r.t) + "  " + r.model + "  " + (r.sent === false ? r.note
         : r.error ? r.error.type + (r.error.status ? " " + r.error.status : "") : secs(r.seconds) + " s" + tok) +
-        "  · " + (r.messages || []).length + " messages"));
+        "  · " + (r.messages || []).length + " messages" + (r.probe ? "  · cloud check" : "")));
       const box = el("div", "msgs");
       if (r.params) box.appendChild(bubble("parameters", JSON.stringify(r.params), "params"));
       for (const m of r.messages || []) box.appendChild(bubble(m.role, m.content));
