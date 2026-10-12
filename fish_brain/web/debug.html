@@ -52,6 +52,7 @@
         <section class="col" id="colPanels">
             <nav id="tabs">
                 <button data-tab="checks" class="on">Checks</button>
+                <button data-tab="switches">Switches</button>
                 <button data-tab="inputs">Inputs</button>
                 <button data-tab="voice">Voice</button>
                 <button data-tab="motors">Motors</button>
@@ -72,6 +73,14 @@
                         <button id="cloudBtn" type="button" title="one small call to each cloud model in use">Cloud round trip</button>
                         <span id="checkMsg" class="msg"></span>
                     </div>
+                </div>
+                <div class="panel" id="p-switches" hidden>
+                    <h3>Switches <small>the running fish only: a restart brings back what .env and the unit say</small></h3>
+                    <table class="feed switches"><thead><tr><th>switch</th><th>now</th><th>at start</th><th></th><th></th></tr></thead>
+                        <tbody id="switchRows"></tbody></table>
+                    <span id="switchMsg" class="msg"></span>
+                    <p class="note">A change is applied between turns: while the fish records, thinks or speaks it answers "busy".
+                       Motors needs ARM.</p>
                 </div>
                 <div class="panel" id="p-model" hidden>
                     <h3>What the LLM is given now <small id="modelNow"></small></h3>

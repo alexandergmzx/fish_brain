@@ -181,7 +181,7 @@
     if (d("log")) run(renderLog);
     if (d("panels") || d("keys")) run(renderInputs);
     if (d("panels") || d("motors") || d("tx")) run(renderMotors);
-    if (d("panels")) { run(renderVoice); run(renderCloud); run(renderBoard); run(renderConfig); run(renderChecks); }
+    if (d("panels")) { run(renderVoice); run(renderCloud); run(renderBoard); run(renderConfig); run(renderChecks); run(renderSwitches); }
     if (d("panels") || d("model")) run(renderModel);
     if (d("panels") || d("clients")) run(renderClients);
   }
@@ -201,7 +201,10 @@
     $("hCommit").textContent = ((st.version || {}).commit || "") + " pid " + ((st.service || {}).pid || "");
     const flags = st.flags || {}, be = st.backends || {}, mode = st.mode || {};
     const badges = [];
-    if (flags.echo || be.echo) badges.push("ECHO");
+    if (be.echo !== undefined ? be.echo : flags.echo) badges.push("ECHO");
+    const flipped = (Array.isArray(st.switches) ? st.switches : []).filter((w) => w.changed).length;
+    if (flipped) badges.push(flipped + " switch" + (flipped > 1 ? "es" : "") + " changed");
+    if ((st.link || {}).muted) badges.push("MOTORS MUTED");
     if (flags.dry_run) badges.push("DRY-RUN");
     if (flags.text) badges.push("TEXT");
     if (flags.no_audio) badges.push("NO-AUDIO");
@@ -674,6 +677,56 @@
   testButton("voiceBtn", "/debug/voice", "voice render", (o) => o.seconds + " s with " + o.backend);
   testButton("cloudBtn", "/debug/cloud", "cloud", (o) => Object.entries(o.parts || {}).map(([k, v]) =>
     k + " " + (v.skipped ? "skipped" : v.ok ? v.seconds + " s" : v.error + (v.status ? " " + v.status : ""))).join(" · "));
+
+  // ---- switches ---------------------------------------------------------------------------------
+  async function setSwitch(w, value) {
+    msg($("switchMsg"), w.label + "…");
+    const out = await post("/debug/set", { name: w.name, value });
+    msg($("switchMsg"), out.ok ? w.label + ": " + (out.unchanged ? "already " : "now ") + out.value
+      : w.label + " refused: " + (out.error === "busy" ? "busy (the fish is mid-turn: try again when it waits)" : out.error || out.status), 12000);
+    await refresh();
+  }
+  function renderSwitches() {
+    const box = $("switchRows");
+    if (box.contains(document.activeElement)) return;      // not under the reader's hands
+    const list = Array.isArray((S.state || {}).switches) ? S.state.switches : [];
+    const armed = performance.now() < S.armedUntil;
+    fill(box, list.map((w) => {
+      const tr = el("tr", w.changed ? "changed" : "");
+      tr.appendChild(el("td", "", w.label));
+      const cell = el("td");
+      const locked = w.armed && !armed;
+      if (w.kind === "bool") {
+        const c = document.createElement("input");
+        c.type = "checkbox"; c.checked = !!w.value; c.disabled = locked;
+        c.addEventListener("change", () => { c.blur(); setSwitch(w, c.checked); });
+        cell.appendChild(c); cell.appendChild(document.createTextNode(w.value ? " on" : " off"));
+      } else if (w.kind === "number") {
+        const n = document.createElement("input");
+        n.type = "number"; n.value = w.value; n.min = w.choices[0]; n.max = w.choices[1]; n.step = 1;
+        n.addEventListener("change", () => { n.blur(); setSwitch(w, Number(n.value)); });
+        cell.appendChild(n);
+      } else {
+        const sel = document.createElement("select");
+        sel.disabled = locked;
+        for (const c of w.choices) { const o = el("option", "", c); o.value = c; o.selected = c === w.value; sel.appendChild(o); }
+        sel.addEventListener("change", () => { sel.blur(); setSwitch(w, sel.value); });
+        cell.appendChild(sel);
+      }
+      tr.appendChild(cell);
+      tr.appendChild(el("td", "dim", w.kind === "bool" ? (w.start ? "on" : "off") : w.start));
+      const back = el("td");
+      if (w.changed) {
+        const b = el("button", "", "back to start");
+        b.disabled = locked;
+        b.addEventListener("click", () => setSwitch(w, w.start));
+        back.appendChild(b);
+      }
+      tr.appendChild(back);
+      tr.appendChild(el("td", "dim wrap", (locked ? "arm first · " : "") + (w.note || "")));
+      return tr;
+    }));
+  }
 
   // ---- what the models see ------------------------------------------------------------------------
   function bubble(role, text, cls) {

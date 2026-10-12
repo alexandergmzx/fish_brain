@@ -209,3 +209,7 @@ details > summary { padding: 4px 8px; cursor: pointer; font: 12px/1.5 var(--mono
 details[open] > summary { border-bottom: 1px solid var(--hoja-linea); }
 details > .msgs, details > pre { margin: 6px; border: 0; }
 details.bad > summary { color: var(--hoja-mal); }
+.switches td { padding: 5px 6px; vertical-align: middle; }
+.switches select, .switches input[type="number"] { padding: 3px 6px; border: 1px solid var(--hoja-linea); border-radius: 6px; background: var(--hoja-campo); color: inherit; font: inherit; }
+.switches input[type="number"] { width: 70px; }
+.switches tr.changed td:first-child { color: var(--hoja-aviso); font-weight: 700; }
