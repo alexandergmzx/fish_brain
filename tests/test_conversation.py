@@ -124,3 +124,17 @@ def test_confirmed_reading_with_the_model_asks_for_the_future(make):
 def test_unknown_item_keeps_the_loop(make):
     convo, viz, spoken = make(object())
     assert convo.turn() is True and spoken == []
+
+
+def test_canned_lines_go_through_the_speaker_lock(make, capsys):
+    """`_apologize` must not drive the link beside a /badge handler's canned line."""
+    convo, viz, spoken = make(object())
+    said = []
+    monkeypatch_say = lambda name: said.append(name) or True
+    convo.speaker.say_canned = monkeypatch_say
+    convo._apologize(convo.cfg.canned.no_signal)
+    assert said == [convo.cfg.canned.no_signal]
+    convo.speaker.say_canned = lambda name: False       # the fish is already talking
+    convo._apologize(convo.cfg.canned.no_mic)
+    assert said == [convo.cfg.canned.no_signal]
+    assert "already speaking" in capsys.readouterr().out

@@ -21,7 +21,7 @@ import time
 import traceback
 from pathlib import Path
 
-from . import canned, cloud, ptt, speak as speak_mod
+from . import cloud, ptt, speak as speak_mod
 from .conductor import Player, make_player
 from .config import Config
 from .serial_link import BaseLink
@@ -188,7 +188,10 @@ class FishConversation:
             return
         self._last_apology = now
         try:
-            canned.play(phrase, self.link, self.cfg, player=self.player, viz=self.viz)
+            # Under the speaker lock: the /badge handler thread says its own canned lines
+            # through the same lock, so two phrases never drive the link at once.
+            if not self.speaker.say_canned(phrase):
+                print(f"[turn] skipped {phrase!r}: already speaking", flush=True)
         except Exception as e:                      # the apology must never be the problem
             print(f"[turn] could not say {phrase!r}: {e}", flush=True)
 
