@@ -916,9 +916,19 @@
         if (ev.type === "level") {
           lastLevel = performance.now();
           if (CONSOLE) strip.ear.textContent = "escuchando";
-          if (pttDown) {
+          // Level events flow only while the host records: a press on the page or the remote.
+          if (pttDown || remoteHold || root.classList.contains("notalk") || !fingers.size) {
             show("listening");
             pttButton.style.setProperty("--lvl", Math.min(1, ev.rms * 12).toFixed(3));
+          }
+        } else if (ev.type === "listen") {
+          // The host stopped waiting: a recording ended (thinking), or it waits again (ready).
+          if (!ev.ready && (state === "listening" || state === "waiting")) {
+            show("thinking");
+            clearTimeout(thinkTimer);
+            thinkTimer = setTimeout(settle, 45000);
+          } else if (ev.ready && state !== "speaking" && !pttDown) {
+            settle();
           }
         } else if (ev.type === "ptt" && ev.source) {
           return;                                // a relayed edge: handled by remote()
