@@ -28,3 +28,39 @@ def test_the_page_animates_only_transform_and_opacity():
         for part in value.split(","):
             assert part.split()[0] in allowed | {"none"}, value
     assert not re.findall(r"transition-property\s*:", css)
+
+
+# --- the debug page keeps the same promises ---
+
+def test_every_id_debug_js_looks_up_exists_in_debug_html():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    html = (WEB_DIR / "debug.html").read_text(encoding="utf-8")
+    wanted = set(re.findall(r'\$\("([\w-]+)"\)', js))
+    have = set(re.findall(r'\bid="([\w-]+)"', html))
+    assert len(wanted) > 40
+    assert sorted(wanted - have) == []
+    tabs = set(re.findall(r'data-tab="(\w+)"', html))
+    assert tabs == {m[2:] for m in re.findall(r'id="(p-\w+)"', html)}
+
+
+def test_debug_page_takes_text_only_as_text_and_calls_only_routed_paths():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    assert "innerHTML" not in js and "insertAdjacentHTML" not in js
+    assert not re.findall(r"https?://", js)
+    viz = (WEB_DIR.parent / "viz.py").read_text(encoding="utf-8")
+    actions = (WEB_DIR.parent / "debug_actions.py").read_text(encoding="utf-8")
+    for path in set(re.findall(r'"(/debug/[\w./]+)"', js)):
+        assert f'"{path}"' in viz or f'"{path}"' in actions, path
+
+
+def test_debug_css_animates_only_transform_and_opacity():
+    css = re.sub(r"/\*.*?\*/", "", (WEB_DIR / "debug.css").read_text(encoding="utf-8"), flags=re.S)
+    allowed = {"transform", "opacity"}
+    frames = re.findall(r"@keyframes\s+([\w-]+)\s*\{((?:[^{}]*\{[^{}]*\})*)\s*\}", css)
+    assert len(frames) >= 4
+    for name, body in frames:
+        props = set(re.findall(r"([\w-]+)\s*:", re.sub(r"[^{}]*\{", "{", body)))
+        assert props <= allowed, (name, props - allowed)
+    for value in re.findall(r"transition\s*:\s*([^;}]+)", css):
+        for part in value.split(","):
+            assert part.split()[0] in allowed | {"none"}, value
