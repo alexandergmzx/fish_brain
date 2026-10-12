@@ -28,6 +28,7 @@ import threading
 import time
 from typing import Callable, Optional
 
+from . import debug
 from .config import SerialConfig
 
 # Where systemd keeps the router unit on the UNO Q image. If any exists, the router is
@@ -138,6 +139,9 @@ class _LinkLog:
         self._write("#", text)
 
 
+_TX_LOCK = threading.Lock()      # guards the write of one line (see BaseLink.send)
+
+
 class BaseLink:
     """Shared command helpers + rate limiting. Subclasses implement `_write_raw`."""
 
@@ -159,7 +163,11 @@ class BaseLink:
             if wait > 0:
                 time.sleep(wait)
         line = command.strip().encode("ascii", "ignore") + self.cfg.newline
-        self._write_raw(line)
+        # One writer at a time: the turn loop sends everything, but the debug page's STOP
+        # comes from an HTTP thread and must not land inside another line.
+        with _TX_LOCK:
+            self._write_raw(line)
+        debug.tx(command.strip())
         self._last_send = time.monotonic()
 
     # --- high level helpers ---
@@ -363,6 +371,7 @@ class SerialLink(BaseLink):
         except Exception:
             got = b""
         self._log_file.rx(got)
+        debug.rx(got)
         self._note_reply(bool(got))
 
     def _note_reply(self, answered: bool) -> None:
@@ -393,6 +402,7 @@ class SerialLink(BaseLink):
                 return False
             if got:
                 self._log_file.rx(got)
+                debug.rx(got)
                 self._note_reply(True)
                 return True
             time.sleep(0.02)
@@ -630,6 +640,7 @@ class ResilientLink(BaseLink):
     def send(self, command: str, *, throttle: bool = True) -> None:
         link = self._link
         if link is None:
+            debug.tx(command.strip(), "dropped")
             self._retry_in_background()
             return
         try:

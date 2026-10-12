@@ -562,3 +562,34 @@ def test_several_keys_are_one_button():
         assert wait_for(lambda: not b.is_held())
     finally:
         b.close()
+
+
+def test_every_key_reaches_the_debug_hub_and_only_the_button_counts():
+    from fish_brain import debug
+    from fish_brain.config import Config
+    hub = debug.install(Config())
+    try:
+        mouse = FakeDev("/dev/input/event3", "ACME Remote Mouse", keys=(272,))
+        keys = FakeDev("/dev/input/event2", "ACME Remote", keys=(KEY_F9,))
+        b = make({keys.path: keys, mouse.path: mouse}, evdev_device="name:acme")
+        try:
+            assert wait_for(lambda: b.device_count == 2)
+            snap = b.snapshot()
+            assert {d["name"] for d in snap["devices"]} == {"ACME Remote", "ACME Remote Mouse"}
+            assert snap["keys"] == "KEY_F9" and snap["mode"] == "hold"
+            b.arm(True)
+            mouse.feed(1, 272)
+            mouse.feed(0, 272)
+            assert wait_for(lambda: len(hub.recent("key")) == 2)
+            assert not b.is_held()                       # not the button: it does not count
+            k = hub.recent("key")[0]
+            assert (k["key"], k["configured"], k["name"]) == ("BTN_LEFT", False, "ACME Remote Mouse")
+            keys.feed(1)
+            assert wait_for(b.is_held)
+            keys.feed(0)
+            assert wait_for(lambda: hub.recent("press") and hub.recent("press")[-1]["configured"])
+            assert hub.recent("press")[-1]["outcome"] == "counted"
+        finally:
+            b.close()
+    finally:
+        debug.uninstall()

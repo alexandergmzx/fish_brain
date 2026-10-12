@@ -15,6 +15,7 @@ import time
 import wave
 from pathlib import Path
 
+from . import debug
 from .config import Config
 from .serial_link import BaseLink
 
@@ -142,7 +143,16 @@ def perform(
 
     offset = cfg.conductor.sync_offset_ms / 1000.0
 
-    player.play(wav_path)
+    # For the debug page: what this performance was and whether it was heard.
+    perf = {"pulses": len(mouth_pulses), "gestures": len(gesture_events),
+            "player": type(player).__name__, "late_max_ms": 0.0, "result": "ok"}
+    try:
+        player.play(wav_path)
+    except Exception as e:
+        perf.update(result="play failed", error={"type": type(e).__name__, "text": str(e)[:300]})
+        debug.emit("perf", **perf)
+        debug.turn_set(perf=perf)
+        raise
     t0 = time.monotonic()
     try:
         for t_ms, kind, payload in events:
@@ -150,6 +160,8 @@ def perform(
             dt = target - time.monotonic()
             if dt > 0:
                 time.sleep(dt)
+            elif -dt * 1000.0 > perf["late_max_ms"]:
+                perf["late_max_ms"] = round(-dt * 1000.0, 1)
             if kind == 0:
                 pwm, ms = payload                   # type: ignore[misc]
                 link.mouth_pulse(int(pwm), int(ms))
@@ -161,4 +173,7 @@ def perform(
         # Always close the mouth when the utterance ends or is interrupted: a full close
         # pulse (the jaw may hold open between pulses, so coasting to 0 isn't enough).
         link.mouth_pulse(cfg.mouth.close_pwm, cfg.mouth.close_curve[-1][1])
+        perf["play_s"] = round(time.monotonic() - t0, 2)
+        debug.emit("perf", **perf)
+        debug.turn_set(perf=perf)
     return t0

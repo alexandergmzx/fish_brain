@@ -294,3 +294,55 @@ def test_a_cut_recording_tells_the_llm(monkeypatch, tmp_path, capsys):
     assert convo.turn() is True
     assert asked and "seguía hablando" in asked[0] and asked[0].startswith("y entonces le dije que")
     assert "cut=15.0s" in capsys.readouterr().out
+
+
+# --- the debug hub sees every turn, and can never break one ---
+
+def test_turn_records_for_the_debug_page(make, tmp_path, capsys):
+    from fish_brain import debug
+    hub = debug.install(Config())
+    try:
+        wav = loud_wav(tmp_path / "a.wav")
+        convo, viz, spoken = make(Utterance(path=wav, hold_s=1.0, upload_s=0.25))
+        convo._stt = FakeSTT("hola")
+        convo.turn()
+        quiet = tmp_path / "q.wav"
+        with wave.open(str(quiet), "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
+            w.writeframes(b"\x00\x00" * 16000)
+        viz._items.append(Utterance(path=quiet, hold_s=1.0, upload_s=0.1))
+        convo.turn()
+        convo._stt = FakeSTT("")
+        viz._items.append(Utterance(path=loud_wav(tmp_path / "c.wav"), hold_s=1.0, upload_s=0.1))
+        convo.turn()
+        good, silent, missed = hub.recent("turn")
+        assert good["outcome"] == "spoken" and good["user"] == "hola" and good["reply"] == "hola"
+        assert good["trigger"] == "phone microphone" and good["rec"]["rms"] > 0.1
+        line = [l for l in capsys.readouterr().out.splitlines() if l.startswith("[turn] ")][0]
+        assert f"rec={good['times']['rec']:.1f}s" in line and f"stt={good['times']['stt']:.1f}s" in line
+        assert silent["outcome"] == "silence" and silent["rec"]["zero_frac"] == 1.0
+        assert missed["outcome"] == "not understood"
+        assert hub.recording_bytes()[:4] == b"RIFF"
+    finally:
+        debug.uninstall()
+
+
+def test_a_turn_survives_a_debug_hub_that_only_raises(make, tmp_path):
+    from fish_brain import debug
+    hub = debug.install(Config())
+    try:
+        for name in ("emit", "turn_open", "turn_set", "turn_close", "recording"):
+            setattr(hub, name, lambda *a, **k: 1 / 0)
+        convo, viz, spoken = make(Utterance(path=loud_wav(tmp_path / "a.wav"), hold_s=1.0, upload_s=0.2))
+        convo._stt = FakeSTT("hola")
+        assert convo.turn() is True and spoken == ["hola"]
+        assert hub.errors > 0
+    finally:
+        debug.uninstall()
+
+
+def test_a_debug_item_runs_in_the_loop(make):
+    ran = []
+    item = type("Item", (), {"run_in_loop": lambda self, convo: ran.append(convo)})()
+    convo, viz, spoken = make(item)
+    assert convo.turn() is True and ran == [convo] and spoken == []

@@ -155,6 +155,7 @@ def _record_until(stop_predicate, cfg: PTTConfig,
     except Exception as e:      # PortAudio missing, no input device, bad index...
         raise MicError(f"microphone unavailable: {e}") from e
     q: "queue.Queue[np.ndarray]" = queue.Queue()
+    _info.update(device=str(device), rate=int(samplerate), ended="release")
 
     def callback(indata, _frames, _time, _status):
         # indata is float32 [-1,1]; store as int16.
@@ -185,6 +186,7 @@ def _record_until(stop_predicate, cfg: PTTConfig,
                     heard = True
                     last_sound = time.monotonic()
                 elif heard and time.monotonic() - last_sound >= cfg.dead_s:
+                    _info["ended"] = "dead stream"
                     break                      # the microphone went dead: the key was released
             if cfg.pause_s > 0:
                 f = chunk.astype(np.float32) / 32768.0
@@ -192,6 +194,7 @@ def _record_until(stop_predicate, cfg: PTTConfig,
                     spoke = True
                     last_speech = time.monotonic()
                 elif spoke and time.monotonic() - last_speech >= cfg.pause_s:
+                    _info["ended"] = "pause"
                     break                      # the visitor stopped talking
             if on_level is not None:
                 now = time.monotonic()
@@ -208,6 +211,13 @@ def _record_until(stop_predicate, cfg: PTTConfig,
     out = Path(name)
     _write_wav(out, frames, samplerate)
     return out
+
+
+def record_for(seconds: float, cfg: PTTConfig,
+               on_level: Callable[[float], None] | None = None) -> Path:
+    """Record for a fixed time (the debug page's microphone check): no button involved."""
+    end = time.monotonic() + max(0.2, float(seconds))
+    return _record_until(lambda: time.monotonic() >= end, cfg, on_level)
 
 
 def record_hold(cfg: PTTConfig,
@@ -244,6 +254,14 @@ def record_hold(cfg: PTTConfig,
 
 
 _cut_last = False   # the previous recording hit max_record_s; wait for a release first
+# For the debug page: which source triggered the last recording, why it ended, the device
+# and rate it was opened with, and whether one is running now.
+_info: dict = {"recording": False}
+
+
+def last_info() -> dict:
+    return dict(_info)
+
 
 
 def last_recording_was_cut() -> bool:
@@ -346,13 +364,19 @@ def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
             if item is not None:
                 return item
         t0 = time.monotonic()
+        _info["trigger"] = next((s.name for s in local if s.is_held()), "button")
 
         def stop() -> bool:
             return not any_held() or time.monotonic() - t0 >= cfg.max_record_s
 
-        path = _record_until(stop, cfg, on_level)
+        _info["recording"] = True
+        try:
+            path = _record_until(stop, cfg, on_level)
+        finally:
+            _info["recording"] = False
         if time.monotonic() - t0 >= cfg.max_record_s:
             _cut_last = True
+            _info["ended"] = "limit"
             print(f"[ptt] {cfg.max_record_s:.0f} s limit reached; release and press again",
                   flush=True)
             for s in local:

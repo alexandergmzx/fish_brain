@@ -33,6 +33,7 @@ import textwrap
 import threading
 import time
 
+from . import debug
 from .config import PTTConfig
 
 EV_KEY = 1                # linux/input-event-codes.h; fixed kernel ABI
@@ -246,6 +247,7 @@ class EvdevButton:
         self._seen: set[str] = set()              # nodes already looked at (auto/name)
         self._said: set[str] = set()              # one-time messages already printed
         self._count = 0
+        self._dev_info: tuple = ()                # (path, name) of the adopted nodes, for snapshot()
         self._check_now = threading.Event()
         self._stop = threading.Event()
         self._scanned = threading.Event()
@@ -276,6 +278,16 @@ class EvdevButton:
     def describe(self) -> str:
         n = self._count
         return f"evdev({n} device{'' if n == 1 else 's'}, {self._key}, {self._state.mode})"
+
+    def snapshot(self) -> dict:
+        """What this button reads and how it stands, for the debug page. Safe from any
+        thread: the thread publishes `_dev_info` whole, its own dict is never touched here."""
+        return {"spec": self._spec, "keys": self._key, "mode": self._state.mode,
+                "grab": self._grab, "count": self._count,
+                "devices": [{"path": p, "name": n} for p, n in self._dev_info],
+                "held": self._state.held, "armed": self._state.armed,
+                "need_release": self._state.need_release,
+                "thread_alive": self._thread.is_alive()}
 
     def close(self) -> None:
         self._stop.set()
@@ -352,8 +364,16 @@ class EvdevButton:
     def _read(self, dev) -> None:
         try:
             for ev in dev.read():
-                if ev.type == EV_KEY and ev.code in self._codes:
+                if ev.type != EV_KEY:
+                    continue
+                mine = ev.code in self._codes
+                armed = self._state.armed          # before the event: did this press count?
+                if mine:
                     self._state.on_event(ev.value, time.monotonic())
+                # For the debug page: every key, also the ones that are not the button (a
+                # remote that changed mode sends another code and would otherwise be mute).
+                debug.key(dev.path, dev.name, ev.code, key_name(ev.code), ev.value, mine,
+                          armed, self._state.held)
         except BlockingIOError:
             pass
         except OSError as e:                  # unplugged (ENODEV) or the remote went to sleep
@@ -374,6 +394,7 @@ class EvdevButton:
             del self._devs[fd]
         self._seen.discard(getattr(dev, "path", ""))
         self._count = len(self._devs)
+        self._dev_info = tuple((d.path, d.name) for d in self._devs.values())
         _close_quietly(dev)
 
     def _drop(self, dev, err: Exception) -> None:
@@ -407,6 +428,7 @@ class EvdevButton:
                 self._log(f"could not grab {dev.path} ({e}); sharing it instead")
         self._devs[dev.fd] = dev
         self._count = len(self._devs)
+        self._dev_info = tuple((d.path, d.name) for d in self._devs.values())
         self._said.clear()
         self._log(f"listening on {dev.path} '{dev.name}' for {self._key}")
         return True

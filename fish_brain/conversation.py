@@ -25,7 +25,7 @@ import time
 import traceback
 from pathlib import Path
 
-from . import cloud, ptt, speak as speak_mod
+from . import cloud, debug, ptt, speak as speak_mod
 from .conductor import Player, make_player
 from .config import Config
 from .serial_link import BaseLink
@@ -136,6 +136,11 @@ class FishConversation:
         """An input item that is not a recording (offered by the page). The single dispatch
         point for such items; returns whether the loop goes on."""
         from .reading import Reading, Utterance
+        if hasattr(item, "run_in_loop"):
+            # A test from the debug page (a motor pulse, the microphone check): it runs here,
+            # on the turn loop's own thread, and answers for its own errors.
+            item.run_in_loop(self)
+            return True
         if isinstance(item, Reading):
             return self._reading_turn(item)
         if isinstance(item, Utterance):
@@ -147,9 +152,11 @@ class FishConversation:
         """A recording the page made with the phone's microphone and uploaded. From here on
         it is a normal voice turn: the hold plus the upload stand for the recording time."""
         times: dict[str, float] = {"rec": u.hold_s + u.upload_s}
+        debug.turn_set(trigger="phone microphone")
         t0 = time.monotonic()
-        user = self._transcribe(u.path)           # unlinks the file
+        user = self._transcribe(u.path, origin="upload")   # unlinks the file
         times["stt"] = time.monotonic() - t0
+        debug.turn_set(times=times)
         return self._finish_turn(user, times)
 
     def _reading_turn(self, r) -> bool:
@@ -174,6 +181,8 @@ class FishConversation:
                     f"[Lectura] El visitante muestra su gafete: se llama {r.name}.{look_note}"
                     " Pregúntale si es él o ella; cuando confirme, dile su futuro.", question)
             times.update(self.speaker.last_timing)
+            debug.turn_set(trigger="reading", times=times, outcome="read: ask",
+                           link=self.link.health())
             print("[turn] read=ask " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
                   + f" link={self.link.health()}", flush=True)
             return True
@@ -187,6 +196,7 @@ class FishConversation:
             if self.llm.last_error and self.cfg.tts.backend != "loq":
                 # The model is unreachable and so, most likely, is cloud TTS: the cached line.
                 print(f"[turn] lectura sin señal: {self.llm.last_error}", flush=True)
+                debug.turn_set(trigger="reading", times=times, outcome="read: no signal")
                 self._apologize(self.cfg.canned.reading_fail)
                 return True
         print("fish> (lectura)", flush=True)
@@ -196,14 +206,18 @@ class FishConversation:
             self.viz.push_reading("speaking")
         self.speaker.speak(reply)
         times.update(self.speaker.last_timing)
+        debug.turn_set(trigger="reading", times=times, outcome="read: tell",
+                       link=self.link.health())
         print("[turn] read=tell " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
               + f" link={self.link.health()}", flush=True)
         return True
 
-    def _transcribe(self, wav: Path) -> str:
+    def _transcribe(self, wav: Path, origin: str = "host") -> str:
         """Recording -> text ("" when there is nothing usable in it)."""
         try:
+            debug.recording(wav, origin)           # the newest one, in memory, for /debug
             if ptt.wav_duration_s(wav) < self.cfg.stt.min_clip_s:
+                debug.turn_set(outcome="too short")
                 return ""                          # a tap, not a sentence
             # Skip silent captures: Whisper hallucinates phrases on silence (wrong/muted mic).
             rms = ptt.wav_rms(wav)
@@ -212,10 +226,12 @@ class FishConversation:
                       flush=True)
                 if self.viz is not None:
                     self.viz.push_transcript("… (silencio, ¿micrófono correcto?)", "user")
+                debug.turn_set(outcome="silence")
                 return ""
             text = self.stt.transcribe(wav).strip()
         finally:
             Path(wav).unlink(missing_ok=True)
+        debug.turn_set(user=text, **({} if text else {"outcome": "not understood"}))
         print(f"you> {text}" if text else "you> … (no te entendí, intenta de nuevo)", flush=True)
         if self.viz is not None:
             self.viz.push_transcript(text or "… (no te entendí)", "user")
@@ -242,6 +258,7 @@ class FishConversation:
                 user = input("you> ").strip()
             except EOFError:
                 return False                       # Ctrl-D
+            debug.turn_set(trigger="text", user=user)
         else:
             t0 = time.monotonic()
             wav = self._record()
@@ -250,9 +267,13 @@ class FishConversation:
             # The hold itself, not the wait for a press (the wait can be minutes long).
             times["rec"] = ptt.wav_duration_s(wav)
             cut = ptt.last_recording_was_cut()
+            info = ptt.last_info()
+            debug.turn_set(trigger=info.get("trigger", "button"), ended=info.get("ended", ""),
+                           device=info.get("device", ""))
             t0 = time.monotonic()
             user = self._transcribe(wav)
             times["stt"] = time.monotonic() - t0
+            debug.turn_set(times=times)
             if cut and user:
                 # The visitor was still talking at the limit: the fish must know it heard a
                 # beginning, not a whole sentence (the echo repeats the words as they are).
@@ -283,16 +304,22 @@ class FishConversation:
                 # The LLM is unreachable and so, most likely, is cloud TTS: use the cached line.
                 raise cloud.CloudUnavailable(self.llm.last_error)
         print(f"fish> {reply}", flush=True)
+        debug.turn_set(reply=reply, times=times)
         if not reply:
+            debug.turn_set(outcome="empty reply")
             return True
         if self.viz is not None and self.viz.wait_enabled():
             # "Wait to speak": show the reply and drop it into the editable box; the user tweaks
             # it and presses Speak (-> /speak) to make the fish say it.
             self.viz.push_transcript(reply, "fish")
             self.viz.push_draft(reply)
+            debug.turn_set(outcome="draft (wait-to-speak)")
         else:
-            self.speaker.speak(reply)              # Speaker pushes the "fish" transcript + speaks
+            # Speaker pushes the "fish" transcript + speaks; False = it was already speaking.
+            if not self.speaker.speak(reply):
+                debug.turn_set(outcome="dropped: speaking")
             times.update(self.speaker.last_timing)
+        debug.turn_set(times=times, link=self.link.health())
         if times:
             print("[turn] " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
                   + f" link={self.link.health()}", flush=True)
@@ -301,24 +328,30 @@ class FishConversation:
     def turn(self) -> bool:
         """Run one turn. Returns False to end the loop (EOF/quit). Never raises for a
         problem inside the turn; see the module docstring."""
+        debug.turn_open()
         try:
             keep_going = self._turn()
             self._errors = 0
+            debug.turn_close()
             return keep_going
         except ptt.PTTUnavailable:
             raise                                  # a setup problem, not a bad turn
         except cloud.CloudUnavailable as e:
+            debug.turn_close("offline", e)
             print(f"[turn] sin señal: {e}", flush=True)
             self._apologize(self.cfg.canned.no_signal)
         except cloud.CloudMisconfigured as e:
+            debug.turn_close("misconfigured", e)
             print(f"[turn] cloud setup problem: {e}", flush=True)
             self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
             time.sleep(2.0)
         except ptt.MicError as e:
+            debug.turn_close("mic error", e)
             print(f"[turn] {e}", flush=True)
             self._apologize(self.cfg.canned.no_mic, min_gap_s=30.0)
             time.sleep(2.0)
         except Exception as e:
+            debug.turn_close("error", e)
             print(f"[turn] error {type(e).__name__}: {e}", flush=True)
             traceback.print_exc()
             self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
