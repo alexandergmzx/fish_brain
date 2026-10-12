@@ -215,6 +215,32 @@ EOF (`--text`), or Ctrl-C quit.
   turn loop starts or stops waiting for input (the same flag as `/status.listening`). In
   browser mode a press while the host is not ready is nudged with the finger still down
   instead of after the upload; a page that missed the event learns from the 409.
+- **A remote relayed to the page**: in browser mode a press on the board's remote
+  (`FISH_PTT_DEVICE`) must not open the board's microphone while the phone has one. The
+  page says when its microphone is ready: `POST /micstate {"ready": true|false, "page":
+  <id>}` (on the guarded list; `200 {ok}`), with a random id the page keeps in
+  `sessionStorage` (`fishPage`). `ready: true` goes after the gate succeeds and again
+  every 20 s as a keep-alive; `ready: false` when the microphone is dropped, on
+  `visibilitychange` hidden and on `pagehide` (a beacon, so the query form of the token).
+  The host keeps the ready pages with their last time (`VizServer.mic_pages()`; an entry
+  older than 45 s is dropped; `/status.mic_pages`). Before every wait the turn loop checks
+  `mic_pages() > 0`: if so the remote's source is marked `relay` and `ptt.record_multi`
+  only polls it, handing each edge to `viz.relay_ptt`, which publishes
+  `{"type": "ptt", "held": true, "source": "remote"}` and `{"type": "ptt", "held": false,
+  "source": "remote"}`; the board's microphone is never opened for it. The page, with its
+  microphone ready, starts the same local hold a `pointerdown` starts (no `/ptt` POST,
+  the listening state shown) and ends it like a `pointerup` (the 250 ms tail, the discard
+  rules, the upload, which arrives through the inbox as an `Utterance`); the on-screen
+  target keeps working beside it and a finger during a relayed hold is nudged. A page in
+  host mode, or with no microphone, ignores sourced `ptt` events. The sourceless
+  `{"type": "ptt", "held": false}` of `reset_ptt` keeps its meaning (the host ended the
+  page's own press). A relayed hold longer than `FISH_PTT_MAX_S` is ended by the host with
+  `held: false` and the remote reset (the page also enforces its own limit), and one still
+  held when the wait ends is ended the same way, so the page never records forever. With
+  no page ready (none open, the gate not tapped, the microphone denied) the remote records
+  with the board's microphone as before; the choice is made at every wait, so a phone that
+  comes or goes needs no restart. The start-up line reads
+  `ptt=web+browser-mic+evdev(…)→page`.
 - **`?mic=`**: `?mic=host` forces the `/ptt` path on that device (the board's microphone
   through the page, for a test or when the phone's is unusable); `?mic=browser` shows the
   gate even when `/status` says `host`, for a laptop test on `http://127.0.0.1:8723`, which

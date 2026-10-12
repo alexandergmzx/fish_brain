@@ -81,7 +81,8 @@ In the loop, say/type **`salir`** or hit Ctrl-C to quit; an unclear/empty record
 Push-to-talk: with `--viz`, **hold the on-screen button** (or the browser spacebar) and pick your
 mic from the dropdown — easiest for debugging. Without `--viz`, hold **space** in the terminal
 (falls back to Enter-to-toggle in a terminal if `pynput`/display is unavailable). A remote's
-button works too: see `FISH_PTT_DEVICE` below.
+button works too: see `FISH_PTT_DEVICE` below; with `FISH_MIC_CAPTURE=browser` its press is
+relayed to the phone page, which records with its own microphone while a page has one ready.
 
 ## Configuration
 

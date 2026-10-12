@@ -82,7 +82,7 @@ together.
 
 | Part | What it does | Where |
 |---|---|---|
-| Push-to-talk | Keyboard key, the page's hold button, or a remote's button; a fresh press starts a recording, a 15 s limit ends a stuck one. With `FISH_MIC_CAPTURE=browser` the page records with its own microphone and uploads a 16 kHz WAV (`POST /utterance`), taken by the loop through one inbox like a board recording | [`ptt.py`](fish_brain/ptt.py), [`evdev_button.py`](fish_brain/evdev_button.py), [`viz.py`](fish_brain/viz.py) |
+| Push-to-talk | Keyboard key, the page's hold button, or a remote's button; a fresh press starts a recording, a 15 s limit ends a stuck one. With `FISH_MIC_CAPTURE=browser` the page records with its own microphone and uploads a 16 kHz WAV (`POST /utterance`), taken by the loop through one inbox like a board recording; a remote's press is relayed to the page in browser mode | [`ptt.py`](fish_brain/ptt.py), [`evdev_button.py`](fish_brain/evdev_button.py), [`viz.py`](fish_brain/viz.py) |
 | Speech-to-text | `local` faster-whisper, or the recording uploaded to `openai` / `groq` | [`stt.py`](fish_brain/stt.py) |
 | LLM | Profiles `groq` (GPT-OSS-20B) and `luna` (GPT-6 Luna); bounded history; fallback line on error. `reading.read_badge` turns a badge photo into a name (`luna` only: it takes images, `groq` does not) | [`llm.py`](fish_brain/llm.py), [`ab.py`](fish_brain/ab.py) |
 | Cloud plumbing | One client per service, short timeouts, a background "is the internet there" flag, two error types | [`cloud.py`](fish_brain/cloud.py) |
