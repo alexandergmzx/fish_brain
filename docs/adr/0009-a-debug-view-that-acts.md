@@ -54,6 +54,13 @@ failed playback still animated the phone, what the MCU answered was thrown away.
    adopted keyboard are counted, never named. All data and actions follow the token rule;
    POSTs must be JSON, so another web page in the same browser cannot fire them.
 
+*Added 2026-10-12 (the owner's word):* the view also has switches for the running fish (echo or
+LLM and its profile, the speech-to-text and voice backends, gestures, the look line, the quit
+word, the recording limit, board or phone microphone, and, armed, the motors muted). They are
+applied by the turn loop between turns and are never written down: a restart brings back
+what `.env` and the unit say. While the motors are muted every line but `STOP` is dropped,
+a phrase's close pulse included; `STOP` goes out when muting.
+
 ## Alternatives
 
 - **Show only**: safer, but the motor and restart checks would stay ssh work at the stand.
