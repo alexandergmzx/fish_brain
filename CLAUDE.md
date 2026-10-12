@@ -32,15 +32,15 @@ data when warranted.
 | Item | State |
 |---|---|
 | Laptop fish (Billy Bass #1, Uno R4) | Working since June 2026 |
-| `braintip`: software for the UNO Q | Runs on the board as `fish-brain.service` with linger since 2026-10-11: boots alone, welcome, real turns from the page on a phone or from the touch display (`stt=openai llm=luna tts=loq`), about 4.3 s from release to voice on the home Wi-Fi. Not yet on the hotspot. The phone as the interface, HTTPS, the phone's microphone and the reading: planned (ADR 0006, 0007, proposed), nothing implemented |
+| `braintip`: software for the UNO Q | Runs on the board as `fish-brain.service` with linger since 2026-10-11: boots alone, welcome, real turns from the page on a phone or from the touch display (`stt=openai llm=luna tts=loq`), about 4.3 s from release to voice on the home Wi-Fi. Not yet on the hotspot. The phone as the interface, HTTPS, the phone's microphone and the reading: built 2026-10-11 (ADR 0006, 0007 proposed), level 0 to 2 on the laptop, the reading at level 1 on the board; the phone itself untested |
 | Board: hub, USB speaker, RedOctane microphone | Working on a power bank. Speaker to microphone loop checked. The microphone stays plugged in as the fallback once the phone's is in use |
 | Board: Loquendo | Works; about 0.75 s per short sentence with the daemon warm |
 | Board: MCU firmware | Big_mouth `braintip` (`unoq/BigMouthQ`) flashed 2026-10-11, no drivers attached: protocol transcript 122 of 122, pulses within 1 ms, 9,999 of 9,999 lines in a soak. LED matrix mirrors the nine L298 signals. PWM measured good on D3, D5, D6 |
 | Board: bring-up script | `tools/unoq_bringup.sh`: all tests passed 2026-10-11 |
 | Board: local speech-to-text | Slow: `tiny` 3.5 to 4.8 s, `base` 8 s, `small` 20 to 23 s per turn |
-| Board: push-to-talk | The page on the operator's phone or PC over the network, hold-to-talk with the board's microphone (ADR 0006, proposed); the phone's own microphone over HTTPS once it lands. The touch display's kiosk is parked. `FISH_PTT_DEVICE=auto` also adopted the headset jack as a trigger (results 2026-10-11) |
+| Board: push-to-talk | The page on the operator's phone or PC (`?console=1`), hold-to-talk with the board's microphone; the phone's own microphone over HTTPS (`FISH_MIC_CAPTURE=browser`, `POST /utterance`) built, not yet tried on his phone. The touch display's kiosk is parked. `FISH_PTT_DEVICE=auto` also adopted the headset jack as a trigger (results 2026-10-11) |
 | Board: HDMI touch display | Parked (ADR 0005, replaced by 0006): works on its own power, on before the board, but the browser costs 1.1 to 1.3 cores and 42 to 55 C idle (results 2026-10-11); not taken to the fair |
-| The reading (la lectura) | Planned, ADR 0007 (proposed): badge photo on the phone → name read by `gpt-6-luna` through the board → the fish asks "¿Tú eres X?" → the answer is a turn. Not implemented |
+| The reading (la lectura) | Built (ADR 0007, proposed): badge photo on the phone → `gpt-6-luna` through the board (4.3 to 6.7 s, 1163 image tokens, surnames split, accents restored: `docs/results/2026-10-11-reading-badge.md`) → the fish asks "¿Tú eres X?" → the answer is a turn. Not yet tried with a real badge or on the phone |
 | Motors on the UNO Q (L298N), Billy Bass #2 calibration | Not started. Before wiring: 10 k pull-downs on D6, D3, D5 and on D7, D8 (D8 is pulled high in reset) |
 | Fair | **2026-10-17**. Billy Bass #2 first; the Spin Master hat body only if it arrives. Interface: the page on the operator's phone (ADR 0006) |
 
@@ -70,11 +70,11 @@ chains are not covered by it. So:
 ## What is in use
 
 ```
-[hold on the phone page] → mic (the board's; the phone's own over HTTPS, planned) → speech-to-text
+[hold on the phone page] → mic (the board's, or the phone's own over HTTPS) → speech-to-text
    → LLM (persona + history) → text-to-speech → WAV
    → loudness envelope → mouth pulses  +  text-driven neck/tail gestures
    → play audio and stream commands on one clock → the fish speaks → listen again
-[badge photo on the phone] → name (vision model) → "¿Tú eres X?" → the answer is a turn   (planned, ADR 0007)
+[badge photo on the phone] → name (vision model) → "¿Tú eres X?" → the answer is a turn   (ADR 0007)
 ```
 
 The whole command schedule is computed from the finished WAV, then audio and commands run
@@ -82,18 +82,18 @@ together.
 
 | Part | What it does | Where |
 |---|---|---|
-| Push-to-talk | Keyboard key, the page's hold button, or a remote's button; a fresh press starts a recording, a 15 s limit ends a stuck one. Planned (ADR 0006): the page records with its own microphone and uploads a 16 kHz WAV, taken by the loop like a board recording | [`ptt.py`](fish_brain/ptt.py), [`evdev_button.py`](fish_brain/evdev_button.py), [`viz.py`](fish_brain/viz.py) |
+| Push-to-talk | Keyboard key, the page's hold button, or a remote's button; a fresh press starts a recording, a 15 s limit ends a stuck one. With `FISH_MIC_CAPTURE=browser` the page records with its own microphone and uploads a 16 kHz WAV (`POST /utterance`), taken by the loop through one inbox like a board recording | [`ptt.py`](fish_brain/ptt.py), [`evdev_button.py`](fish_brain/evdev_button.py), [`viz.py`](fish_brain/viz.py) |
 | Speech-to-text | `local` faster-whisper, or the recording uploaded to `openai` / `groq` | [`stt.py`](fish_brain/stt.py) |
-| LLM | Profiles `groq` (GPT-OSS-20B) and `luna` (GPT-6 Luna); bounded history; fallback line on error. Planned (ADR 0007): `read_badge` turns a badge photo into a name (`luna` only: it takes images, `groq` does not) | [`llm.py`](fish_brain/llm.py), [`ab.py`](fish_brain/ab.py) |
+| LLM | Profiles `groq` (GPT-OSS-20B) and `luna` (GPT-6 Luna); bounded history; fallback line on error. `reading.read_badge` turns a badge photo into a name (`luna` only: it takes images, `groq` does not) | [`llm.py`](fish_brain/llm.py), [`ab.py`](fish_brain/ab.py) |
 | Cloud plumbing | One client per service, short timeouts, a background "is the internet there" flag, two error types | [`cloud.py`](fish_brain/cloud.py) |
 | Text-to-speech | `loq` (Loquendo "Jorge") or `openai`; always a WAV file, never played here | [`tts.py`](fish_brain/tts.py) |
-| Canned phrases | welcome, goodbye, no_signal, no_mic (planned: reading_wait, reading_fail); cached by text and voice; an older rendering is used when a new one can't be made | [`canned.py`](fish_brain/canned.py) |
+| Canned phrases | welcome, goodbye, no_signal, no_mic, reading_wait, reading_fail; cached by text and voice; an older rendering is used when a new one can't be made | [`canned.py`](fish_brain/canned.py) |
 | Mouth | WAV → openness (0..1) → timed pulses through measured curves | [`envelope.py`](fish_brain/envelope.py) |
 | Gestures | Head out on words, home on sentence ends; tail flaps | [`gestures.py`](fish_brain/gestures.py) |
 | Conductor | Plays the audio and sends each command at its time | [`conductor.py`](fish_brain/conductor.py), [`speak.py`](fish_brain/speak.py) |
 | Motor link | pyserial, or MessagePack-RPC through the UNO Q's router; a mock for `--dry-run`; a wrapper that keeps the fish talking without motors | [`serial_link.py`](fish_brain/serial_link.py), [`router_rpc.py`](fish_brain/router_rpc.py) |
 | Turn loop | One turn in stages; no error inside a turn ends the loop | [`conversation.py`](fish_brain/conversation.py) |
-| The page | Browser view on a phone or PC: hold-to-talk, mic picker, transcript, the visitor view (`?kiosk=1`). Planned (ADR 0006, 0007): an operator console (`?console=1`), HTTPS behind `FISH_VIZ_TLS_CERT`, the phone's microphone, the reading | [`viz.py`](fish_brain/viz.py), [`web/`](fish_brain/web/), [`docs/viz.md`](docs/viz.md) |
+| The page | Browser view on a phone or PC: hold-to-talk, mic picker, transcript, the visitor view (`?kiosk=1`). The operator console (`?console=1`): hold-to-talk, the badge photo, the name; HTTPS as a second listener behind `FISH_VIZ_TLS_CERT`; the phone's microphone; the token on `/events` and `/audio` | [`viz.py`](fish_brain/viz.py), [`web/`](fish_brain/web/), [`docs/viz.md`](docs/viz.md) |
 | Entry point | Flags, start-up checks, one-shots | [`app.py`](fish_brain/app.py) |
 
 Other repos. **They stay untouched; this repo only calls them.**
@@ -132,6 +132,7 @@ Changed only by a record in [`docs/adr/`](docs/adr/). Do not reopen without new 
 | Board transport | Ask the router to release the port; Bridge RPC as alternative (ADR 0001) | 2026-10-10 |
 | Board start-up | systemd user service with linger (ADR 0002) | 2026-10-10 |
 | Turn trigger at the fair | The page on the operator's phone or PC; the phone's microphone when the browser has one, the board's otherwise, no restart between them; the display parked (ADR 0006, proposed, replaces 0005) | 2026-10-11 |
+| The reading's model | `gpt-6-luna` through the board, strict JSON, the photo in memory only; measured 2026-10-11 | 2026-10-11 |
 | The reading | A badge photo read by a vision model through the board (`luna`); the fish asks the name by voice before telling the future; the photo lives in memory only; badge-only by default, a look line only with a consent tick (ADR 0007, proposed) | 2026-10-11 |
 | Motor port | One holder at a time: a lock taken before the router is asked for anything | 2026-10-11 |
 | Speech backends | By environment; laptop defaults are local STT and `loq` (ADR 0003) | 2026-10-10 |
@@ -196,9 +197,9 @@ check its replies against this table.
   `FISH_SERIAL_REQUIRED`, `FISH_STT_BACKEND`, `FISH_TTS_BACKEND`, `FISH_LLM_PROFILE`,
   `FISH_PTT_DEVICE`, `FISH_PTT_KEY`, `FISH_PTT_MODE`, `FISH_VIZ_HOST`, `FISH_WELCOME_ONCE`,
   `FISH_VOICE_QUIT`. Full list: README and [`deploy/env.unoq.example`](deploy/env.unoq.example).
-  Planned by ADR 0006 and 0007, not yet in code: `FISH_VIZ_TLS_CERT`, `FISH_VIZ_TLS_KEY`,
-  `FISH_VIZ_TLS_PORT`, `FISH_MIC_CAPTURE` (`host` on the laptop), `FISH_READING_PROFILE` (empty =
-  the LLM profile), `FISH_READING_LOOK`, `FISH_SAY_ADDRESS`.
+  Since ADR 0006 and 0007: `FISH_VIZ_TLS_CERT`, `FISH_VIZ_TLS_KEY`, `FISH_VIZ_TLS_PORT`,
+  `FISH_MIC_CAPTURE` (`host` on the laptop), `FISH_READING_PROFILE` (empty = the LLM profile),
+  `FISH_READING_LOOK`, `FISH_SAY_ADDRESS`.
 
 ### Every hardware boundary has a stand-in
 
@@ -281,7 +282,9 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q tests   # expect 
 
 # laptop, no hardware (cloud voice, so Wine is not involved)
 .venv/bin/python -m fish_brain.app --dry-run --text --no-audio --tts openai   # type a turn; expect TX lines and a [turn] line
-.venv/bin/python -m fish_brain.app --dry-run --echo --viz --tts openai        # hold the button in the browser, it repeats you
+.venv/bin/python -m fish_brain.app --dry-run --echo --viz --tts openai        # hold the button in the browser, it repeats you; /?console=1 is the phone console
+FISH_MIC_CAPTURE=browser .venv/bin/python -m fish_brain.app --dry-run --echo --viz --tts openai   # the browser's own microphone (localhost is a secure context)
+.venv/bin/python -m fish_brain.app --dry-run --text --no-audio --tts openai --llm luna --read-badge foto.jpg   # the badge call alone, prints the JSON (needs the key)
 .venv/bin/python -m fish_brain.ab --no-vote                                   # both LLM profiles: latency and cost
 
 # laptop with the fish (his to run: uses loq and motors)
@@ -293,6 +296,7 @@ deploy/unoq_setup.sh sync         # from the laptop: copy this tree to the board
 deploy/unoq_setup.sh install      # prints the sudo lines for him; venv, canned phrases, link check
 deploy/unoq_setup.sh service      # install and start the user unit
 deploy/unoq_setup.sh status
+deploy/unoq_setup.sh tls [ip ...]  # board: self-signed certificate for the https page; prints the .env lines and the phone steps
 deploy/unoq_setup.sh kiosk on|off|pause|resume|status   # parked (ADR 0005, replaced by 0006): the page on the board's display
 deploy/unoq_fw.sh push | compile [--trace] | upload --by <who> | status | log   # from the laptop: MCU sketches
 tools/unoq_checks.sh              # the Braintip Phase 1 table (what the board sees)
@@ -320,7 +324,9 @@ their own. The steps are in the README.
 |---|---|
 | Fish does not move | The board's LEDs first: LED4 green must blink (MCU alive), the matrix must move with speech (MCU got the commands: then look after the MCU, at drivers and power). The `[turn]` line's `link=` and any `[link] MCU silent`. With the service stopped: `--check-link` (says whether the MCU answers) and `tools/fw_check.py check --release-router`. These tools refuse while a fish holds the port |
 | Mouth out of sync | The `[turn]` line (`play_start`); `sync_offset_ms` |
-| "no te entendí" every time | The level meter in the page; the selected source (`wpctl status`); `silence_rms` |
+| "no te entendí" every time | The level meter in the page; the selected source (`wpctl status`); `silence_rms`. With the phone's microphone: the `[utt]` line (rate, seconds, bytes) and the ring on the target; `?mic=host` brings the board microphone back |
+| No "Activar micrófono" button on the phone | The page is not a secure context: plain http, or the certificate warning not accepted; the hold still records with the board microphone |
+| The badge is never read | The `[reading]` line: `offline`, `misconfigured` (the profile has no image input, or no key); type the name in the field |
 | Remote does nothing | `python -m fish_brain.evdev_button --list` and `--watch`; the start-up line `ptt=` |
 | Says "no signal" every turn | The `[cloud]` and `[llm]` lines name the error; keys in `.env` |
 | Bridge transport silent | `nc 127.0.0.1 7500`; router error 2 means no sketch registered the method |
