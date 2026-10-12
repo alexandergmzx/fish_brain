@@ -45,6 +45,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
+from . import debug
 from .config import Config
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -94,6 +95,7 @@ class VizServer:
         self._speaker = None                  # speak.Speaker, registered by app.py (text box -> /speak)
         self._reader = None                   # reading.read_badge, registered by app.py (/badge)
         self._status_provider = None          # app.py: link, internet and backends for /status
+        self._debug = None                    # debug.DebugHub, registered by app.py (/debug)
         self._started = time.monotonic()
         # Items for the turn loop that come from the page instead of the microphone (later: a
         # badge reading, an uploaded recording). Small on purpose: an item is one turn.
@@ -264,6 +266,7 @@ class VizServer:
             replay = self._last_event
             age_ms = int((time.monotonic() - self._last_event_ts) * 1000)
         if evicted is not None:
+            debug.count("page_evicted")
             try:
                 evicted.put_nowait(None)   # the sentinel: its handler loop ends
             except queue.Full:
@@ -291,7 +294,8 @@ class VizServer:
             try:
                 q.put_nowait(data)
             except queue.Full:
-                pass  # best-effort; never block the conductor
+                debug.count("page_dropped")   # best-effort; never block the conductor
+        debug.page_event(data)                # a copy for the debug page (its own stream)
 
     # --- audio snapshots ---
     def _store_audio(self, wav: str | Path) -> str:
@@ -513,6 +517,10 @@ class VizServer:
         return ButtonSource(self.ptt_held, reset=self.reset_ptt, name="web")
 
     # --- text box -> speak verbatim, and the "wait to speak" gate ---
+    def register_debug(self, hub) -> None:
+        """The debug hub behind `/debug/...`. Without one those routes answer 404."""
+        self._debug = hub
+
     def register_speaker(self, speaker) -> None:
         """Wire in the shared speak.Speaker so the text box can drive the fish."""
         self._speaker = speaker
@@ -669,8 +677,12 @@ def _make_handler(server: "VizServer"):
             path, _, query = self.path.partition("?")
             if path == "/" or path == "/index.html":
                 self._serve_file("index.html")
-            elif path in ("/fish.js", "/fish.css", "/rec.js"):
+            elif path in ("/fish.js", "/fish.css", "/rec.js", "/debug.js", "/debug.css"):
                 self._serve_file(path.lstrip("/"))
+            elif path == "/debug":
+                self._serve_file("debug.html")
+            elif path.startswith("/debug/"):
+                self._get_debug(path, query)
             elif path.startswith("/img/"):
                 self._serve_img(path[len("/img/"):])
             elif path == "/mics":
@@ -691,6 +703,9 @@ def _make_handler(server: "VizServer"):
 
         def do_POST(self):  # noqa: N802
             path, _, query = self.path.partition("?")
+            if path.startswith("/debug/"):
+                self._post_debug(path, query)
+                return
             if path in ("/mic", "/ptt", "/speak", "/wait", "/badge", "/reading", "/utterance",
                         "/micstate"):
                 if not self._authorized(query):
@@ -724,6 +739,107 @@ def _make_handler(server: "VizServer"):
                     self._send_json({"ok": False, "error": str(e)}, status=400)
             else:
                 self.send_error(404)
+
+        # --- the debug page (docs/debug.md): data and actions behind the token rule ---
+        def _debug_gate(self, query: str):
+            """The hub, or None after answering 404 (no hub) or 403 (the token rule)."""
+            hub = server._debug
+            if hub is None:
+                self._send_json({"ok": False, "error": "no debug view"}, status=404)
+                return None
+            if not self._authorized(query):
+                self._send_json({"ok": False, "error": "bad token"}, status=403)
+                return None
+            return hub
+
+        def _get_debug(self, path: str, query: str):
+            hub = self._debug_gate(query)
+            if hub is None:
+                return
+            if path == "/debug/state":
+                try:
+                    self._send_json(hub.state())
+                except Exception as e:
+                    self._send_json({"ok": False, "error": type(e).__name__}, status=500)
+            elif path == "/debug/events":
+                self._serve_debug_events(hub, query)
+            elif path == "/debug/rec.wav":
+                data = hub.recording_bytes()
+                if not data:
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/wav")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_error(404)
+
+        def _post_debug(self, path: str, query: str):
+            hub = self._debug_gate(query)
+            if hub is None:
+                return
+            # JSON only: a form post from some other web page in the same browser carries
+            # another content type, and so can never press these buttons blindly.
+            if "application/json" not in (self.headers.get("Content-Type") or "").lower():
+                self._send_json({"ok": False, "error": "application/json expected"}, status=415)
+                return
+            raw = self._read_body(server.MAX_JSON_BYTES)
+            if raw is None:
+                return
+            if hub.actions is None:
+                self._send_json({"ok": False, "error": "not ready"}, status=409)
+                return
+            try:
+                body = json.loads(raw or b"{}")
+                status, out = hub.actions.post(path, body if isinstance(body, dict) else {})
+            except Exception as e:                # the type only: never exception text
+                status, out = 500, {"ok": False, "error": type(e).__name__}
+            self._send_json(out, status=status)
+
+        def _serve_debug_events(self, hub, query: str):
+            """The debug page's own stream. This thread reads the hub's rings four times a
+            second, so whoever produces a record only appends; `since` (or the browser's
+            Last-Event-ID) is `<boot>-<seq>`, and anything else replays the rings."""
+            asked = (parse_qs(query).get("since", [""])[0]
+                     or self.headers.get("Last-Event-ID") or "")
+            boot, _, n = asked.rpartition("-")
+            seq = int(n) if boot == hub.boot and n.isdigit() else 0
+            me = hub.stream_open()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            try:
+                hello = {"kind": "hello", "boot": hub.boot, "pid": os.getpid(), "seq": hub.seq}
+                self.wfile.write(f"retry: 2000\n\ndata: {json.dumps(hello)}\n\n".encode())
+                self.wfile.flush()
+                quiet = 0.0
+                while not me["closed"]:
+                    recs = hub.since(seq, 200)
+                    if recs:
+                        out = "".join(f"id: {hub.boot}-{r['seq']}\ndata: {json.dumps(r)}\n\n"
+                                      for r in recs)
+                        self.wfile.write(out.encode("utf-8"))
+                        self.wfile.flush()
+                        seq, quiet = recs[-1]["seq"], 0.0
+                        if len(recs) == 200:
+                            time.sleep(0.02)      # more is waiting: a short breath, then on
+                            continue
+                    elif quiet >= server.HEARTBEAT_S:
+                        self.wfile.write(b'data: {"kind":"hb"}\n\n')
+                        self.wfile.flush()
+                        quiet = 0.0
+                    time.sleep(0.25)
+                    quiet += 0.25
+                    hub.counters["last_viewer"] = time.monotonic()
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            finally:
+                hub.stream_close(me)
 
         def _post_badge(self):
             """A badge photo (image/jpeg). The bytes stay in this frame: never stored on the
@@ -774,6 +890,9 @@ def _make_handler(server: "VizServer"):
             self._send_json(out, status=status)
 
         def _send_json(self, obj, status: int = 200):
+            if status >= 400:                     # a refused request, for the debug page
+                debug.emit("http", method=self.command, path=self.path.partition("?")[0],
+                           status=status, error=str(obj.get("error", ""))[:80])
             body = json.dumps(obj).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")

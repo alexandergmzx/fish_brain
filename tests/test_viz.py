@@ -647,3 +647,75 @@ def test_relay_ptt_publishes_sourced_events(server):
                       {"type": "ptt", "held": False, "source": "remote"},
                       {"type": "ptt", "held": False}]
     server._unsubscribe(q)
+
+
+# --- the debug page: its own routes and stream (docs/debug.md) ---
+
+@pytest.fixture
+def dbg(server):
+    from fish_brain import debug
+    hub = debug.DebugHub(server.cfg)
+    server.register_debug(hub)
+    return hub
+
+
+def test_debug_page_is_served_and_its_data_needs_the_token(server, dbg):
+    for path in ("/debug", "/debug.js", "/debug.css"):
+        assert get(server.url + path)[0] == 200, path
+    assert get(server.url + "/debug/state")[0] == 403
+    status, body = get(server.url + "/debug/state?token=s3cret-token")
+    st = json.loads(body)
+    assert status == 200 and st["ok"] and st["boot"] == dbg.boot
+    assert "s3cret-token" not in body.decode()
+    assert get(server.url + "/debug/rec.wav")[0] == 403
+    assert get(server.url + "/debug/rec.wav?token=s3cret-token")[0] == 404
+    assert stream_head(server, "/debug/events")[0] == 403
+
+
+def test_debug_routes_do_not_exist_without_a_hub(server):
+    assert get(server.url + "/debug/state?token=s3cret-token")[0] == 404
+    assert post(server.url + "/debug/stop", {}, {"X-Fish-Token": "s3cret-token"})[0] == 404
+
+
+def test_debug_posts_need_json_and_actions(server, dbg):
+    tok = {"X-Fish-Token": "s3cret-token"}
+    req = urllib.request.Request(server.url + "/debug/arm", data=b"on=1", headers={
+        **tok, "Content-Type": "application/x-www-form-urlencoded"})
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(req, timeout=3)
+    assert e.value.code == 415                     # a form from another web page cannot press it
+    assert post(server.url + "/debug/arm", {"on": True})[0] == 403
+    assert post(server.url + "/debug/arm", {"on": True}, tok)[0] == 409      # no actions yet
+
+
+def test_debug_stream_replays_the_rings_and_phones_get_nothing_new(server, dbg):
+    phone = server._subscribe()
+    dbg.emit("log", stream="out", tag="turn", thread="MainThread", text="[turn] rec=1.2s")
+    dbg.emit("key", dev="/dev/input/event3", name="R", key="BTN_LEFT", code=272, value=1,
+             configured=False)
+    assert phone.empty()                           # a debug record never reaches a phone
+    status, head = stream_head(server, "/debug/events?token=s3cret-token", want=b"BTN_LEFT")
+    text = head.decode()
+    assert status == 200 and '"kind": "hello"' in text
+    assert "[turn] rec=1.2s" in text and "BTN_LEFT" in text and f"id: {dbg.boot}-2" in text
+    assert len(server._subscribers) == 1           # and takes none of the phones' places
+
+
+def test_page_events_are_copied_for_the_debug_page(server):
+    from fish_brain import debug
+    hub = debug.install(server.cfg)
+    try:
+        server.register_debug(hub)
+        server.push_transcript("hola", "user")
+        server.push_level(0.12)
+        assert hub.recent("page")[-1]["ev"] == {"type": "stt", "role": "user", "text": "hola"}
+        assert hub.recent("level")[-1]["rms"] == 0.12
+    finally:
+        debug.uninstall()
+
+
+def test_status_keys_are_unchanged_by_the_debug_view(server, dbg):
+    status, body = get(server.url + "/status")
+    assert set(json.loads(body)) == {"ok", "up_s", "host", "ip", "ready", "wait", "max_record_s",
+                                     "mic_capture", "tls", "listening", "mic_pages", "reading",
+                                     "reading_look"}

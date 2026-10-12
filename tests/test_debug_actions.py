@@ -1,0 +1,202 @@
+"""What the debug page may do, on the mock link with fakes: arming, the shape of a motor test,
+every refusal, STOP, restart. Nothing here can move a motor or start a voice."""
+import io
+import re
+import threading
+import time
+
+import pytest
+
+from fish_brain import debug, debug_actions
+from fish_brain.config import Config
+from fish_brain.debug_actions import DebugActions, build_lines, check_line
+from fish_brain.serial_link import MockSerialLink
+from fish_brain.viz import VizServer
+
+
+class Speaker:
+    def __init__(self):
+        self._lock = threading.Lock()
+
+
+class Player:
+    def __init__(self):
+        self.played = []
+
+    def play(self, path):
+        self.played.append(str(path))
+
+    def wait(self):
+        pass
+
+
+class Convo:
+    def __init__(self):
+        self.speaker, self.player, self.sources = Speaker(), Player(), []
+
+
+class Clock:
+    def __init__(self):
+        self.t = 100.0
+
+    def __call__(self):
+        return self.t
+
+
+@pytest.fixture
+def rig(tmp_path):
+    cfg = Config()
+    cfg.viz.host, cfg.viz.port = "127.0.0.1", 0
+    cfg.canned.cache_dir = tmp_path
+    hub = debug.DebugHub(cfg)
+    out = io.StringIO()
+    link = MockSerialLink(cfg.serial, stream=out)
+    viz = VizServer(cfg)                     # never started: only its inbox is used
+    convo, clock, terminated = Convo(), Clock(), []
+    act = DebugActions(cfg, link, convo, viz, hub, clock=clock, supervised=True,
+                       terminate=lambda: terminated.append(1), sleep=lambda s: False)
+    stop = threading.Event()
+
+    def loop():                              # stands in for the turn loop
+        while not stop.is_set():
+            item = viz.take_inbox()
+            if item is not None:
+                item.run_in_loop(convo)
+            time.sleep(0.005)
+    threading.Thread(target=loop, daemon=True).start()
+    viz.set_listening(True)
+
+    class Rig:
+        pass
+    r = Rig()
+    r.cfg, r.hub, r.link, r.viz, r.convo, r.clock, r.act, r.terminated = (
+        cfg, hub, link, viz, convo, clock, act, terminated)
+    r.sent = lambda: [l.strip().removeprefix("TX").strip() for l in out.getvalue().splitlines()
+                      if l.strip()]
+    yield r
+    stop.set()
+
+
+def test_motor_test_needs_arming_and_the_arm_runs_out(rig):
+    assert rig.act.motor("mouth") == (403, {"ok": False, "error": "not armed"})
+    assert rig.act.arm(True)[1]["armed_s"] == 60
+    assert rig.act.motor("mouth")[0] == 200
+    rig.clock.t += 61
+    assert rig.act.armed_s() == 0
+    assert rig.act.motor("mouth")[0] == 403
+
+
+def test_mouth_test_is_one_timed_pulse_then_the_close_pulse(rig):
+    rig.act.arm(True)
+    status, out = rig.act.motor("mouth")
+    assert status == 200 and out["result"] == "sent"
+    assert out["lines"] == ["MOUTH 238 104", "MOUTH -200 74"] == rig.sent()
+    assert not any(re.fullmatch(r"(MOUTH|NECK|TAIL) -?\d+", l) for l in rig.sent())   # never held
+
+
+def test_neck_and_tail_are_one_chain_each_from_the_configuration(rig):
+    rig.act.arm(True)
+    assert rig.act.motor("neck")[1]["lines"] == ["NECK 230 650 -200 560"]
+    assert rig.act.motor("tail")[1]["lines"] == ["TAIL 210 230 -210 210"]
+    assert rig.act.motor("fins")[0] == 400
+    assert rig.act.planned_lines()["mouth"] == ["MOUTH 238 104", "MOUTH -200 74"]
+
+
+@pytest.mark.parametrize("line", ["MOUTH 238", "NECK 230", "MOUTH 999 100", "MOUTH 238 99999",
+                                  "NECK 230 900 -200 900", "STOP", "MOUTH 1 2 3 4 5 6",
+                                  "MOUTH 238 0", "ARM 1 1", "MOUTH 238 104; STOP"])
+def test_a_line_that_is_not_a_short_timed_stroke_is_refused(line):
+    with pytest.raises(ValueError):
+        check_line(line)
+
+
+def test_a_hostile_configuration_never_reaches_the_link(rig):
+    rig.cfg.gesture.neck_out = "230"                 # would be a held drive
+    rig.cfg.mouth.open_curve = [(1.0, 99999)]
+    rig.act.arm(True)
+    assert rig.act.motor("neck")[0] == 400 and rig.act.motor("mouth")[0] == 400
+    assert rig.sent() == []
+    assert "error" in rig.act.planned_lines()["neck"]
+    with pytest.raises(ValueError):
+        build_lines(rig.cfg, "mouth")
+
+
+def test_motor_test_is_refused_while_speaking_busy_recording_or_without_a_link(rig, monkeypatch):
+    rig.act.arm(True)
+    with rig.convo.speaker._lock:                    # the fish is speaking
+        assert rig.act.motor("mouth")[1]["error"] == "speaking"
+    rig.convo.sources = [type("S", (), {"is_held": lambda self: True})()]
+    assert rig.act.motor("mouth")[1]["error"] == "recording"
+    rig.convo.sources = []
+    rig.viz.set_listening(False)                     # thinking: not waiting for input
+    assert rig.act.motor("mouth")[1]["error"] == "busy"
+    rig.viz.set_listening(True)
+    monkeypatch.setattr(type(rig.link), "attached", property(lambda self: False))
+    assert rig.act.motor("mouth")[1]["error"] == "link off"
+    assert rig.sent() == []
+
+
+def test_a_test_that_is_not_picked_up_at_once_is_never_run_late(rig):
+    item = debug_actions._Item(lambda convo: {"ok": True}, rig.clock() + 0.5, rig.clock)
+    rig.clock.t += 1.0
+    item.run_in_loop(rig.convo)
+    assert item.result == {"ok": False, "error": "expired"}
+
+
+def test_stop_works_unarmed_drops_the_arm_and_a_stopped_test_sends_only_stop(rig):
+    assert rig.act.stop()[0] == 200 and rig.sent() == ["STOP"]
+    rig.act.arm(True)
+    rig.act._wait = lambda s: True                   # STOP arrives during the pulse
+    out = rig.act.motor("mouth")[1]
+    assert out["result"] == "stopped" and out["lines"] == ["MOUTH 238 104"]
+    assert rig.sent()[-2:] == ["MOUTH 238 104", "STOP"]     # no close pulse after a STOP
+    rig.act.stop()
+    assert rig.act.armed_s() == 0
+
+
+def test_a_failing_link_still_ends_in_the_close_pulse_and_never_raises(rig):
+    rig.act.arm(True)
+    real, calls = rig.link.send, []
+
+    def flaky(line, **kw):
+        calls.append(line)
+        if len(calls) == 1:
+            raise OSError("port gone")
+        real(line, **kw)
+    rig.link.send = flaky
+    status, out = rig.act.motor("mouth")
+    assert status == 409 and out["error"] == "OSError"
+    assert calls == ["MOUTH 238 104", "MOUTH -200 74"]
+    assert not rig.convo.speaker._lock.locked()
+
+
+def test_ping_is_motor_safe(rig):
+    status, out = rig.act.ping()
+    assert status == 200 and out["result"] == "cannot tell"      # the mock cannot answer
+    assert rig.sent() == ["PING 1"]
+    with rig.convo.speaker._lock:
+        assert rig.act.ping()[0] == 409
+
+
+def test_speaker_test_plays_a_rendered_phrase_and_nothing_else(rig, tmp_path, monkeypatch):
+    from fish_brain import tts
+    monkeypatch.setattr(tts, "synthesize", lambda *a, **k: 1 / 0)    # must never be reached
+    assert rig.act.say("welcome") == (404, {"ok": False, "error": "not rendered"})
+    assert rig.act.say("nope")[0] == 400
+    (tmp_path / "welcome-12345678.wav").write_bytes(b"RIFF")
+    status, out = rig.act.say("welcome")
+    assert status == 200 and rig.convo.player.played == [str(tmp_path / "welcome-12345678.wav")]
+    assert rig.sent() == []                           # nothing to the motors
+
+
+def test_restart_needs_the_arm_the_word_and_a_service_and_signals_once(rig):
+    assert rig.act.restart("restart")[0] == 403
+    rig.act.arm(True)
+    assert rig.act.restart("yes")[0] == 400
+    rig.act._supervised = False
+    assert rig.act.restart("restart")[0] == 409
+    rig.act._supervised = True
+    assert rig.act.restart("restart")[0] == 200
+    assert rig.act.restart("restart")[0] in (403, 409)        # the arm dropped, and once only
+    time.sleep(0.1)
+    assert rig.terminated == [1]

@@ -106,6 +106,17 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError:
         pass                                            # not the main thread
 
+    # The debug hub (docs/debug.md), before anything else prints: the /debug page shows the
+    # start-up lines too. Never in the way: a fault here must not stop the fish from starting.
+    hub = None
+    if args.viz:
+        try:
+            from . import debug
+            hub = debug.install(cfg)
+            hub.args = args
+        except Exception as e:
+            print(f"[viz] no debug view: {type(e).__name__}", file=sys.stderr)
+
     from . import cloud
     from .config import STT_PROFILES
     cloud.configure(cfg.cloud)
@@ -219,6 +230,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.viz:
         from .viz import CertificateError, VizServer
         viz = VizServer(cfg)
+        if hub is not None:
+            viz.register_debug(hub)
+            hub.attach(viz=viz)
         try:
             viz.start()
         except CertificateError as e:   # a set-up error: a restart would not fix it
@@ -264,6 +278,14 @@ def main(argv: list[str] | None = None) -> int:
                 from . import reading
                 viz.register_reader(                  # a badge photo from the console (/badge)
                     lambda data, look: reading.read_badge(data, cfg, want_look=look))
+                if hub is not None:
+                    try:
+                        from .debug_actions import DebugActions
+                        hub.attach(link=link, convo=convo,
+                                   actions=DebugActions(cfg, link, convo, viz, hub))
+                    except Exception as e:
+                        print(f"[viz] debug view without actions: {type(e).__name__}",
+                              file=sys.stderr)
             stt = "-" if args.text else cfg.stt.backend
             llm = "echo" if args.echo else f"{cfg.llm.profile}:{cfg.llm.model}"
             if viz is not None:
@@ -283,6 +305,12 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         if viz is not None:
             viz.stop()
+        if hub is not None:
+            try:
+                from . import debug
+                debug.uninstall()
+            except Exception:
+                pass
     return 0
 
 
