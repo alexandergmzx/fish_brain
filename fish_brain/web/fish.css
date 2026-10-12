@@ -648,6 +648,7 @@ html.ops-warn .warn {
 html:not(.console) .warn { display: none; }
 html.console #opsCorner { display: none; }     /* five taps: only on the visitor display */
 html.kiosk #opsCorner { position: fixed; top: 0; right: 0; width: 12vmin; height: 12vmin; z-index: 5; }
+html.kiosk:not(.console) .corner { pointer-events: none; }   /* decoration there: the taps reach #opsCorner */
 
 /* ---- the operator's sheet (html.ops-open) ---------------------------------------------------- */
 html.kiosk .controls { display: none; }
@@ -739,7 +740,13 @@ html.console .controls .c-hide { display: none; }
     .bubble-reply { align-self: flex-start; transform-origin: 10% 0; }
     .bubble-reply::before { left: 12%; }
 }
-@media (max-height: 600px) { .prop { display: none; } }
+/* a short phone: fewer lines, a smaller fish, so both bubbles still fit above the sign */
+@media (max-height: 600px) {
+    .prop { display: none; }
+    .bubble-reply span, .bubble-reply[data-len="l"] span { -webkit-line-clamp: 3; }
+    html.kiosk .say { padding-top: 13px; gap: 6px; }
+    html.kiosk .stage-wrap { width: min(86vw, calc(var(--vh) * 40), 420px); }
+}
 
 /* /?lite=1: every loop stops (the switch if the phone runs hot); states and pops stay. */
 html.lite .hang, html.lite .alga, html.lite .burbuja, html.lite .talk-loop,

@@ -593,7 +593,7 @@
       el.textContent = text;
       const b = el.closest(".bubble") || el;
       b.classList.toggle("has-text", !!text);
-      b.classList.toggle("miss", text.startsWith("…"));
+      b.classList.toggle("miss", el === heard && text.startsWith("…"));   // only what was heard can be a refusal
       b.dataset.len = text.length <= 28 ? "s" : text.length <= 110 ? "m" : "l";
       b.classList.remove("pop");
       if (text) { void b.offsetWidth; b.classList.add("pop"); }   // restart the pop
@@ -838,9 +838,11 @@
       if (!CONSOLE) return;
       // The target shows only once /status has said whether it is a sign or a button; the
       // mark by the shell tells the operator to open the sheet (the words are in there).
-      root.classList.add("st");
       root.classList.toggle("ops-warn", !st || (st.link || {}).health !== "ok"
                                         || st.online === false || !!st.wait);
+      // No answer yet and the form unknown: a sign, which nobody can press by mistake.
+      if (!st && !root.classList.contains("st")) setForm(true);
+      root.classList.add("st");
       if (!st) {
         strip.link.textContent = "sin respuesta del cerebro";
         strip.link.className = "bad";
@@ -862,13 +864,14 @@
       strip.ear.className = st.listening ? "ear" : "";
       // A remote on the board is the trigger: the target becomes a status pill that cannot be
       // pressed (?talk=1 keeps the hold target for a device without the remote).
-      const remote = /evdev/.test(b.ptt || "") && PARAMS.get("talk") !== "1";
-      if (remote !== root.classList.contains("notalk")) {
-        root.classList.toggle("notalk", remote);
-        HINT.ready = remote ? READY.remote : READY.talk;
-        if (state === "ready") label.textContent = HINT.ready;
-      }
+      setForm(/evdev/.test(b.ptt || "") && PARAMS.get("talk") !== "1");
       reader.status(st);
+    }
+    function setForm(remote) {
+      if (remote === root.classList.contains("notalk")) return;
+      root.classList.toggle("notalk", remote);
+      HINT.ready = remote ? READY.remote : READY.talk;
+      if (state === "ready") label.textContent = HINT.ready;
     }
     async function refreshStatus() {
       try {
@@ -899,7 +902,8 @@
       clearTimeout(opsTimer);
       opsTimer = setTimeout(() => {
         const a = document.activeElement;
-        if (reader.busy() || (a && sheet.contains(a) && typingTag(a) && a.value)) opsArm();
+        const typing = a && sheet.contains(a) && a.matches('textarea, input[type="text"]') && a.value;
+        if (reader.busy() || typing) opsArm();
         else ops(false);
       }, 45000);
     }
@@ -1009,7 +1013,10 @@
           lastLevel = performance.now();
           if (CONSOLE) strip.ear.textContent = "escuchando";
           // Level events flow only while the host records: a press on the page or the remote.
-          if (pttDown || remoteHold || root.classList.contains("notalk") || !fingers.size) {
+          // The phone's microphone keeps sending levels through the tail after a release:
+          // the hold is over then, and "thinking" stays.
+          const tail = mic && mic.holding() && !pttDown && !remoteHold;
+          if (!tail && (pttDown || remoteHold || root.classList.contains("notalk") || !fingers.size)) {
             show("listening");
             setLevel(Math.min(1, ev.rms * 12), !!(mic && mic.holding()));
           }
