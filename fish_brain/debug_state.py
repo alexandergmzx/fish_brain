@@ -250,6 +250,27 @@ def _mode(hub) -> dict:
             "restarting": bool(getattr(actions, "restarting", False))}
 
 
+def _model(hub) -> dict:
+    """What the models are given, as it stands now. The history is read from the client when
+    one exists (never through the property that would build it): what visitors said."""
+    cfg, convo = hub.cfg, hub.convo
+    llm = getattr(convo, "_llm", None) if convo is not None else None
+    return {"echo": bool(getattr(convo, "echo", False)),
+            "profile": cfg.llm.profile, "model": cfg.llm.model,
+            "prompt": cfg.llm.system_prompt, "reading_rules": cfg.reading.rules,
+            "rules_active": bool(getattr(llm, "extra_rules", "")),
+            "history": [dict(m) for m in list(getattr(llm, "_history", ()))],
+            "history_max": cfg.llm.max_history_turns * 2,
+            "stt_prompt": cfg.stt.prompt, "stt_keywords": list(cfg.stt.keywords or ()),
+            "tts_instructions": cfg.tts.openai_instructions if cfg.tts.backend == "openai" else "",
+            "badge_prompt": cfg.reading.badge_prompt}
+
+
+def _checks(st: dict, hub) -> list:
+    from . import debug_checks
+    return debug_checks.run(st, hub)
+
+
 def _flags(hub) -> dict:
     a = hub.args
     names = ("dry_run", "text", "echo", "no_audio", "viz")
@@ -276,6 +297,11 @@ def build(hub) -> dict:
     st["token"] = bool(cfg.viz.token)
     if hub.actions is not None:
         st["motor_lines"] = _section(hub.actions.planned_lines)
+    st["model"] = _section(lambda: _model(hub))
+    st["checks"] = _section(lambda: _checks(st, hub))
+    if isinstance(st["checks"], list):
+        from . import debug_checks
+        st["checks_summary"] = debug_checks.summary(st["checks"])
     st["hints"] = _section(lambda: hints(st, hub))
     return st
 
@@ -360,6 +386,10 @@ def hints(st: dict, hub) -> list[dict]:
         if len(turns) >= 3 and all(t.get("outcome") == "not understood" for t in turns[-3:]):
             add("warn", "inputs", "Three turns in a row were not understood although the "
                 "microphone had signal.", "listen to the last recording; check the language")
+    for r in st.get("checks") if isinstance(st.get("checks"), list) else []:
+        if r["status"] == "fail" and r["group"] in ("Speaker", "Microphone") \
+                and r["name"] != "The last recording has signal":
+            add("bad", "checks", f"{r['group']}: {r['name']} — {r['detail']}.", r["fix"])
     svc = st.get("system") or {}
     if svc.get("usb_role") and "[host]" not in svc["usb_role"]:
         add("bad", "board", "The board is a USB device, not a host: nothing on the hub is seen.",
