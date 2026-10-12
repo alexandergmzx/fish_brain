@@ -602,3 +602,48 @@ def test_listen_event_follows_set_listening(server):
 def test_rec_js_is_served(server):
     status, body = get(server.url + "/rec.js")
     assert status == 200 and b"fish-rec" in body
+
+
+# --- pages with a microphone (/micstate) and the relayed remote -----------------------
+def test_micstate_needs_the_token(server):
+    assert post(server.url + "/micstate", {"ready": True, "page": "p1"})[0] == 403
+
+
+def test_micstate_counts_ready_pages_and_forgets_them(server):
+    assert server.mic_pages() == 0
+    assert post(server.url + "/micstate", {"ready": True, "page": "p1"}, AUTH) == (200, {"ok": True})
+    assert post(server.url + "/micstate", {"ready": True, "page": "p2"}, AUTH) == (200, {"ok": True})
+    assert post(server.url + "/micstate", {"ready": True, "page": "p1"}, AUTH)[0] == 200   # keep-alive
+    assert server.mic_pages() == 2
+    assert json.loads(get(server.url + "/status")[1])["mic_pages"] == 2
+    assert post(server.url + "/micstate", {"ready": False, "page": "p2"}, AUTH) == (200, {"ok": True})
+    assert server.mic_pages() == 1
+    assert post(server.url + "/micstate", {"ready": False, "page": "nobody"}, AUTH)[0] == 200
+    assert server.mic_pages() == 1
+
+
+def test_micstate_without_a_page_is_400(server):
+    assert post(server.url + "/micstate", {"ready": True}, AUTH)[0] == 400
+
+
+def test_mic_pages_expire(server, monkeypatch):
+    server.set_mic_state("p1", True)
+    assert server.mic_pages() == 1
+    monkeypatch.setattr(VizServer, "MIC_PAGE_TTL_S", 0.05)
+    time.sleep(0.1)
+    assert server.mic_pages() == 0
+    assert json.loads(get(server.url + "/status")[1])["mic_pages"] == 0
+
+
+def test_relay_ptt_publishes_sourced_events(server):
+    q = server._subscribe()
+    server.relay_ptt(True)
+    server.relay_ptt(False)
+    server.reset_ptt()                             # the page's own press, ended by the host
+    events = []
+    while not q.empty():
+        events.append(json.loads(q.get_nowait()))
+    assert events == [{"type": "ptt", "held": True, "source": "remote"},
+                      {"type": "ptt", "held": False, "source": "remote"},
+                      {"type": "ptt", "held": False}]
+    server._unsubscribe(q)

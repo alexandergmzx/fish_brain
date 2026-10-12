@@ -20,7 +20,9 @@ its static files, `/status` and `/mics` stay open. The stream sends `retry: 2000
 `set_listening`) carries input items from the page to the turn loop instead of a recording:
 a badge reading (`POST /badge`, `/reading`) or, with `FISH_MIC_CAPTURE=browser`, a WAV the
 page recorded with the phone's microphone (`POST /utterance`). A `{"type": "listen"}` event
-tells the page whether a press will count.
+tells the page whether a press will count. A page whose microphone is ready says so with
+`POST /micstate` (`mic_pages()` counts them, with a keep-alive and an expiry), and the turn
+loop can then relay a remote's press to it (`relay_ptt`: a `ptt` event with `"source"`).
 
 With `FISH_VIZ_TLS_CERT` and `FISH_VIZ_TLS_KEY` a second listener serves the same page over
 HTTPS on `FISH_VIZ_TLS_PORT` (a phone's microphone needs a secure context); the plain one
@@ -69,6 +71,9 @@ class VizServer:
     MAX_JSON_BYTES = 64 * 1024
     # Largest uploaded recording (16 kHz 16-bit mono: 32 kB per second, 16 s is 512 kB).
     MAX_WAV_BYTES = 1024 * 1024
+    # A page that said its microphone is ready and was not heard from for this long is
+    # forgotten (the page keeps alive every 20 s; a dead phone sends nothing).
+    MIC_PAGE_TTL_S = 45.0
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -94,6 +99,7 @@ class VizServer:
         # badge reading, an uploaded recording). Small on purpose: an item is one turn.
         self._inbox: queue.Queue = queue.Queue(maxsize=2)
         self._listening = False               # the turn loop is waiting for input
+        self._mic_pages: dict[str, float] = {}   # page id -> when it last said "ready"
 
     # --- lifecycle ---
     def start(self) -> None:
@@ -157,7 +163,7 @@ class VizServer:
                "ready": self._speaker is not None, "wait": self._wait,
                "max_record_s": float(self.cfg.ptt.max_record_s),
                "mic_capture": self.cfg.ptt.capture, "tls": self._tls_httpd is not None,
-               "listening": self._listening,
+               "listening": self._listening, "mic_pages": self.mic_pages(),
                "reading": self._reader is not None, "reading_look": bool(self.cfg.reading.look)}
         provider = self._status_provider
         if provider is not None:
@@ -218,6 +224,34 @@ class VizServer:
             return self._inbox.get_nowait()
         except queue.Empty:
             return None
+
+    # --- pages with a microphone, and the relayed remote ---
+    def set_mic_state(self, page, ready) -> dict:
+        """`POST /micstate {"page": id, "ready": bool}`: the page's microphone is armed (sent
+        after the gate, then every 20 s) or gone (hidden, closed)."""
+        key = str(page or "").strip()[:64]
+        if not key:
+            raise ValueError("page expected")
+        with self._lock:
+            if ready:
+                self._mic_pages[key] = time.monotonic()
+            else:
+                self._mic_pages.pop(key, None)
+        return {"ok": True}
+
+    def mic_pages(self) -> int:
+        """How many pages have a microphone ready right now (expired entries dropped)."""
+        now = time.monotonic()
+        with self._lock:
+            for key, seen in list(self._mic_pages.items()):
+                if now - seen > self.MIC_PAGE_TTL_S:
+                    del self._mic_pages[key]
+            return len(self._mic_pages)
+
+    def relay_ptt(self, held: bool) -> None:
+        """A remote's press or release, handed to the page so it records with the phone's
+        microphone. Sourced, unlike `reset_ptt`'s event (which ends a page's own press)."""
+        self._publish(json.dumps({"type": "ptt", "held": bool(held), "source": "remote"}))
 
     # --- pub/sub ---
     def _subscribe(self) -> queue.Queue:
@@ -657,7 +691,8 @@ def _make_handler(server: "VizServer"):
 
         def do_POST(self):  # noqa: N802
             path, _, query = self.path.partition("?")
-            if path in ("/mic", "/ptt", "/speak", "/wait", "/badge", "/reading", "/utterance"):
+            if path in ("/mic", "/ptt", "/speak", "/wait", "/badge", "/reading", "/utterance",
+                        "/micstate"):
                 if not self._authorized(query):
                     self._send_json({"ok": False, "error": "bad token"}, status=403)
                     return
@@ -676,6 +711,8 @@ def _make_handler(server: "VizServer"):
                         self._send_json(server.set_mic(body.get("device")))
                     elif path == "/ptt":
                         self._send_json(server.set_ptt(body.get("down")))
+                    elif path == "/micstate":
+                        self._send_json(server.set_mic_state(body.get("page"), body.get("ready")))
                     elif path == "/speak":
                         self._send_json(server.speak_text(body.get("text")))
                     elif path == "/reading":
