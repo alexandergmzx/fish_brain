@@ -246,6 +246,11 @@ def record_hold(cfg: PTTConfig,
 _cut_last = False   # the previous recording hit max_record_s; wait for a release first
 
 
+def last_recording_was_cut() -> bool:
+    """True when the last recording ended at `max_record_s` with the button still held."""
+    return _cut_last
+
+
 def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
                  on_level: Callable[[float], None] | None = None,
                  inbox: Callable[[], object] | None = None,

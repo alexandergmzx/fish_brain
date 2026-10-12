@@ -2,6 +2,7 @@
 hardware, no network, no audio)."""
 from __future__ import annotations
 
+import numpy as np
 import io
 
 import pytest
@@ -267,3 +268,29 @@ def test_ptt_summary_says_the_remote_goes_to_the_page(remote):
     assert convo.ptt_summary() == "web+evdev(1 device, KEY_VOICECOMMAND, hold)"
     convo.cfg.ptt.capture = "browser"
     assert convo.ptt_summary() == "web+browser-mic+evdev(1 device, KEY_VOICECOMMAND, hold)→page"
+
+
+def test_a_cut_recording_tells_the_llm(monkeypatch, tmp_path, capsys):
+    """At the hold limit with the button still held the LLM is told the visitor kept talking."""
+    import wave
+    from fish_brain import ptt
+    from fish_brain.config import Config
+    from fish_brain.conversation import FishConversation
+    from fish_brain.serial_link import MockSerialLink
+
+    wav = tmp_path / "cut.wav"
+    with wave.open(str(wav), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
+        w.writeframes((np.full(16000, 8000, dtype="<i2")).tobytes())
+    cfg = Config()
+    cfg.canned.enabled = False
+    convo = FishConversation(cfg, MockSerialLink(cfg.serial), play_audio=False, echo=False)
+    monkeypatch.setattr(ptt, "record_hold", lambda *a, **k: wav)
+    monkeypatch.setattr(ptt, "last_recording_was_cut", lambda: True)
+    convo._stt = type("S", (), {"transcribe": lambda self, p: "y entonces le dije que"})()
+    asked = []
+    convo._llm = type("L", (), {"reply": lambda self, t: asked.append(t) or "ok", "last_error": None})()
+    monkeypatch.setattr(convo.speaker, "speak", lambda text, **k: True)
+    assert convo.turn() is True
+    assert asked and "seguía hablando" in asked[0] and asked[0].startswith("y entonces le dije que")
+    assert "cut=15.0s" in capsys.readouterr().out

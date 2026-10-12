@@ -249,9 +249,18 @@ class FishConversation:
                 return self._handle_item(wav)
             # The hold itself, not the wait for a press (the wait can be minutes long).
             times["rec"] = ptt.wav_duration_s(wav)
+            cut = ptt.last_recording_was_cut()
             t0 = time.monotonic()
             user = self._transcribe(wav)
             times["stt"] = time.monotonic() - t0
+            if cut and user:
+                # The visitor was still talking at the limit: the fish must know it heard a
+                # beginning, not a whole sentence (the echo repeats the words as they are).
+                times["cut"] = self.cfg.ptt.max_record_s
+                if not self.echo:
+                    user += (f" [Nota: la grabación se cortó a los {self.cfg.ptt.max_record_s:.0f} "
+                             "segundos y el visitante seguía hablando; dilo con gracia y pídele "
+                             "la versión corta.]")
         return self._finish_turn(user, times)
 
     def _finish_turn(self, user: str, times: dict[str, float]) -> bool:
