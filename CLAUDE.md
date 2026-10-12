@@ -399,8 +399,9 @@ Machine and tool facts only, each dated.
 - **Without linger the user manager, and PipeWire with it, stops 10 s after the last ssh
   logout**; after it starts, the USB speaker is the default output only 3 s later.
 - **The XING WEI remote's voice key is a fixed 0.12 s tap**, however long it is held (2026-10-12):
-  `FISH_PTT_MODE=toggle`, one press starts and the next stops. Its microphone records through
-  PipeWire at 16 kHz with no trouble.
+  `FISH_PTT_MODE=toggle`. **Its microphone streams only while the key is physically held** and
+  delivers exact zeros after release, so `FISH_PTT_DEAD_S=0.5` ends the recording by itself:
+  press, talk, release.
 - **The kiosk browser is the whole cost of the display** (2026-10-11): with it closed the board
   idles at under 2 % CPU, Xorg at 0.4 %, and the hottest zone drops from 68 C to 48 C in four
   minutes; the LightDM session and the supervisor are below the noise.
