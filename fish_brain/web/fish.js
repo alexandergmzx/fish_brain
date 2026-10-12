@@ -84,6 +84,10 @@
     return h;
   }
   let pttDown = false;
+  // The phone's microphone (FISH_MIC_CAPTURE=browser): defined further down; while it is
+  // armed a hold records here and uploads, and never POSTs /ptt.
+  let mic = null;
+  const micGate = document.getElementById("micGate");
   // Leaving the page while holding (phone locks, tab switch) must still release: a normal
   // fetch can be cancelled as the page hides, a beacon is not.
   function releasePttNow() {
@@ -91,6 +95,7 @@
     if (!pttDown) return;
     pttDown = false;
     pttButton.classList.remove("recording");
+    if (mic && mic.holding()) { mic.abort(); return; }   // a clip cut by the lock screen is dropped
     const url = "/ptt" + tokenQuery();         // a beacon carries no header: the query form
     const body = new Blob([JSON.stringify({ down: false })], { type: "application/json" });
     if (!(navigator.sendBeacon && navigator.sendBeacon(url, body))) {
@@ -119,6 +124,12 @@
     if (down === pttDown) return;              // edges only (keydown auto-repeats)
     pttDown = down;
     pttButton.classList.toggle("recording", down);
+    // The phone's microphone, when it is armed and its track is alive; otherwise the host
+    // records (the fallback is per device: a dead track shows the gate again).
+    if (mic && (down ? mic.ready() : mic.holding())) {
+      if (down) mic.begin(); else mic.end();
+      return;
+    }
     fetch("/ptt", {
       method: "POST",
       headers: jsonHeaders(),
@@ -519,8 +530,11 @@
   // target shows "listening" only while level events arrive (they flow only while the host
   // records), "thinking" from the release to the reply, "speaking" for the length of the
   // reply. All of it comes from events the page already receives.
+  // Whether the host is waiting for input (the `listen` event, `/status.listening`).
+  // True until told otherwise: a page that missed the event still gets a 409 to learn from.
+  let hostListening = true;
   const kiosk = (() => {
-    if (!KIOSK) return { conn() {}, event() {} };
+    if (!KIOSK) return { conn() {}, event() {}, micResult() {} };
     const root = document.documentElement;
     const HINT = {
       ready: "Mantén para hablar",
@@ -579,6 +593,9 @@
       if (!online || performance.now() < speakUntil || state === "thinking" || state === "reading") {
         nudge(); return;
       }
+      // With the phone's microphone the upload would be refused while the host is not
+      // listening (409): say so with the finger still down instead of after the clip.
+      if (mic && mic.ready() && !hostListening) { nudge(); return; }
       pressedAt = performance.now();
       lastLevel = 0;
       setPtt(false);                            // clears a "host ended the last press" latch
@@ -589,8 +606,13 @@
       if (!fingers.delete(e.pointerId) || fingers.size) return;
       if (!pttDown) { settle(); return; }
       const held = performance.now() - pressedAt;
+      const local = mic && mic.holding();       // the clip is here: its upload decides
       setPtt(false);
-      if (lastLevel && held > 350) {
+      if (local) {
+        show("thinking");                        // the tail, the upload, then the result
+        clearTimeout(thinkTimer);
+        thinkTimer = setTimeout(settle, 45000);
+      } else if (lastLevel && held > 350) {
         show("thinking");
         clearTimeout(thinkTimer);
         thinkTimer = setTimeout(settle, 45000);  // a turn that never answers must not stick
@@ -755,8 +777,10 @@
       strip.net.className = st.online ? "good" : "bad";
       const b = st.backends || {};
       const cap = st.mic_capture === "browser" ? "mic del teléfono" : "mic del tablero";
-      strip.mic.textContent = cap + (b.ptt ? " · " + b.ptt : "") + (st.wait ? " · espera activada" : "");
-      strip.mic.className = "";
+      const local = mic && mic.ready() ? " · este teléfono" : "";
+      const anomaly = mic && mic.anomaly ? " · mic rate anomaly" : "";
+      strip.mic.textContent = cap + local + (b.ptt ? " · " + b.ptt : "") + (st.wait ? " · espera activada" : "") + anomaly;
+      strip.mic.className = anomaly ? "bad" : "";
       strip.ear.textContent = st.listening ? "escuchando" : "";
       strip.ear.className = st.listening ? "ear" : "";
       reader.status(st);
@@ -775,6 +799,8 @@
           `stt ${b.stt || "?"}  llm ${b.llm || "?"}  tts ${b.tts || "?"}\nptt ${b.ptt || "?"}` +
           `${st.mic_capture ? "  mic " + st.mic_capture : ""}` +
           `${st.max_record_s ? "  max " + st.max_record_s + "s" : ""}`;
+        hostListening = st.listening !== false;
+        if (mic) mic.status(st);
         paintStrip(st);
       } catch (_) {
         opsStatus.textContent = "sin respuesta del pez (fish-brain)";
@@ -794,6 +820,7 @@
       // Muted and without bubbles: the phone shows, the fish speaks.
       toggleAudio.checked = false;
       toggleBubbles.checked = false;
+      strip.mic.parentElement.appendChild(micGate);   // the gate lives on the strip here
       refreshStatus();
       setInterval(refreshStatus, 3000);
       document.getElementById("consoleGear").addEventListener("click", (e) => {
@@ -812,6 +839,19 @@
     show("offline");
     return {
       conn(live) { online = live; if (!pttDown) settle(); },
+      // What became of a clip recorded on this phone: "sent" (the host took it: thinking
+      // goes on), "busy" (409), "short" or "quiet" (dropped here), "offline" (no answer).
+      micResult(r) {
+        if (r === "sent") return;
+        clearTimeout(thinkTimer);
+        if (r === "offline") {
+          show("offline", "Sin conexión con el pez…");
+          setTimeout(() => { if (!pttDown) settle(); }, 2500);
+          return;
+        }
+        nudge();
+        settle();
+      },
       event(ev) {
         if (ev.type === "level") {
           lastLevel = performance.now();
@@ -848,6 +888,266 @@
         }
       },
     };
+  })();
+
+  // ---- the phone's microphone (FISH_MIC_CAPTURE=browser) -----------------
+  // The page records instead of the host: one tap on the gate grants the microphone (a
+  // click, because a touch pointerdown grants no user activation), an AudioWorklet
+  // (/rec.js) hands Float32 chunks over, a 300 ms ring keeps the first syllable, and a
+  // hold collects, downsamples to 16 kHz, wraps a WAV and POSTs /utterance. Without a
+  // secure context, with the microphone denied or with ?mic=host the gate reads
+  // "micrófono del pez" and every hold takes the /ptt path as before. ?mic=browser forces
+  // the gate even when /status says host (the laptop on localhost is a secure context).
+  mic = (() => {
+    const MIC_PARAM = PARAMS.get("mic");
+    const CAN = window.isSecureContext && !!navigator.mediaDevices
+                && !!navigator.mediaDevices.getUserMedia && MIC_PARAM !== "host";
+    const TARGET_RATE = 16000, RING_MS = 300, TAIL_MS = 250, MIN_HOLD_MS = 350;
+    const QUIET_RMS = 0.003;                      // peak chunk RMS under this: nothing said
+    let maxRecordS = 15;
+    let stream = null, actx = null, node = null, source = null, sink = null;
+    let wanted = false;                           // /status (or ?mic=browser) asks for it
+    let ring = [], ringLen = 0;                   // recent chunks while idle
+    let clip = null, clipLen = 0;                 // chunks of the hold
+    let holdAt = 0, holdTimer = null, tailTimer = null, holding = false;
+    let peak = 0, samples = 0, rateCheckAt = 0, rateChecked = false;
+    let lastEmit = 0, lvl = { value: 0, vel: 0, k: 90, d: 11 }, lvlAt = 0;
+    let wakeLock = null;
+    const api = { anomaly: false };
+
+    function gate(text, cls) {
+      micGate.hidden = !wanted;
+      micGate.textContent = text;
+      micGate.className = cls || "";
+    }
+    function trackAlive() {
+      if (!stream) return false;
+      const t = stream.getAudioTracks()[0];
+      return !!t && t.readyState === "live" && !t.muted;
+    }
+    // Armed and alive. A track that ended or went mute (another app took the microphone,
+    // the phone slept) shows the gate again and this hold goes to the host.
+    api.ready = () => {
+      if (!wanted || !actx) return false;
+      if (trackAlive()) return true;
+      drop("micrófono perdido · toca para activarlo");
+      return false;
+    };
+    api.holding = () => holding;
+
+    async function keepAwake() {
+      try {
+        if (navigator.wakeLock && !wakeLock) {
+          wakeLock = await navigator.wakeLock.request("screen");
+          wakeLock.addEventListener("release", () => { wakeLock = null; });
+        }
+      } catch (_) { /* a phone that refuses: the screen may sleep */ }
+    }
+
+    // One chunk from the worklet (or the fallback node): the ring, the clip, the level.
+    function onChunk(data) {
+      if (!data || !data.length) return;
+      samples += data.length;
+      if (holding) {
+        clip.push(data); clipLen += data.length;
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+        const rms = Math.sqrt(sum / data.length);
+        if (rms > peak) peak = rms;
+        const now = performance.now();
+        if (now - lastEmit >= 40) {               // about 25 a second, like the host
+          lastEmit = now;
+          // A spring, slightly under-damped, so the ring swells and relaxes instead of
+          // jumping with every chunk.
+          const dt = Math.min(0.1, (now - lvlAt) / 1000) || 0.04;
+          lvlAt = now;
+          const target = Math.min(1, rms * 12);
+          const f = -lvl.k * (lvl.value - target) - lvl.d * lvl.vel;
+          lvl.vel += f * dt; lvl.value += lvl.vel * dt;
+          if (lvl.value < 0) { lvl.value = 0; lvl.vel = 0; }
+          if (lvl.value > 1) { lvl.value = 1; lvl.vel = 0; }
+          pushMicLevel(rms); wakeDraw();
+          kiosk.event({ type: "level", rms: lvl.value / 12 });
+        }
+      } else {
+        ring.push(data); ringLen += data.length;
+        const keep = actx ? actx.sampleRate * RING_MS / 1000 : 48000 * 0.3;
+        while (ring.length > 1 && ringLen - ring[0].length > keep) ringLen -= ring.shift().length;
+      }
+    }
+
+    async function attachWorklet() {
+      await actx.audioWorklet.addModule("/rec.js");
+      node = new AudioWorkletNode(actx, "fish-rec", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      node.port.onmessage = (e) => onChunk(e.data);
+      source.connect(node).connect(sink);
+    }
+    let plainNode = false;                        // true once on the ScriptProcessor path
+    function attachScriptProcessor() {            // the fallback when the worklet starves
+      plainNode = true;
+      node = actx.createScriptProcessor(4096, 1, 1);
+      node.onaudioprocess = (e) => onChunk(new Float32Array(e.inputBuffer.getChannelData(0)));
+      source.connect(node).connect(sink);
+    }
+
+    async function arm() {
+      gate("Pidiendo el micrófono…", "busy");
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        actx = new (window.AudioContext || window.webkitAudioContext)();   // no sampleRate option
+        if (actx.state === "suspended") { try { await actx.resume(); } catch (_) {} }
+        source = actx.createMediaStreamSource(stream);
+        sink = actx.createGain();
+        sink.gain.value = 0;                      // the graph must reach the destination
+        sink.connect(actx.destination);
+        try { await attachWorklet(); } catch (_) { attachScriptProcessor(); api.anomaly = true; }
+        stream.getAudioTracks()[0].addEventListener("ended", () => drop("micrófono perdido · toca para activarlo"));
+        ring = []; ringLen = 0; rateChecked = false;
+        keepAwake();
+        micGate.hidden = true;
+        pttButton.classList.add("local-mic");
+      } catch (e) {
+        release();
+        gate("micrófono del pez" + (e && e.name === "NotAllowedError" ? " (permiso negado)" : ""), "off");
+      }
+    }
+    function release() {
+      if (stream) { for (const t of stream.getTracks()) { try { t.stop(); } catch (_) {} } }
+      if (actx) { try { actx.close(); } catch (_) {} }
+      stream = actx = node = source = sink = null;
+      ring = []; ringLen = 0; plainNode = false;
+      pttButton.classList.remove("local-mic");
+    }
+    function drop(text) {                         // back to the gate; holds go to /ptt
+      if (holding) api.abort();
+      release();
+      gate(text || "Activar micrófono");
+    }
+
+    api.begin = () => {
+      if (!actx) return;
+      if (actx.state === "suspended") actx.resume().catch(() => {});
+      clearTimeout(tailTimer);
+      clip = ring.slice(); clipLen = ringLen;     // the ring first: the first syllable
+      ring = []; ringLen = 0;
+      peak = 0; holding = true; holdAt = performance.now(); lastEmit = 0;
+      lvl.value = 0; lvl.vel = 0; lvlAt = holdAt;
+      if (!rateChecked) { samples = 0; rateCheckAt = holdAt; }
+      // A hold longer than the host's limit ends itself, as a host recording does.
+      holdTimer = setTimeout(() => {
+        if (!holding) return;
+        hostReleasedPtt();
+        if (KIOSK) kiosk.event({ type: "ptt", held: false });
+        finish();
+      }, maxRecordS * 1000);
+    };
+    api.end = () => { finish(); };
+    api.abort = () => {
+      clearTimeout(holdTimer); clearTimeout(tailTimer);
+      holding = false; clip = null; clipLen = 0;
+    };
+
+    function checkRate() {
+      if (rateChecked || !actx) return;
+      const elapsed = (performance.now() - rateCheckAt) / 1000;
+      if (elapsed < 1) return;                    // too short to judge: next hold
+      rateChecked = true;
+      const got = samples / elapsed;
+      if (got < 0.9 * actx.sampleRate && node && !plainNode) {
+        try { source.disconnect(); node.disconnect(); } catch (_) {}
+        attachScriptProcessor();
+        api.anomaly = true;
+        console.warn("mic rate anomaly:", Math.round(got), "of", actx.sampleRate);
+      }
+    }
+
+    function finish() {
+      if (!holding) return;
+      clearTimeout(holdTimer);
+      if (actx && actx.state === "suspended") actx.resume().catch(() => {});
+      const heldMs = Math.round(performance.now() - holdAt);
+      // Keep collecting a little longer: the last word is still in the pipeline.
+      tailTimer = setTimeout(() => {
+        holding = false;
+        checkRate();
+        const chunks = clip || [], total = clipLen;
+        clip = null; clipLen = 0;
+        if (heldMs < MIN_HOLD_MS) { setTranscript("user", "… (muy corto)"); kiosk.micResult("short"); return; }
+        if (peak < QUIET_RMS) { setTranscript("user", "… (silencio, ¿micrófono?)"); kiosk.micResult("quiet"); return; }
+        upload(toWav(chunks, total, actx ? actx.sampleRate : 48000), heldMs);
+      }, TAIL_MS);
+    }
+
+    // Float32 chunks at the context's rate -> one Int16 WAV at 16 kHz (linear interpolation:
+    // 44.1 and 48 kHz both land on 16 kHz without a filter stage the phone would not run).
+    function toWav(chunks, total, rate) {
+      const all = new Float32Array(total);
+      let off = 0;
+      for (const c of chunks) { all.set(c, off); off += c.length; }
+      const ratio = rate / TARGET_RATE;
+      const n = Math.max(1, Math.floor(total / ratio));
+      const pcm = new Int16Array(n);
+      for (let i = 0; i < n; i++) {
+        const pos = i * ratio, j = Math.floor(pos), frac = pos - j;
+        const a = all[j] || 0, b = all[j + 1 < total ? j + 1 : j] || 0;
+        let v = a + (b - a) * frac;
+        if (v > 1) v = 1; else if (v < -1) v = -1;
+        pcm[i] = v < 0 ? v * 32768 : v * 32767;
+      }
+      const bytes = pcm.length * 2;
+      const buf = new ArrayBuffer(44 + bytes);
+      const dv = new DataView(buf);
+      const str = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+      str(0, "RIFF"); dv.setUint32(4, 36 + bytes, true); str(8, "WAVE");
+      str(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+      dv.setUint32(24, TARGET_RATE, true); dv.setUint32(28, TARGET_RATE * 2, true);
+      dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+      str(36, "data"); dv.setUint32(40, bytes, true);
+      new Int16Array(buf, 44).set(pcm);
+      return new Blob([buf], { type: "audio/wav" });
+    }
+
+    async function upload(blob, heldMs) {
+      const h = { "Content-Type": "audio/wav", "X-Fish-Hold-Ms": String(heldMs) };
+      if (TOKEN) h["X-Fish-Token"] = TOKEN;
+      try {
+        const r = await fetch("/utterance", { method: "POST", headers: h, body: blob });   // not a beacon: 64 KiB cap
+        if (r.ok) { kiosk.micResult("sent"); return; }
+        if (r.status === 409) { setTranscript("user", "… (el pez está ocupado)"); kiosk.micResult("busy"); return; }
+        setTranscript("user", "… (grabación rechazada " + r.status + ")");
+        kiosk.micResult("busy");
+      } catch (_) {
+        setTranscript("user", "… (sin conexión con el pez)");
+        kiosk.micResult("offline");
+      }
+    }
+
+    // The gate: a click (a tap counts), never a pointerdown.
+    micGate.addEventListener("click", (e) => { e.preventDefault(); if (!actx && CAN) arm(); });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        if (actx) drop("Activar micrófono");       // the lock screen: the clip is dropped
+      } else {
+        keepAwake();
+      }
+    });
+    pttButton.addEventListener("pointerup", () => { if (actx && actx.state === "suspended") actx.resume().catch(() => {}); });
+
+    // Whether this page should record: /status says so (or ?mic=browser forces it).
+    api.status = (st) => {
+      if (st && st.max_record_s) maxRecordS = Number(st.max_record_s) || maxRecordS;
+      const ask = (st && st.mic_capture === "browser") || MIC_PARAM === "browser";
+      if (!ask || wanted) return;
+      wanted = true;
+      if (!CAN) gate("micrófono del pez" + (MIC_PARAM === "host" ? " (?mic=host)" : window.isSecureContext ? "" : " (sin https)"), "off");
+      else gate("🎙️ Activar micrófono");
+    };
+    (async () => {
+      try { api.status(await (await fetch("/status", { cache: "no-store" })).json()); } catch (_) {}
+    })();
+    return api;
   })();
 
   // ---- transport ---------------------------------------------------------
@@ -893,6 +1193,7 @@
       else if (ev.type === "stt") setTranscript(ev.role, ev.text);
       else if (ev.type === "ptt" && !ev.held) hostReleasedPtt();
       else if (ev.type === "draft") { speakText.value = ev.text || ""; speakText.focus(); }
+      else if (ev.type === "listen") hostListening = !!ev.ready;
       if (KIOSK) kiosk.event(ev);
     };
   }
