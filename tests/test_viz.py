@@ -508,3 +508,97 @@ def test_no_environment_means_plain_http_only(monkeypatch):
         assert status == 200 and json.loads(body)["tls"] is False
     finally:
         srv.stop()
+
+
+# --- the phone's microphone: /utterance and the listen event ----------------------------
+import glob
+import io
+import os
+import tempfile
+
+
+def wav_bytes(seconds=0.5, rate=16000, channels=1):
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(channels)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"\x10\x00" * int(seconds * rate) * channels)
+    return buf.getvalue()
+
+
+def post_utt(server, body, headers=None, ctype="audio/wav"):
+    return post_raw(server.url + "/utterance", body, {"Content-Type": ctype, **(headers or {})})
+
+
+def pending_uploads():
+    return set(glob.glob(os.path.join(tempfile.gettempdir(), "fish_in_*.wav")))
+
+
+def test_utterance_needs_the_token(server):
+    assert post_utt(server, wav_bytes())[0] == 403
+
+
+def test_utterance_over_the_cap_is_413(server):
+    conn = http.client.HTTPConnection("127.0.0.1", server._httpd.server_address[1], timeout=3)
+    conn.putrequest("POST", "/utterance?token=s3cret-token")
+    conn.putheader("Content-Type", "audio/wav")
+    conn.putheader("Content-Length", str(VizServer.MAX_WAV_BYTES + 1))
+    conn.endheaders()
+    resp = conn.getresponse()
+    assert resp.status == 413
+    conn.close()
+
+
+def test_utterance_rejects_what_is_not_a_short_mono_wav(server):
+    server.set_listening(True)
+    before = pending_uploads()
+    assert post_utt(server, b"RIFF" + b"\x00" * 60, headers=AUTH) == (400, {"ok": False, "error": "not a WAV"})
+    assert post_utt(server, wav_bytes(), headers=AUTH, ctype="application/octet-stream")[0] == 400
+    assert post_utt(server, wav_bytes(channels=2), headers=AUTH) == (400, {"ok": False, "error": "mono expected"})
+    # 40 s at 8 kHz is 640 kB: under the byte cap, over the recording limit.
+    assert post_utt(server, wav_bytes(seconds=40, rate=8000), headers=AUTH) == (400, {"ok": False, "error": "too long"})
+    assert post_utt(server, wav_bytes(rate=4000), headers=AUTH)[0] == 400
+    assert server.take_inbox() is None
+    assert pending_uploads() == before
+
+
+def test_utterance_while_not_listening_is_busy_and_leaves_no_file(server):
+    before = pending_uploads()
+    assert post_utt(server, wav_bytes(), headers=AUTH) == (409, {"ok": False, "busy": True})
+    assert pending_uploads() == before
+
+
+def test_utterance_lands_in_the_inbox(server, capsys):
+    from fish_brain.ptt import wav_duration_s
+    from fish_brain.reading import Utterance
+    server.set_listening(True)
+    before = pending_uploads()
+    status, out = post_utt(server, wav_bytes(0.5), headers={**AUTH, "X-Fish-Hold-Ms": "1200"})
+    assert (status, out) == (200, {"ok": True})
+    item = server.take_inbox()
+    assert isinstance(item, Utterance)
+    assert item.path.exists() and item.path.name.startswith("fish_in_")
+    assert item.path.suffix == ".wav" and str(item.path) in pending_uploads() - before
+    assert wav_duration_s(item.path) == 0.5
+    assert item.hold_s == 1.2 and 0.0 <= item.upload_s < 2.0
+    line = capsys.readouterr().out
+    assert "[utt] 16000 Hz 0.5 s" in line and "upload=" in line
+    item.path.unlink()
+
+
+def test_listen_event_follows_set_listening(server):
+    q = server._subscribe()
+    server.set_listening(True)
+    server.set_listening(True)                     # no change: no second event
+    server.set_listening(False)
+    events = []
+    while not q.empty():
+        events.append(json.loads(q.get_nowait()))
+    assert events == [{"type": "listen", "ready": True}, {"type": "listen", "ready": False}]
+    server._unsubscribe(q)
+
+
+def test_rec_js_is_served(server):
+    status, body = get(server.url + "/rec.js")
+    assert status == 200 and b"fish-rec" in body

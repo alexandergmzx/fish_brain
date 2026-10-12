@@ -17,7 +17,10 @@ Best-effort by design: a slow/absent browser never blocks the conductor (full qu
 With a token set (`FISH_VIZ_TOKEN`), `/events`, `/audio/*` and every POST need it; the page,
 its static files, `/status` and `/mics` stay open. The stream sends `retry: 2000` first and a
 `{"type": "hb"}` event after `HEARTBEAT_S` of silence. The inbox (`offer`, `take_inbox`,
-`set_listening`) carries input items from the page to the turn loop instead of a recording.
+`set_listening`) carries input items from the page to the turn loop instead of a recording:
+a badge reading (`POST /badge`, `/reading`) or, with `FISH_MIC_CAPTURE=browser`, a WAV the
+page recorded with the phone's microphone (`POST /utterance`). A `{"type": "listen"}` event
+tells the page whether a press will count.
 
 With `FISH_VIZ_TLS_CERT` and `FISH_VIZ_TLS_KEY` a second listener serves the same page over
 HTTPS on `FISH_VIZ_TLS_PORT` (a phone's microphone needs a secure context); the plain one
@@ -25,13 +28,17 @@ stays. The TLS handshake runs in the worker thread, never in the accept loop.
 """
 from __future__ import annotations
 
+import io
 import ipaddress
 import json
+import os
 import queue
 import socket
 import ssl
+import tempfile
 import threading
 import time
+import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -60,6 +67,8 @@ class VizServer:
     MAX_SUBSCRIBERS = 8
     # Largest JSON body a POST may carry.
     MAX_JSON_BYTES = 64 * 1024
+    # Largest uploaded recording (16 kHz 16-bit mono: 32 kB per second, 16 s is 512 kB).
+    MAX_WAV_BYTES = 1024 * 1024
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -147,7 +156,7 @@ class VizServer:
                "host": socket.gethostname(), "ip": _lan_ip(),
                "ready": self._speaker is not None, "wait": self._wait,
                "max_record_s": float(self.cfg.ptt.max_record_s),
-               "mic_capture": "host", "tls": self._tls_httpd is not None,
+               "mic_capture": self.cfg.ptt.capture, "tls": self._tls_httpd is not None,
                "listening": self._listening,
                "reading": self._reader is not None, "reading_look": bool(self.cfg.reading.look)}
         provider = self._status_provider
@@ -185,8 +194,13 @@ class VizServer:
         return self._listening
 
     def set_listening(self, flag: bool) -> None:
-        """The turn loop says whether it is waiting for input (so an item can be offered)."""
-        self._listening = bool(flag)
+        """The turn loop says whether it is waiting for input (so an item can be offered).
+        A change is published as a `listen` event, so the page knows a press will count."""
+        flag = bool(flag)
+        if flag == self._listening:
+            return
+        self._listening = flag
+        self._publish(json.dumps({"type": "listen", "ready": flag}))
 
     def offer(self, item) -> bool:
         """Hand an item to the turn loop. False when it is not listening or already has one."""
@@ -363,6 +377,44 @@ class VizServer:
         if not self.offer(item):
             return 409, {"ok": False, "busy": True}
         return 200, {"ok": True, "name": clean}
+
+    # --- the phone's microphone: an uploaded recording becomes an input item ---
+    def take_utterance(self, data: bytes, hold_s: float, upload_s: float) -> tuple[int, dict]:
+        """`POST /utterance`: check the WAV (mono, 16-bit, 8 to 48 kHz, no longer than the
+        recording limit), write it as `ptt._record_until` does and offer an `Utterance` to
+        the turn loop. Returns (status, body). The audio is never logged."""
+        from .reading import Utterance
+        try:
+            with wave.open(io.BytesIO(data), "rb") as w:
+                channels, width, rate, frames = (w.getnchannels(), w.getsampwidth(),
+                                                 w.getframerate(), w.getnframes())
+        except (wave.Error, EOFError, ValueError, OSError):
+            return 400, {"ok": False, "error": "not a WAV"}
+        if channels != 1:
+            return 400, {"ok": False, "error": "mono expected"}
+        if width != 2:
+            return 400, {"ok": False, "error": "16-bit expected"}
+        if not 8000 <= rate <= 48000:
+            return 400, {"ok": False, "error": "rate 8000 to 48000 Hz expected"}
+        duration = frames / float(rate)
+        if duration > self.cfg.ptt.max_record_s + 1.0:
+            return 400, {"ok": False, "error": "too long"}
+        fd, name = tempfile.mkstemp(suffix=".wav", prefix="fish_in_")
+        path = Path(name)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+        except OSError as e:
+            path.unlink(missing_ok=True)
+            return 500, {"ok": False, "error": type(e).__name__}
+        print(f"[utt] {rate} Hz {duration:.1f} s {len(data)} B upload={upload_s:.2f}s",
+              flush=True)
+        item = Utterance(path=path, hold_s=max(0.0, float(hold_s)),
+                         upload_s=max(0.0, float(upload_s)))
+        if not self.offer(item):
+            path.unlink(missing_ok=True)
+            return 409, {"ok": False, "busy": True}
+        return 200, {"ok": True}
 
     # --- mic device selection ---
     def list_mics(self) -> dict:
@@ -583,7 +635,7 @@ def _make_handler(server: "VizServer"):
             path, _, query = self.path.partition("?")
             if path == "/" or path == "/index.html":
                 self._serve_file("index.html")
-            elif path in ("/fish.js", "/fish.css"):
+            elif path in ("/fish.js", "/fish.css", "/rec.js"):
                 self._serve_file(path.lstrip("/"))
             elif path.startswith("/img/"):
                 self._serve_img(path[len("/img/"):])
@@ -605,12 +657,15 @@ def _make_handler(server: "VizServer"):
 
         def do_POST(self):  # noqa: N802
             path, _, query = self.path.partition("?")
-            if path in ("/mic", "/ptt", "/speak", "/wait", "/badge", "/reading"):
+            if path in ("/mic", "/ptt", "/speak", "/wait", "/badge", "/reading", "/utterance"):
                 if not self._authorized(query):
                     self._send_json({"ok": False, "error": "bad token"}, status=403)
                     return
                 if path == "/badge":
                     self._post_badge()
+                    return
+                if path == "/utterance":
+                    self._post_utterance()
                     return
                 raw = self._read_body(server.MAX_JSON_BYTES)
                 if raw is None:
@@ -652,6 +707,30 @@ def _make_handler(server: "VizServer"):
             except Exception as e:     # the reader must never take the handler down
                 print(f"[reading] failed: {type(e).__name__}", flush=True)
                 server._say_canned(server.cfg.canned.reading_fail)
+                status, out = 500, {"ok": False, "error": type(e).__name__}
+            finally:
+                del data
+            self._send_json(out, status=status)
+
+        def _post_utterance(self):
+            """A recording from the page's microphone (audio/wav). Never logged."""
+            ctype = (self.headers.get("Content-Type") or "").lower()
+            if not ctype.startswith("audio/wav"):
+                self._send_json({"ok": False, "error": "audio/wav expected"}, status=400)
+                return
+            t0 = time.monotonic()
+            data = self._read_body(server.MAX_WAV_BYTES)
+            if data is None:
+                return
+            upload_s = time.monotonic() - t0
+            try:
+                hold_s = int(self.headers.get("X-Fish-Hold-Ms") or 0) / 1000.0
+            except ValueError:
+                hold_s = 0.0
+            try:
+                status, out = server.take_utterance(data, hold_s, upload_s)
+            except Exception as e:     # never take the handler down
+                print(f"[utt] failed: {type(e).__name__}", flush=True)
                 status, out = 500, {"ok": False, "error": type(e).__name__}
             finally:
                 del data
