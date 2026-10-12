@@ -11,7 +11,7 @@ import pytest
 
 from fish_brain import viz as viz_mod
 from fish_brain.config import Config
-from fish_brain.viz import VizServer, _is_loopback
+from fish_brain.viz import CertificateError, VizServer, _is_loopback
 
 
 @pytest.fixture
@@ -307,9 +307,26 @@ def test_a_wrong_certificate_path_is_an_oserror(tmp_path):
     cfg.viz.host, cfg.viz.port, cfg.viz.tls_port = "127.0.0.1", 0, 0
     cfg.viz.tls_cert, cfg.viz.tls_key = str(tmp_path / "no.crt"), str(tmp_path / "no.key")
     srv = VizServer(cfg)
-    with pytest.raises(OSError):
+    with pytest.raises(CertificateError):     # an OSError: app.py maps it to exit 78
         srv.start()
     srv.stop()
+
+
+def test_a_busy_port_is_not_a_certificate_error():
+    """A busy port is transient (a quick restart): the unit must retry, not stop at 78."""
+    holder = socket.socket()
+    holder.bind(("127.0.0.1", 0))
+    holder.listen(1)
+    try:
+        cfg = Config()
+        cfg.viz.host, cfg.viz.port = "127.0.0.1", holder.getsockname()[1]
+        srv = VizServer(cfg)
+        with pytest.raises(OSError) as info:
+            srv.start()
+        assert not isinstance(info.value, CertificateError)
+        srv.stop()
+    finally:
+        holder.close()
 
 
 def test_no_environment_means_plain_http_only(monkeypatch):

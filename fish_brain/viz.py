@@ -44,6 +44,10 @@ _CONTENT_TYPES = {".html": "text/html", ".js": "text/javascript", ".css": "text/
                   ".png": "image/png"}
 
 
+class CertificateError(OSError):
+    """FISH_VIZ_TLS_CERT / FISH_VIZ_TLS_KEY name something that cannot be loaded."""
+
+
 class VizServer:
     # Replay the most recent speak event to a browser that connects within this window, so the
     # startup greeting (played before any browser subscribes) still animates the on-screen fish.
@@ -84,15 +88,19 @@ class VizServer:
     # --- lifecycle ---
     def start(self) -> None:
         """Bind the plain listener and, with a certificate configured, the HTTPS one.
-        A certificate that cannot be loaded raises OSError (ssl.SSLError is one): a set-up
-        error for app.py, not something a restart fixes."""
+        A certificate that cannot be loaded raises CertificateError: a set-up error for
+        app.py, not something a restart fixes. A port that is busy raises a plain OSError,
+        which a restart does fix."""
         handler = _make_handler(self)
         host, port = self.cfg.viz.host, self.cfg.viz.port
         cert, key = self.cfg.viz.tls_cert, self.cfg.viz.tls_key
         if cert and key:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-            ctx.load_cert_chain(cert, key)
+            try:
+                ctx.load_cert_chain(cert, key)
+            except (ssl.SSLError, OSError) as e:    # ssl.SSLError is an OSError too
+                raise CertificateError(f"{cert}, {key}: {e}") from e
             self._tls_httpd = _TLSServer((host, self.cfg.viz.tls_port), handler, ctx)
             self._tls_thread = threading.Thread(target=self._tls_httpd.serve_forever,
                                                 daemon=True)
