@@ -536,3 +536,29 @@ def test_the_thread_survives_an_unexpected_error(capsys):
         assert wait_for(b.is_held)
     finally:
         b.close()
+
+
+def test_several_keys_are_one_button():
+    """A remote in mouse mode sends BTN_LEFT for the button that was KEY_ENTER."""
+    assert eb.resolve_keys("KEY_ENTER, BTN_LEFT,KEY_ENTER") == (28, 272)
+    assert eb.resolve_keys(272) == (272,)
+    with pytest.raises(ValueError):
+        eb.resolve_keys(" , ")
+    keys = FakeDev("/dev/input/event2", "ACME Remote", keys=(28,))
+    mouse = FakeDev("/dev/input/event3", "ACME Remote Mouse", keys=(272,))
+    b = make({keys.path: keys, mouse.path: mouse}, evdev_device="name:acme",
+             evdev_key="KEY_ENTER,BTN_LEFT")
+    try:
+        assert wait_for(lambda: b.device_count == 2)
+        assert b.describe() == "evdev(2 devices, KEY_ENTER+BTN_LEFT, hold)"
+        b.arm(True)
+        mouse.feed(1, 272)
+        assert wait_for(b.is_held)
+        mouse.feed(0, 272)
+        assert wait_for(lambda: not b.is_held())
+        keys.feed(1, 28)
+        assert wait_for(b.is_held)
+        keys.feed(0, 28)
+        assert wait_for(lambda: not b.is_held())
+    finally:
+        b.close()

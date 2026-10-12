@@ -100,7 +100,7 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_SERIAL_REQUIRED` | `true` | `false`: keep talking when the motor link can't open, and keep retrying it |
 | `FISH_ROUTER_RELEASE`, `FISH_ROUTER_SOCKET` | `true`, `/var/run/arduino-router.sock` | UNO Q: ask the router to release `/dev/ttyHS*` before opening it |
 | `FISH_PTT_DEVICE` | off | Push-to-talk from an input device: a `/dev/input/...` path, `name:<part of its name>`, or `auto` |
-| `FISH_PTT_KEY`, `FISH_PTT_MODE` | `KEY_VOICECOMMAND`, `hold` | Which key; `hold` to talk or `toggle` (press to start, press to stop) |
+| `FISH_PTT_KEY`, `FISH_PTT_MODE` | `KEY_VOICECOMMAND`, `hold` | Which key, or several separated by commas (any of them is the button: `KEY_ENTER,BTN_LEFT` for a remote that sends a left click in its mouse mode); `hold` to talk or `toggle` (press to start, press to stop) |
 | `FISH_PTT_MAX_S` | `15` | Longest recording (45 on the board); at the limit the clip is still answered and the LLM is told the visitor was still talking |
 | `FISH_PTT_DEAD_S` | `0` | End a recording once the microphone stream has delivered only digital zeros for this many seconds after sound (a remote whose microphone streams only while its key is held) |
 | `FISH_PTT_PAUSE_S`, `FISH_PTT_QUIET_RMS` | `0`, `0.04` | End a recording after this long a pause once speech (chunks above the RMS) was heard: tap, talk, stop talking |

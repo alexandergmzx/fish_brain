@@ -7,7 +7,8 @@ a background thread and answers one question for the recorder: `is_held()`.
 - The device (`PTTConfig.evdev_device`) is a `/dev/input/...` path, `name:<substring>` or
   `auto` (every readable node that advertises the key). It may be absent at startup or
   unplugged later; the thread keeps looking for it once a second.
-- The key (`PTTConfig.evdev_key`) is a `KEY_*`/`BTN_*` name or a number.
+- The key (`PTTConfig.evdev_key`) is a `KEY_*`/`BTN_*` name or a number, or several separated
+  by commas: any of them is the button.
 - `hold` mode: held while the key is down. `toggle` mode: one press starts, the next stops
   (for remotes that only send a short tap).
 
@@ -170,6 +171,22 @@ def resolve_key(spec: str | int) -> int:
     raise ValueError(f"unknown key {spec!r}: use a KEY_* name or a number (see --watch)")
 
 
+def resolve_keys(spec: str | int) -> tuple[int, ...]:
+    """Key codes for one key or several separated by commas ('KEY_ENTER,BTN_LEFT'): any of
+    them is the button. A remote that changes mode sends another code for the same button."""
+    if isinstance(spec, int):
+        return (spec,)
+    codes: list[int] = []
+    for part in str(spec).split(","):
+        if part.strip():
+            code = resolve_key(part)
+            if code not in codes:
+                codes.append(code)
+    if not codes:
+        raise ValueError(f"no key in {spec!r}: use a KEY_* name or a number (see --watch)")
+    return tuple(codes)
+
+
 def key_name(code: int) -> str:
     """'KEY_VOICECOMMAND' for 582; the number as text if the kernel table has no name."""
     ecodes = _evdev().ecodes
@@ -189,8 +206,9 @@ def list_nodes() -> list[str]:
     return sorted(glob.glob("/dev/input/event*"), key=_node_number)
 
 
-def _has_key(dev, code: int) -> bool:
-    return code in dev.capabilities().get(EV_KEY, [])
+def _has_key(dev, codes) -> bool:
+    have = dev.capabilities().get(EV_KEY, [])
+    return any(c in have for c in codes)
 
 
 def _user() -> str:
@@ -219,8 +237,8 @@ class EvdevButton:
         self._spec = (cfg.evdev_device or "auto").strip()
         self._grab = bool(cfg.grab)
         self._state = ButtonState(cfg.mode)
-        self._code = resolve_key(cfg.evdev_key)
-        self._key = key_name(self._code)
+        self._codes = resolve_keys(cfg.evdev_key)
+        self._key = "+".join(key_name(c) for c in self._codes)
         low = self._spec.lower()
         self._name_sub = self._spec[5:].strip().lower() if low.startswith("name:") else None
         self._auto = low == "auto"
@@ -334,7 +352,7 @@ class EvdevButton:
     def _read(self, dev) -> None:
         try:
             for ev in dev.read():
-                if ev.type == EV_KEY and ev.code == self._code:
+                if ev.type == EV_KEY and ev.code in self._codes:
                     self._state.on_event(ev.value, time.monotonic())
         except BlockingIOError:
             pass
@@ -345,7 +363,7 @@ class EvdevButton:
         active = False
         for dev in list(self._devs.values()):
             try:
-                if self._code in dev.active_keys():
+                if any(c in self._codes for c in dev.active_keys()):
                     active = True
             except OSError as e:
                 self._drop(dev, e)
@@ -378,7 +396,7 @@ class EvdevButton:
             self._say_once(f"read:{dev.path}", f"cannot read {dev.path} ({e}); retrying")
             return False
         try:
-            if self._code in dev.active_keys():
+            if any(c in self._codes for c in dev.active_keys()):
                 self._state.reset()           # already down at open: wait for a fresh press
         except OSError:
             pass
@@ -414,7 +432,7 @@ class EvdevButton:
             self._say_once("oserror", f"cannot open {path} ({e}); retrying")
             return
         try:
-            if not _has_key(dev, self._code):
+            if not _has_key(dev, self._codes):
                 self._say_once("nokey", f"{path} '{dev.name}' does not advertise {self._key}; "
                                         "check FISH_PTT_KEY with --watch")
         except OSError:
@@ -445,7 +463,7 @@ class EvdevButton:
                 if self._name_sub is not None:
                     wanted = self._name_sub in (dev.name or "").lower()
                 else:
-                    wanted = _has_key(dev, self._code)
+                    wanted = _has_key(dev, self._codes)
             except OSError:
                 _close_quietly(dev)
                 continue
