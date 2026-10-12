@@ -735,7 +735,7 @@ cmd_tls() {
 
     step "On the phone (Chrome), once per device, again after 7 days"
     local ip_hint="${ips[0]:-<board ip>}"
-    say "  1. Open  https://$ip_hint:$tls_port/?console=1&token=<FISH_VIZ_TOKEN>"
+    say "  1. Open  https://$ip_hint:$tls_port/?console=1   (add &token=<FISH_VIZ_TOKEN> only if one is set)"
     say "  2. 'Your connection is not private' -> Advanced -> Proceed to $ip_hint (unsafe)."
     say "     Chrome remembers it for 7 days: accept it again on fair morning."
     say "  3. 'Activar micrófono' -> Allow."
