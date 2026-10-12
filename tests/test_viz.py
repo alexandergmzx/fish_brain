@@ -660,7 +660,7 @@ def dbg(server):
 
 
 def test_debug_page_is_served_and_its_data_needs_the_token(server, dbg):
-    for path in ("/debug", "/debug.js", "/debug.css"):
+    for path in ("/debug", "/debug/", "/debug.html", "/debug.js", "/debug.css"):
         assert get(server.url + path)[0] == 200, path
     assert get(server.url + "/debug/state")[0] == 403
     status, body = get(server.url + "/debug/state?token=s3cret-token")

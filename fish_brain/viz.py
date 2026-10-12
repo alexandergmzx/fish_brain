@@ -679,7 +679,7 @@ def _make_handler(server: "VizServer"):
                 self._serve_file("index.html")
             elif path in ("/fish.js", "/fish.css", "/rec.js", "/debug.js", "/debug.css"):
                 self._serve_file(path.lstrip("/"))
-            elif path == "/debug":
+            elif path in ("/debug", "/debug/", "/debug.html"):
                 self._serve_file("debug.html")
             elif path.startswith("/debug/"):
                 self._get_debug(path, query)
