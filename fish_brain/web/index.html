@@ -25,6 +25,17 @@
             </div>
             <p class="c-heard"><span class="t-tag">🗣️</span> <span id="cHeard">…</span></p>
             <p class="c-reply"><span class="t-tag">🐟</span> <span id="cReply">…</span></p>
+            <!-- The reading: a badge photo, or a typed name, becomes "¿Tú eres X?". -->
+            <div class="c-read" id="cRead">
+                <button id="badgeBtn" type="button">📷 Foto del gafete</button>
+                <button id="galleryBtn" type="button">🖼️ Galería</button>
+                <label id="lookWrap" hidden><input type="checkbox" id="lookTick"> Describir su look (con permiso)</label>
+                <input type="text" id="readName" placeholder="Nombre" autocomplete="off" autocapitalize="words" enterkeyhint="go">
+                <button id="readBtn" type="button">🔮 Leer el futuro</button>
+                <span id="readMsg" role="status" aria-live="polite"></span>
+                <input type="file" id="badgeCam" accept="image/jpeg,image/*" capture="environment" hidden>
+                <input type="file" id="badgeFile" accept="image/jpeg,image/*" hidden>
+            </div>
             <button id="consoleGear" type="button" aria-label="Ajustes" title="Ajustes">⚙</button>
         </div>
 

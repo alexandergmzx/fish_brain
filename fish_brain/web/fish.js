@@ -528,6 +528,7 @@
       waiting: "Un momento…",
       thinking: "Pensando…",
       speaking: "Estoy hablando…",
+      reading: "Leyendo tu gafete…",
       offline: "Vuelvo enseguida…",
     };
     const label = document.createElement("span");
@@ -549,11 +550,12 @@
 
     let online = false, state = "", pressedAt = 0, lastLevel = 0, speakUntil = 0;
     let thinkTimer = null;
-    function show(next) {
-      if (next === state) return;
-      state = next;
-      for (const k of Object.keys(HINT)) root.classList.toggle("k-" + k, k === next);
-      label.textContent = HINT[next];
+    function show(next, text) {
+      if (next !== state) {
+        state = next;
+        for (const k of Object.keys(HINT)) root.classList.toggle("k-" + k, k === next);
+      }
+      label.textContent = text || HINT[next];
     }
     function settle() {                         // the state when nothing else is going on
       if (!online) return show("offline");
@@ -574,7 +576,9 @@
       fingers.add(e.pointerId);
       try { pttButton.setPointerCapture(e.pointerId); } catch (_) {}
       if (fingers.size > 1) return;
-      if (!online || performance.now() < speakUntil || state === "thinking") { nudge(); return; }
+      if (!online || performance.now() < speakUntil || state === "thinking" || state === "reading") {
+        nudge(); return;
+      }
       pressedAt = performance.now();
       lastLevel = 0;
       setPtt(false);                            // clears a "host ended the last press" latch
@@ -619,6 +623,123 @@
       mic: document.getElementById("cMic"), ear: document.getElementById("cListen"),
     };
     const LINK_WORD = { ok: "pez conectado", silent: "pez callado", off: "sin pez" };
+
+    // The reading (console only): a badge photo, downscaled here to a 1024 px JPEG and
+    // posted to /badge, or a typed name posted to /reading. The host says the rest.
+    const reader = (() => {
+      if (!CONSOLE) return { status() {}, done() {} };
+      const el = (id) => document.getElementById(id);
+      const cam = el("badgeCam"), file = el("badgeFile"), lookWrap = el("lookWrap"),
+            lookTick = el("lookTick"), name = el("readName"), msg = el("readMsg"),
+            badgeBtn = el("badgeBtn"), galleryBtn = el("galleryBtn"), readBtn = el("readBtn");
+      const LONG_EDGE = 1024;
+      let busy = false;
+      function say(text, cls) { msg.textContent = text || ""; msg.className = cls || ""; }
+      function headers(extra) {
+        const h = Object.assign({}, extra || {});
+        if (TOKEN) h["X-Fish-Token"] = TOKEN;
+        return h;
+      }
+      function setBusy(on) {
+        busy = on;
+        for (const b of [badgeBtn, galleryBtn, readBtn]) b.disabled = on;
+      }
+      // One decode. createImageBitmap honours the EXIF orientation and resizes on the
+      // GPU; an older browser that rejects the options gets an Image and a canvas.
+      async function toJpeg(f) {
+        let w, h, source, bitmap = null, resized = null;
+        try {
+          bitmap = await createImageBitmap(f, { imageOrientation: "from-image" });
+          const s = Math.min(1, LONG_EDGE / Math.max(bitmap.width, bitmap.height));
+          w = Math.max(1, Math.round(bitmap.width * s)); h = Math.max(1, Math.round(bitmap.height * s));
+          resized = s < 1 ? await createImageBitmap(bitmap, { resizeWidth: w, resizeHeight: h, resizeQuality: "high" }) : bitmap;
+          source = resized;
+        } catch (_) {
+          source = await new Promise((ok, no) => {
+            const img = new Image();
+            img.onload = () => ok(img);
+            img.onerror = () => no(new Error("decode"));
+            img.src = URL.createObjectURL(f);
+          });
+          const s = Math.min(1, LONG_EDGE / Math.max(source.naturalWidth, source.naturalHeight));
+          w = Math.max(1, Math.round(source.naturalWidth * s)); h = Math.max(1, Math.round(source.naturalHeight * s));
+        }
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        const g = c.getContext("2d");
+        g.imageSmoothingQuality = "high";
+        g.drawImage(source, 0, 0, w, h);
+        if (resized && resized !== bitmap) resized.close();
+        if (bitmap) bitmap.close();
+        if (source instanceof HTMLImageElement) URL.revokeObjectURL(source.src);
+        return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error("jpeg"))), "image/jpeg", 0.8));
+      }
+      async function sendBadge(f) {
+        if (!f || busy) return;
+        setBusy(true);
+        say("Leyendo el gafete…", "busy");
+        show("reading");
+        try {
+          const blob = await toJpeg(f);
+          const h = headers({ "Content-Type": "image/jpeg" });
+          if (lookTick.checked && !lookWrap.hidden) h["X-Fish-Look"] = "1";
+          const r = await fetch("/badge", { method: "POST", headers: h, body: blob });
+          let out = {};
+          try { out = await r.json(); } catch (_) {}
+          if (r.status === 409) { say("El pez está ocupado", "bad"); settle(); }
+          else if (r.status === 503 && out.error === "offline") { say("Sin internet para leer el gafete", "bad"); settle(); }
+          else if (r.status === 503 && out.error === "no reader") { say("El pez no tiene lector de gafetes", "bad"); settle(); }
+          else if (r.status === 503) { say("El lector no está configurado", "bad"); settle(); }
+          else if (!r.ok) { say("No se pudo leer: escribe el nombre", "bad"); settle(); }
+          else if (out.found) {
+            name.value = out.name || "";
+            const conf = { high: "segura", medium: "más o menos", low: "dudosa" }[out.confidence] || out.confidence;
+            say(`Lectura ${conf} · el pez pregunta`, out.confidence || "medium");
+          } else { say("No se pudo leer: escribe el nombre", "bad"); settle(); name.focus(); }
+        } catch (e) {
+          say("No se pudo enviar la foto", "bad");
+          settle();
+        } finally {
+          lookTick.checked = false;                // consent is per visitor
+          cam.value = ""; file.value = "";
+          setBusy(false);
+        }
+      }
+      async function sendName() {
+        const n = name.value.trim();
+        if (!n || busy) { name.focus(); return; }
+        setBusy(true);
+        say("Mandando el nombre…", "busy");
+        try {
+          const r = await fetch("/reading", { method: "POST", headers: headers({ "Content-Type": "application/json" }),
+                                               body: JSON.stringify({ name: n }) });
+          if (r.status === 409) say("El pez está ocupado", "bad");
+          else if (r.status === 400) say("Escribe un nombre", "bad");
+          else if (!r.ok) say("No se pudo mandar el nombre", "bad");
+          else { say("El pez lee el futuro…", "busy"); show("thinking"); name.value = ""; }
+        } catch (_) {
+          say("No se pudo mandar el nombre", "bad");
+        } finally {
+          lookTick.checked = false;
+          setBusy(false);
+        }
+      }
+      badgeBtn.addEventListener("click", () => cam.click());
+      galleryBtn.addEventListener("click", () => file.click());
+      cam.addEventListener("change", () => sendBadge(cam.files[0]));
+      file.addEventListener("change", () => sendBadge(file.files[0]));
+      readBtn.addEventListener("click", sendName);
+      name.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sendName(); } });
+      return {
+        status(st) {
+          lookWrap.hidden = !st.reading_look;
+          if (st.reading === false) { badgeBtn.disabled = true; galleryBtn.disabled = true; badgeBtn.title = "sin lector"; }
+          else if (!busy) { badgeBtn.disabled = false; galleryBtn.disabled = false; badgeBtn.title = ""; }
+        },
+        done() { if (msg.classList.contains("busy")) say(""); },
+      };
+    })();
+
     function paintStrip(st) {
       if (!CONSOLE) return;
       if (!st) {
@@ -638,6 +759,7 @@
       strip.mic.className = "";
       strip.ear.textContent = st.listening ? "escuchando" : "";
       strip.ear.className = st.listening ? "ear" : "";
+      reader.status(st);
     }
     async function refreshStatus() {
       try {
@@ -715,6 +837,14 @@
           speakUntil = performance.now() + left + 300;
           show("speaking");
           setTimeout(() => { if (!pttDown) settle(); }, left + 350);
+        } else if (ev.type === "reading") {
+          // The host took a reading: "ask" means the fish is about to ask the name,
+          // "speaking" that the future is on its way (the speak event follows either).
+          clearTimeout(thinkTimer);
+          reader.done();
+          if (ev.stage === "ask") show("reading", "¿Tú eres…?");
+          else show("thinking");
+          thinkTimer = setTimeout(settle, 45000);
         }
       },
     };

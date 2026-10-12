@@ -291,6 +291,11 @@ html.kiosk.k-speaking #pttButton {
     opacity: 0.8;
     animation: kSpeak 0.62s cubic-bezier(0.34, 1.56, 0.64, 1) infinite alternate;
 }
+/* The reading: the fish is reading a badge or asking a name. A slow sway, transform only. */
+html.kiosk.k-reading #pttButton {
+    background: #6b46c1;
+    animation: kRead 2.6s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
 html.kiosk.k-offline #pttButton { background: #4a5568; opacity: 0.7; animation-duration: 6s; }
 html.kiosk #pttButton.k-nudge { animation: kNudge 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) 1; }
 @keyframes kBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035) translateY(-0.6vh); } }
@@ -300,6 +305,12 @@ html.kiosk #pttButton.k-nudge { animation: kNudge 0.5s cubic-bezier(0.36, 0.07, 
     50% { transform: rotate(3deg) scale(1.02) translateY(-0.8vh); }
 }
 @keyframes kSpeak { from { transform: scale(0.96) translateY(0.4vh); } to { transform: scale(1.02) translateY(-0.4vh); } }
+@keyframes kRead {
+    0%, 100% { transform: rotate(-5deg) scale(1); }
+    30%      { transform: rotate(4deg) scale(1.04) translateY(-0.5vh); }
+    50%      { transform: rotate(5deg) scale(1.02); }
+    80%      { transform: rotate(-4deg) scale(1.03) translateY(-0.3vh); }
+}
 @keyframes kNudge {
     10%, 90% { transform: translateX(-0.4vw) rotate(-2deg); }
     30%, 70% { transform: translateX(0.8vw) rotate(3deg); }
@@ -372,7 +383,7 @@ html.console #pttButton {
 html.console #consoleBar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "status gear" "heard gear" "reply gear";
+    grid-template-areas: "status gear" "heard gear" "reply gear" "read read";
     align-items: center;
     column-gap: 10px;
     row-gap: 4px;
@@ -414,6 +425,53 @@ html.console #consoleBar p {
 html.console #consoleBar .c-heard { grid-area: heard; font-size: 15px; color: #cbd5e0; }
 html.console #consoleBar .c-reply { grid-area: reply; font-size: 18px; font-weight: 600; color: #bee3f8; }
 html.console #consoleBar .t-tag { opacity: 0.8; }
+/* The reading row: two photo buttons, the consent tick, the name and "Leer el futuro". */
+html.console #consoleBar .c-read {
+    grid-area: read;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin-top: 4px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 13px;
+    color: #cbd5e0;
+}
+#cRead { display: none; }                       /* only in the console */
+html.console #consoleBar .c-read button {
+    padding: 8px 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    background: #3182ce;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s;
+}
+html.console #consoleBar .c-read button:active { transform: scale(0.94); }
+html.console #consoleBar .c-read button:disabled { opacity: 0.45; cursor: default; }
+html.console #consoleBar .c-read #readBtn { background: #6b46c1; }
+html.console #consoleBar .c-read label { display: flex; align-items: center; gap: 6px; flex-basis: 100%; }
+html.console #consoleBar .c-read #readName {
+    flex: 1 1 120px;
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: #1a365d;
+    color: #e2e8f0;
+    font: inherit;
+    font-size: 16px;                            /* 16 px: no zoom on focus on a phone */
+}
+html.console #consoleBar .c-read #readName::placeholder { color: #7f9cc0; }
+html.console #consoleBar #readMsg { flex-basis: 100%; min-height: 1.2em; transition: color 0.3s; }
+html.console #consoleBar #readMsg:empty { display: none; }
+html.console #consoleBar #readMsg.high { color: #9ae6b4; }
+html.console #consoleBar #readMsg.medium, html.console #consoleBar #readMsg.low { color: #fbd38d; }
+html.console #consoleBar #readMsg.bad { color: #feb2b2; }
+html.console #consoleBar #readMsg.busy { animation: earBreathe 1.1s cubic-bezier(0.45, 0, 0.25, 1) infinite; }
 html.console #consoleGear {
     grid-area: gear;
     width: 46px;
