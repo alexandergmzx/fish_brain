@@ -155,8 +155,26 @@ class BaseLink:
     def _write_raw(self, data: bytes) -> None:  # pragma: no cover - abstract
         raise NotImplementedError
 
+    # Muted (the debug page's switch): every line but STOP is dropped, the fish only talks.
+    muted = False
+
+    def mute(self, on: bool) -> None:
+        """Motors off without closing the link. Muting sends STOP first; while muted nothing
+        but STOP goes out (a phrase's close pulse too: nothing is being driven)."""
+        if on:
+            self.all_stop()
+        self.muted = bool(on)
+
+    def _held_back(self, command: str) -> bool:
+        if self.muted and command.strip().upper() not in ("STOP", "S"):
+            debug.tx(command.strip(), "muted")
+            return True
+        return False
+
     def send(self, command: str, *, throttle: bool = True) -> None:
         """Send one command line (newline appended). `throttle` paces high-rate streams."""
+        if self._held_back(command):
+            return
         if throttle and self._min_interval:
             now = time.monotonic()
             wait = self._min_interval - (now - self._last_send)
@@ -638,6 +656,8 @@ class ResilientLink(BaseLink):
         threading.Thread(target=attempt, name="link-retry", daemon=True).start()
 
     def send(self, command: str, *, throttle: bool = True) -> None:
+        if self._held_back(command):
+            return
         link = self._link
         if link is None:
             debug.tx(command.strip(), "dropped")
