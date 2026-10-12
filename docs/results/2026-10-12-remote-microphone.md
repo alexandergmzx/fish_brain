@@ -23,3 +23,16 @@ hold target drives the same recording. Pass.
 
 Not measured: the remote's range and battery, the hotspot, a reading end to end with the remote's
 answer ("sí").
+
+## Addendum, same day: the OK button is the hold-to-talk key
+
+The voice key (`KEY_VOICECOMMAND`) reports a fixed 0.12 s down/up on every node of the remote
+however long it is held (logged over 60 s on all five nodes). Toggle mode worked (press, speak,
+press) but is not push-to-talk. A 45 s hold survey found real press-and-release on the OK button
+(`KEY_ENTER`, event2), the arrows and the mute key. With `FISH_PTT_DEVICE=name:XING WEI`,
+`FISH_PTT_KEY=KEY_ENTER`, `FISH_PTT_MODE=hold`, in echo mode (`--echo` through a unit drop-in, no
+LLM): two holds gave `[turn] rec=2.4s stt=7.2s` and `[turn] rec=3.3s stt=0.6s`, both echoed word
+for word. The owner: "podría ser este botón". The microphone survey of the day: the remote's
+microphone mostly streams all the time (room floor 0.01 to 0.03 RMS, speech 0.10 and up) and
+sometimes goes to exact zeros; the dead-stream and pause rules (`FISH_PTT_DEAD_S`,
+`FISH_PTT_PAUSE_S`) stay in the code, off.
