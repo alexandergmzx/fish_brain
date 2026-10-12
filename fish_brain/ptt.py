@@ -10,7 +10,9 @@ Two ways to say "talk now":
 - `record_multi`: any number of button-like sources (the browser's hold-to-talk button, a
   remote's button via evdev). Recording starts on a fresh press of any of them. An optional
   inbox (a zero-argument callable) can hand it an input item from the page instead; the wait
-  ends with that item and no microphone is opened.
+  ends with that item and no microphone is opened. A source marked `relay` is not recorded
+  from: its edges are handed to a `relay(held)` callable (the page then records with the
+  phone's microphone and the recording comes back through the inbox).
 """
 from __future__ import annotations
 
@@ -43,11 +45,15 @@ class ButtonSource:
     """A push-to-talk source: something that is held or not, and can be forced back to idle."""
 
     def __init__(self, is_held: Callable[[], bool], reset: Callable[[], None] | None = None,
-                 arm: Callable[[bool], None] | None = None, name: str = "button"):
+                 arm: Callable[[bool], None] | None = None, name: str = "button",
+                 relay: bool = False):
         self.is_held = is_held
         self._reset = reset
         self._arm = arm
         self.name = name
+        # True: `record_multi` hands this source's edges to its `relay` callable instead of
+        # recording here. Re-evaluated by the caller before every wait.
+        self.relay = relay
 
     def reset(self) -> None:
         if self._reset is not None:
@@ -224,7 +230,8 @@ _cut_last = False   # the previous recording hit max_record_s; wait for a releas
 
 def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
                  on_level: Callable[[float], None] | None = None,
-                 inbox: Callable[[], object] | None = None) -> Path | object:
+                 inbox: Callable[[], object] | None = None,
+                 relay: Callable[[bool], None] | None = None) -> Path | object:
     """Record while any of `sources` is held; returns the WAV path.
 
     Starts only on a fresh press: a source that already reads "held" when we begin waiting
@@ -235,6 +242,13 @@ def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
     `inbox()` is polled while waiting; the first item it returns (anything but None) is
     returned as the turn's input instead of a recording. With no sources, the inbox is the
     only trigger.
+
+    With `relay` given, the sources whose `.relay` is True never start a recording here:
+    they are polled while waiting and each edge is handed to `relay(held)` (the page records
+    with the phone's microphone and its upload arrives through the inbox). A relayed hold
+    that reaches `cfg.max_record_s` is ended with `relay(False)` and the source reset; one
+    still held when this returns is ended the same way, so the page never records forever.
+    A relayed source held when the wait begins is ignored until it is released.
     """
     global _cut_last
     if not sources and inbox is None:
@@ -243,34 +257,67 @@ def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
     def from_inbox():
         return inbox() if inbox is not None else None
 
-    if not sources:
-        while True:                    # short sleeps keep Ctrl-C prompt
-            item = from_inbox()
-            if item is not None:
-                return item
-            time.sleep(0.02)
+    relayed = [s for s in sources if relay is not None and s.relay]
+    local = [s for s in sources if s not in relayed]
+    rstate = {"held": False, "since": 0.0,
+              "need_release": any(s.is_held() for s in relayed)}
 
-    def any_held() -> bool:
-        return any(s.is_held() for s in sources)
+    def poll_relay() -> None:
+        """One look at the relayed sources (every 20 ms): edges go to `relay`."""
+        if not relayed:
+            return
+        now_held = any(s.is_held() for s in relayed)
+        if rstate["need_release"]:
+            if not now_held:
+                rstate["need_release"] = False
+            return
+        if now_held != rstate["held"]:
+            rstate["held"] = now_held
+            rstate["since"] = time.monotonic()
+            relay(now_held)
+        elif now_held and time.monotonic() - rstate["since"] >= cfg.max_record_s:
+            rstate["held"] = False
+            rstate["need_release"] = True
+            print(f"[ptt] {cfg.max_record_s:.0f} s limit reached on the relayed press; "
+                  "release and press again", flush=True)
+            relay(False)
+            for s in relayed:
+                s.reset()
+
+    def wait_step():
+        """One wait iteration: the inbox, the relayed sources, a short sleep."""
+        item = from_inbox()
+        if item is not None:
+            return item
+        poll_relay()
+        time.sleep(0.02)
+        return None
 
     for s in sources:
         s.arm(True)
     try:
-        # Whatever is held right now is stale: clear it, then wait for idle.
-        if _cut_last or any_held():
-            for s in sources:
-                s.reset()
-            while any_held():
-                item = from_inbox()
+        if not local:
+            while True:                    # short sleeps keep Ctrl-C prompt
+                item = wait_step()
                 if item is not None:
                     return item
-                time.sleep(0.02)
+
+        def any_held() -> bool:
+            return any(s.is_held() for s in local)
+
+        # Whatever is held right now is stale: clear it, then wait for idle.
+        if _cut_last or any_held():
+            for s in local:
+                s.reset()
+            while any_held():
+                item = wait_step()
+                if item is not None:
+                    return item
         _cut_last = False
         while not any_held():
-            item = from_inbox()
+            item = wait_step()
             if item is not None:
                 return item
-            time.sleep(0.02)
         t0 = time.monotonic()
 
         def stop() -> bool:
@@ -281,10 +328,13 @@ def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
             _cut_last = True
             print(f"[ptt] {cfg.max_record_s:.0f} s limit reached; release and press again",
                   flush=True)
-            for s in sources:
+            for s in local:
                 s.reset()
         return path
     finally:
+        if rstate["held"]:
+            rstate["held"] = False
+            relay(False)               # the page must not keep recording after we stop waiting
         for s in sources:
             s.arm(False)
 

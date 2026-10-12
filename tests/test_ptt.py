@@ -53,3 +53,92 @@ def test_no_sources_waits_on_the_inbox():
 def test_no_sources_and_no_inbox_is_unavailable():
     with pytest.raises(ptt.PTTUnavailable):
         ptt.record_multi(PTTConfig(), [])
+
+
+# --- a relayed source: the page records, this side only passes the edges ------------
+class Flag:
+    """A button driven by a test: `held` flips, `reset()` clears it (like the remote)."""
+
+    def __init__(self):
+        self.held = False
+        self.resets = 0
+
+    def is_held(self):
+        return self.held
+
+    def reset(self):
+        self.held = False
+        self.resets += 1
+
+
+def relayed(flag, name="remote"):
+    return ptt.ButtonSource(flag.is_held, reset=flag.reset, name=name, relay=True)
+
+
+def test_relayed_edges_go_to_relay_and_the_inbox_item_returns():
+    flag, calls, box = Flag(), [], []
+    item = Item()
+    threading.Timer(0.05, lambda: setattr(flag, "held", True)).start()
+    threading.Timer(0.15, lambda: setattr(flag, "held", False)).start()
+    threading.Timer(0.25, lambda: box.append(item)).start()      # the page's upload
+    web = ptt.ButtonSource(lambda: False, name="web")
+    got = ptt.record_multi(PTTConfig(), [web, relayed(flag)],
+                           inbox=lambda: box.pop() if box else None, relay=calls.append)
+    assert got is item
+    assert calls == [True, False]
+
+
+def test_relay_false_is_sent_on_exit_while_still_held():
+    flag, calls = Flag(), []
+    item = Item()
+    box = []
+    threading.Timer(0.05, lambda: setattr(flag, "held", True)).start()
+    threading.Timer(0.15, lambda: box.append(item)).start()
+    got = ptt.record_multi(PTTConfig(), [relayed(flag)],
+                           inbox=lambda: box.pop() if box else None, relay=calls.append)
+    assert got is item and calls == [True, False]
+
+
+def test_relayed_hold_is_cut_at_the_limit():
+    flag, calls = Flag(), []
+    cfg = PTTConfig()
+    cfg.max_record_s = 0.1
+    box, item = [], Item()
+    threading.Timer(0.02, lambda: setattr(flag, "held", True)).start()
+    threading.Timer(0.4, lambda: box.append(item)).start()
+    got = ptt.record_multi(cfg, [relayed(flag)],
+                           inbox=lambda: box.pop() if box else None, relay=calls.append)
+    assert got is item
+    assert calls == [True, False] and flag.resets == 1
+
+
+def test_relayed_source_held_at_the_start_waits_for_a_release():
+    flag, calls = Flag(), []
+    flag.held = True                                 # a lost release, or held while speaking
+    box, item = [], Item()
+    threading.Timer(0.05, lambda: setattr(flag, "held", False)).start()
+    threading.Timer(0.1, lambda: setattr(flag, "held", True)).start()
+    threading.Timer(0.2, lambda: box.append(item)).start()
+    got = ptt.record_multi(PTTConfig(), [relayed(flag)],
+                           inbox=lambda: box.pop() if box else None, relay=calls.append)
+    assert got is item and calls == [True, False]
+
+
+def test_a_source_without_relay_still_records(monkeypatch, tmp_path):
+    out = tmp_path / "rec.wav"
+    monkeypatch.setattr(ptt, "_record_until", lambda stop, cfg, on_level=None: out)
+    flag, calls = Flag(), []
+    web = Flag()
+    threading.Timer(0.05, lambda: setattr(web, "held", True)).start()   # a fresh press on the page
+    src = ptt.ButtonSource(web.is_held, reset=web.reset, name="web")
+    got = ptt.record_multi(PTTConfig(), [src, relayed(flag)], inbox=lambda: None,
+                           relay=calls.append)
+    assert got == out and calls == []
+
+
+def test_relay_flag_without_a_relay_callable_records_as_before(monkeypatch, tmp_path):
+    out = tmp_path / "rec.wav"
+    monkeypatch.setattr(ptt, "_record_until", lambda stop, cfg, on_level=None: out)
+    flag = Flag()
+    threading.Timer(0.05, lambda: setattr(flag, "held", True)).start()
+    assert ptt.record_multi(PTTConfig(), [relayed(flag)], inbox=lambda: None) == out
