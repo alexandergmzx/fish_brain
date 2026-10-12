@@ -1,5 +1,7 @@
 # secrets
 .env
+tls/
+*.key
 
 # python
 __pycache__/

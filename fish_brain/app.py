@@ -207,9 +207,14 @@ def main(argv: list[str] | None = None) -> int:
     # On-screen fish (browser fallback/debug view), optional.
     viz = None
     if args.viz:
-        from .viz import VizServer
+        from .viz import CertificateError, VizServer
         viz = VizServer(cfg)
-        viz.start()
+        try:
+            viz.start()
+        except CertificateError as e:   # a set-up error: a restart would not fix it
+            print(f"Configuration problem: the page could not start: {e}", file=sys.stderr)
+            return 78
+        # Any other OSError (a busy port after a quick restart) propagates: the unit retries.
 
     try:
         try:

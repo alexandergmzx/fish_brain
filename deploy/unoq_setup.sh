@@ -8,6 +8,7 @@
 #   deploy/unoq_setup.sh router off|on        board: PRINTS the root commands, runs nothing
 #   deploy/unoq_setup.sh hotspot "<SSID>" "<password>" [connect]   board: save the phone hotspot
 #   deploy/unoq_setup.sh kiosk on|off|pause|resume|status   board: the fish page on its own display
+#   deploy/unoq_setup.sh tls [--force] [--local] [ip ...]   self-signed certificate for the phone page
 #   deploy/unoq_setup.sh status               board: what is running, who has the port
 #
 # This script never calls sudo. Steps that need root are printed for the owner to run.
@@ -36,7 +37,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 usage() {
     # The header comment of this file is the help text.
-    sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 # The board subcommands change the machine they run on, and `install` renders speech with
@@ -534,6 +535,16 @@ cmd_status() {
     say "  .env            $([[ -f "$REPO/.env" ]] && printf 'present' || printf 'MISSING')"
     say "  backends        stt=$(env_get FISH_STT_BACKEND) tts=$(env_get FISH_TTS_BACKEND)" \
         "llm=$(env_get FISH_LLM_PROFILE) transport=$(env_get FISH_SERIAL_TRANSPORT)"
+    local tls_cert
+    tls_cert="$(env_get FISH_VIZ_TLS_CERT)"
+    if [[ -n "$tls_cert" ]]; then
+        say "  https page      $([[ -r "$tls_cert" ]] && printf 'cert %s' "$tls_cert" \
+            || printf 'cert MISSING: %s (the service exits 78)' "$tls_cert")"
+    elif [[ -e "$(tls_cert_path)" ]]; then
+        say "  https page      off (cert exists at $(tls_cert_path): add the .env lines from deploy/unoq_setup.sh tls)"
+    else
+        say "  https page      off (no cert yet: deploy/unoq_setup.sh tls)"
+    fi
 
     step "Router"
     ver="$(dpkg-query -W -f='${Version}' arduino-router 2>/dev/null)" || ver="not installed"
@@ -650,6 +661,90 @@ cmd_kiosk() {
     esac
 }
 
+# --- tls (board, or the laptop with --local) ---------------------------------------------
+# A self-signed certificate for the HTTPS page: a phone's microphone needs a secure context.
+# Files live outside the synced tree ('sync' runs rsync --delete) and never in the repo.
+TLS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fish_brain/tls"
+TLS_NAME=segunda
+VIZ_TLS_PORT_DEFAULT=8724
+VIZ_PORT_DEFAULT=8723
+
+tls_cert_path() { printf '%s' "$TLS_DIR/$TLS_NAME.crt"; }
+tls_key_path()  { printf '%s' "$TLS_DIR/$TLS_NAME.key"; }
+
+tls_print_cert() {  # the lines an operator checks: subject, SAN, dates
+    local crt="$1"
+    openssl x509 -noout -subject -dates -in "$crt" 2>/dev/null | sed 's/^/  /'
+    openssl x509 -noout -ext subjectAltName -in "$crt" 2>/dev/null | sed -n '2p' | sed 's/^ */  SAN: /'
+}
+
+cmd_tls() {
+    local force=0 local_mode=0 arg ip ips=() san crt key tls_port viz_port
+    for arg in "$@"; do
+        case "$arg" in
+            --force) force=1 ;;
+            --local) local_mode=1 ;;
+            -h|--help) say "usage: deploy/unoq_setup.sh tls [--force] [--local] [ip ...]"; return 0 ;;
+            -*) die "tls: unknown option $arg" ;;
+            *) [[ "$arg" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "tls: '$arg' is not an IPv4 address"
+               ips+=("$arg") ;;
+        esac
+    done
+    (( local_mode )) || require_board tls
+    have openssl || die "openssl not found (the board has OpenSSL 3.5.7; apt update && apt install openssl)"
+    crt="$(tls_cert_path)"; key="$(tls_key_path)"
+    tls_port="$(env_get FISH_VIZ_TLS_PORT)"; tls_port="${tls_port:-$VIZ_TLS_PORT_DEFAULT}"
+    viz_port="$(env_get FISH_VIZ_PORT)"; viz_port="${viz_port:-$VIZ_PORT_DEFAULT}"
+
+    step "Certificate in $TLS_DIR"
+    if [[ -e "$crt" || -e "$key" ]] && (( ! force )); then
+        ok "already there (--force to replace it; the phone then asks again)"
+        tls_print_cert "$crt"
+    else
+        mkdir -p "$TLS_DIR"
+        chmod 700 "$TLS_DIR"
+        san="DNS:$TLS_NAME.local,DNS:localhost,IP:127.0.0.1"
+        for ip in "${ips[@]}"; do san="$san,IP:$ip"; done
+        # CA:TRUE so the same file can be installed as a trusted authority on the laptop.
+        openssl req -x509 -newkey rsa:2048 -sha256 -days 820 -noenc \
+            -keyout "$key" -out "$crt" -subj "/CN=$TLS_NAME.local" \
+            -addext "subjectAltName=$san" \
+            -addext "basicConstraints=critical,CA:TRUE" \
+            -addext "extendedKeyUsage=serverAuth" 2>/dev/null \
+            || die "openssl could not write the certificate"
+        chmod 600 "$crt" "$key"
+        ok "written: $crt, $key (mode 600; 820 days)"
+        tls_print_cert "$crt"
+        if (( ${#ips[@]} == 0 )); then
+            say "  (no IP given: Chrome shows the warning for an IP address anyway; pass the"
+            say "   hotspot IP as an argument to list it in the certificate)"
+        fi
+    fi
+
+    step "Your .env lines (this script never edits .env)"
+    say "  FISH_VIZ_TLS_CERT=$crt"
+    say "  FISH_VIZ_TLS_KEY=$key"
+    say "  FISH_VIZ_TLS_PORT=$tls_port"
+    if (( local_mode )); then
+        say "  Made on this machine. Copy to the board (then the lines above with /home/arduino):"
+        say "    ssh $BOARD 'mkdir -p -m 700 .config/fish_brain/tls'"
+        say "    scp $crt $key $BOARD:.config/fish_brain/tls/"
+    else
+        say "  then: systemctl --user restart fish-brain"
+    fi
+
+    step "On the phone (Chrome), once per device, again after 7 days"
+    local ip_hint="${ips[0]:-<board ip>}"
+    say "  1. Open  https://$ip_hint:$tls_port/?console=1&token=<FISH_VIZ_TOKEN>"
+    say "  2. 'Your connection is not private' -> Advanced -> Proceed to $ip_hint (unsafe)."
+    say "     Chrome remembers it for 7 days: accept it again on fair morning."
+    say "  3. 'Activar micrófono' -> Allow."
+    say "  Plan B (no certificate): chrome://flags/#unsafely-treat-insecure-origin-as-secure"
+    say "     with  http://$ip_hint:$viz_port  then Relaunch."
+    say "  The http page at http://$ip_hint:$viz_port keeps working with the board microphone."
+    say "  The laptop resolves segunda.local: it can install $TLS_NAME.crt as a trusted authority."
+}
+
 main() {
     local cmd="${1:-}"
     [[ $# -gt 0 ]] && shift
@@ -660,6 +755,7 @@ main() {
         router)  cmd_router "$@" ;;
         hotspot) cmd_hotspot "$@" ;;
         kiosk)   cmd_kiosk "$@" ;;
+        tls)     cmd_tls "$@" ;;
         status)  cmd_status "$@"; cmd_kiosk status ;;
         ""|-h|--help|help) usage ;;
         *) usage >&2; die "unknown subcommand: $cmd" ;;

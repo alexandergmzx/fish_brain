@@ -219,6 +219,45 @@ First measured hotspot turn: not yet (see the fair-day matrix, row 3).
 
 Checks: `nmcli -f NAME,AUTOCONNECT-PRIORITY,DEVICE connection show`, `nmcli device wifi list`.
 
+## HTTPS for the phone
+
+A browser gives a page its microphone only in a secure context: `https://`, or `localhost`.
+The console page over plain http can still drive the board's microphone (hold-to-talk), but
+the phone's own microphone needs the HTTPS listener. Both listeners serve the same page; the
+http one stays for the ssh tunnel, the parked kiosk and as the restart-free fallback.
+
+```bash
+deploy/unoq_setup.sh tls <hotspot ip>          # on the board: writes ~/.config/fish_brain/tls/segunda.{crt,key}
+deploy/unoq_setup.sh tls --force <ip> [<ip>]   # a new certificate (the phone asks again)
+deploy/unoq_setup.sh tls --local <ip>          # on the laptop instead; prints the scp line
+```
+
+It makes a self-signed certificate (RSA 2048, SHA-256, 820 days, `CN=segunda.local`, SAN
+`segunda.local`, `localhost`, `127.0.0.1` and every IP given) with the board's own OpenSSL,
+outside the synced tree (`sync` runs `rsync --delete`), directory 700 and files 600, and
+refuses to overwrite one without `--force`. It never edits `.env`: it prints the three lines
+(`FISH_VIZ_TLS_CERT`, `FISH_VIZ_TLS_KEY`, `FISH_VIZ_TLS_PORT`) for you to add, then
+`systemctl --user restart fish-brain`. The journal then shows the `https://` address first,
+and `/status` reports `"tls": true`. A certificate path that does not load makes the service
+exit 78 (no restart loop): `deploy/unoq_setup.sh status` shows the path it looked at.
+
+Per device, once (Chrome, Android or desktop; remembered 7 days, so accept again on fair
+morning):
+
+1. Open `https://<board ip>:8724/?console=1&token=<FISH_VIZ_TOKEN>`.
+2. "Your connection is not private" → Advanced → Proceed (unsafe).
+3. `Activar micrófono` → Allow.
+
+Plan B without a certificate: `chrome://flags/#unsafely-treat-insecure-origin-as-secure` with
+`http://<board ip>:8723`, then Relaunch. Plan C: the http page with the board's microphone.
+
+The board's IP changes with every hotspot session (Android picks a new `192.168.x.0/24`), and
+the hotspot phone cannot resolve `segunda.local`: an IP that is not in the certificate only
+means the warning again, the page still works. With `FISH_SAY_ADDRESS=true` the fish says the
+last two octets after the welcome. The laptop does resolve `segunda.local`, so there
+`segunda.crt` can be installed as a trusted authority (it carries `CA:TRUE` for that) and the
+warning goes away for good.
+
 ## Parked: the fish page on the board's own display (kiosk)
 
 Not used at the fair since [ADR 0006](../docs/adr/0006-the-phone-is-the-interface.md): the
