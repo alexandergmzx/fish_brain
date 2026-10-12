@@ -249,6 +249,11 @@ EOF (`--text`), or Ctrl-C quit.
   gate even when `/status` says `host`, for a laptop test on `http://127.0.0.1:8723`, which
   is a secure context.
 
+- **With a remote on the board** (`/status` `backends.ptt` names `evdev`) the hold target becomes a
+  status pill that cannot be pressed, with "Pulsa el control para hablar" as its idle text; the
+  state words (listening, thinking, speaking) still show on it. `?talk=1` keeps the hold target on a
+  device that has no remote at hand.
+
 ## Rule for anyone changing the page
 
 Animation must feel alive: spring easing with overshoot, idle motion, secondary motion.

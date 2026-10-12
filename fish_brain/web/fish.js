@@ -813,6 +813,14 @@
       strip.mic.className = anomaly ? "bad" : "";
       strip.ear.textContent = st.listening ? "escuchando" : "";
       strip.ear.className = st.listening ? "ear" : "";
+      // A remote on the board is the trigger: the target becomes a status pill that cannot be
+      // pressed (?talk=1 keeps the hold target for a device without the remote).
+      const remote = /evdev/.test(b.ptt || "") && PARAMS.get("talk") !== "1";
+      if (remote !== root.classList.contains("notalk")) {
+        root.classList.toggle("notalk", remote);
+        HINT.ready = remote ? "Pulsa el control para hablar" : "Mantén para hablar";
+        if (state === "ready") label.textContent = HINT.ready;
+      }
       reader.status(st);
     }
     async function refreshStatus() {

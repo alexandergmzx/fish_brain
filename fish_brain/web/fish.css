@@ -408,6 +408,13 @@ html.console #pttButton {
     font-size: clamp(15px, 2.6vh, 24px);
     margin: 1vh 0;
 }
+/* With a remote on the board the target is only a status pill: smaller, not pressable. */
+html.notalk #pttButton {
+    pointer-events: none;
+    width: calc(var(--talk-w) * 0.62);
+    font-size: clamp(13px, 2.2vh, 18px);
+    opacity: 0.92;
+}
 html.console #consoleBar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
