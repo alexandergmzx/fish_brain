@@ -21,6 +21,8 @@ class FakeViz:
         self.listening = []
         self.readings = []
         self.transcripts = []
+        self.pages = 0                 # pages with a microphone ready (mic_pages)
+        self.relayed = []
 
     def take_inbox(self):
         return self._items.pop(0) if self._items else None
@@ -42,6 +44,12 @@ class FakeViz:
 
     def wait_enabled(self):
         return False
+
+    def mic_pages(self):
+        return self.pages
+
+    def relay_ptt(self, held):
+        self.relayed.append(bool(held))
 
 
 class FakeLLM:
@@ -68,7 +76,7 @@ class FakeLLM:
 def make(monkeypatch):
     # The wait returns the inbox item at once: no microphone, no button.
     monkeypatch.setattr(ptt, "record_multi",
-                        lambda cfg, sources, on_level=None, inbox=None: inbox())
+                        lambda cfg, sources, on_level=None, inbox=None, relay=None: inbox())
 
     def build(item, *, echo=True):
         cfg = Config()
@@ -193,3 +201,64 @@ def test_ptt_summary_names_the_browser_mic(make, tmp_path):
     assert convo.ptt_summary() == "web"
     convo.cfg.ptt.capture = "browser"
     assert convo.ptt_summary() == "web+browser-mic"
+
+
+# --- the remote relayed to the page -------------------------------------------------
+@pytest.fixture
+def remote(make, monkeypatch):
+    """A conversation with a plain 'remote' source (no evdev) and a record_multi that
+    only captures its keyword arguments."""
+    calls = []
+
+    def fake_record_multi(cfg, sources, on_level=None, inbox=None, relay=None):
+        calls.append({"sources": list(sources), "relay": relay})
+        return inbox()
+
+    monkeypatch.setattr(ptt, "record_multi", fake_record_multi)
+    convo, viz, spoken = make(object())
+    src = ptt.ButtonSource(lambda: False, name="remote")
+    convo.sources.append(src)
+    return convo, viz, src, calls
+
+
+def test_remote_is_relayed_when_a_page_has_a_microphone(remote):
+    convo, viz, src, calls = remote
+    convo.cfg.ptt.capture = "browser"
+    viz.pages = 1
+    assert convo.turn() is True
+    assert src.relay is True
+    assert calls[-1]["relay"] == viz.relay_ptt and calls[-1]["sources"] == convo.sources
+
+
+def test_remote_records_here_without_a_page(remote):
+    convo, viz, src, calls = remote
+    convo.cfg.ptt.capture = "browser"
+    viz.pages = 0
+    assert convo.turn() is True
+    assert src.relay is False and calls[-1]["relay"] is None
+    # A phone that arrives later is seen at the next wait.
+    viz.pages = 1
+    viz._items.append(object())
+    assert convo.turn() is True
+    assert src.relay is True and calls[-1]["relay"] == viz.relay_ptt
+
+
+def test_remote_is_never_relayed_in_host_mode(remote):
+    convo, viz, src, calls = remote
+    convo.cfg.ptt.capture = "host"
+    viz.pages = 1
+    assert convo.turn() is True
+    assert src.relay is False and calls[-1]["relay"] is None
+
+
+def test_ptt_summary_says_the_remote_goes_to_the_page(remote):
+    convo, viz, src, calls = remote
+
+    class Button:
+        def describe(self):
+            return "evdev(1 device, KEY_VOICECOMMAND, hold)"
+
+    convo.button = Button()
+    assert convo.ptt_summary() == "web+evdev(1 device, KEY_VOICECOMMAND, hold)"
+    convo.cfg.ptt.capture = "browser"
+    assert convo.ptt_summary() == "web+browser-mic+evdev(1 device, KEY_VOICECOMMAND, hold)→page"

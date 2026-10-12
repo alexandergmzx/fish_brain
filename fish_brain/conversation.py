@@ -7,7 +7,9 @@ Two input modes:
 Push-to-talk can come from the browser button (--viz), a remote's button (FISH_PTT_DEVICE),
 or the keyboard; the first two can be active together. With FISH_MIC_CAPTURE=browser the
 page records with the phone's microphone and uploads the WAV: it arrives through the viz
-inbox as an `Utterance` and takes the same path as a recording from here.
+inbox as an `Utterance` and takes the same path as a recording from here. In that mode a
+remote's press is relayed to the page (a sourced `ptt` event) while a page has a microphone
+ready; with none ready the remote records here as before.
 
 Nothing that goes wrong inside a turn ends the loop: a failed cloud call, a missing
 microphone or a bad audio file makes the fish say a short canned line and listen again.
@@ -71,6 +73,8 @@ class FishConversation:
             parts[-1] = self.button.describe()
         if self.viz is not None and self.cfg.ptt.capture == "browser":
             parts[0] = "web+browser-mic"             # the page records, this side transcribes
+            if self.button is not None:
+                parts[-1] += "→page"                  # its press is relayed to the page
         return "+".join(parts)
 
     @property
@@ -102,11 +106,23 @@ class FishConversation:
             try:
                 return ptt.record_multi(
                     self.cfg.ptt, self.sources, on_level=on_level,
-                    inbox=self.viz.take_inbox if self.viz is not None else None)
+                    inbox=self.viz.take_inbox if self.viz is not None else None,
+                    relay=self._relay())
             finally:
                 if self.viz is not None:
                     self.viz.set_listening(False)
         return ptt.record_hold(self.cfg.ptt, on_level=on_level)
+
+    def _relay(self):
+        """Whether the remote's press goes to the page this wait: in browser-mic mode, when
+        a page has its microphone ready. Decided before every wait, so a phone that comes or
+        goes needs no restart. Returns the relay callable or None."""
+        remotes = [s for s in self.sources if s.name == "remote"]
+        use = bool(remotes) and self.cfg.ptt.capture == "browser" and (
+            self.viz is not None and self.viz.mic_pages() > 0)
+        for s in remotes:
+            s.relay = use
+        return self.viz.relay_ptt if use else None
 
     def _handle_item(self, item) -> bool:
         """An input item that is not a recording (offered by the page). The single dispatch
