@@ -278,6 +278,11 @@ EOF (`--text`), or Ctrl-C quit.
   el control y habla" as its idle text; the state words still show on it. `?talk=1` keeps the
   hold-to-talk button on a device that has no remote at hand (the laptop as a spare).
 
+## The debug view
+
+`/debug` is a separate desktop page with its own routes and stream: [`debug.md`](debug.md).
+It does not touch the phone page, `/status` or `/events`.
+
 ## Rule for anyone changing the page
 
 Animation must feel alive: spring easing with overshoot, idle motion, secondary motion.

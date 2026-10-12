@@ -66,6 +66,10 @@ chains are not covered by it. So:
    word. Those steps are his.
 6. **Calibration pulses start from the closed position.**
 7. **During the fair, ask before restarting `fish-brain` or rebooting the board.**
+8. **The debug view's motor tests, speaker test and restart are Alexander's to press** (ADR 0009:
+   armed on the page for 60 s; a test is a validated timed stroke and its return, run by the
+   turn loop; STOP is never armed). Claude tests them on the mock link only and never calls
+   `/debug/motor`, `/debug/say` or `/debug/restart` against the board or the laptop fish.
 
 ## What is in use
 
@@ -94,6 +98,7 @@ together.
 | Motor link | pyserial, or MessagePack-RPC through the UNO Q's router; a mock for `--dry-run`; a wrapper that keeps the fish talking without motors | [`serial_link.py`](fish_brain/serial_link.py), [`router_rpc.py`](fish_brain/router_rpc.py) |
 | Turn loop | One turn in stages; no error inside a turn ends the loop | [`conversation.py`](fish_brain/conversation.py) |
 | The page | Browser view on a phone or PC. The default view is the fish's face, "El Pez Adivino", for the visitor who holds the phone: the fish in its sea, the state on a sign (a button with `?talk=1` or without a remote), speech bubbles; the operator's sheet (status words, the badge photo, the name) opens by holding the corner shell. `?kiosk=1` the visitor view for a display, `?debug=1` the developer page with every tool, `?lite=1` a still scene; HTTPS as a second listener behind `FISH_VIZ_TLS_CERT`; the phone's microphone; the token on `/events` and `/audio` | [`viz.py`](fish_brain/viz.py), [`web/`](fish_brain/web/), [`docs/viz.md`](docs/viz.md) |
+| The debug view | `/debug` on a desktop: the log, every key of the remote, one record per turn, the lines sent and the bytes back, the board, hints; tests, and armed motor pulses and restart (ADR 0009) | [`debug.py`](fish_brain/debug.py), [`debug_state.py`](fish_brain/debug_state.py), [`debug_actions.py`](fish_brain/debug_actions.py), [`web/debug.*`](fish_brain/web/), [`docs/debug.md`](docs/debug.md) |
 | Entry point | Flags, start-up checks, one-shots | [`app.py`](fish_brain/app.py) |
 
 Other repos. **They stay untouched; this repo only calls them.**
@@ -132,6 +137,7 @@ Changed only by a record in [`docs/adr/`](docs/adr/). Do not reopen without new 
 | Board transport | Ask the router to release the port; Bridge RPC as alternative (ADR 0001) | 2026-10-10 |
 | Board start-up | systemd user service with linger (ADR 0002) | 2026-10-10 |
 | Turn trigger at the fair | The page on the operator's phone or PC; the phone's microphone when the browser has one, the board's otherwise, no restart between them; the display parked (ADR 0006, proposed, replaces 0005) | 2026-10-11 |
+| Debugging | A desktop view at `/debug` that shows the whole fish and may act: tests, and armed for 60 s motor pulses and a restart; with an empty token it is open to the whole hotspot (ADR 0009, proposed) | 2026-10-12 |
 | The page at the fair | The fish's face in the visitor's hands; the remote is the control; the operator's controls are a sheet behind a held shell; original drawing only (ADR 0008, proposed) | 2026-10-12 |
 | The reading's model | `gpt-6-luna` through the board, strict JSON, the photo in memory only; measured 2026-10-11 | 2026-10-11 |
 | The reading | A badge photo read by a vision model through the board (`luna`); the fish asks the name by voice before telling the future; the photo lives in memory only; badge-only by default, a look line only with a consent tick (ADR 0007, proposed) | 2026-10-11 |
@@ -325,6 +331,7 @@ their own. The steps are in the README.
 
 | Symptom | Look at |
 |---|---|
+| Anything | **`http://<fish>:8723/debug` first**: its hints name most of the rows below, the pipeline shows where the last turn died, Inputs shows every key the remote sends |
 | Fish does not move | The board's LEDs first: LED4 green must blink (MCU alive), the matrix must move with speech (MCU got the commands: then look after the MCU, at drivers and power). The `[turn]` line's `link=` and any `[link] MCU silent`. With the service stopped: `--check-link` (says whether the MCU answers) and `tools/fw_check.py check --release-router`. These tools refuse while a fish holds the port |
 | Mouth out of sync | The `[turn]` line (`play_start`); `sync_offset_ms` |
 | "no te entendí" every time | The level meter in the page; the selected source (`wpctl status`); `silence_rms`. With the phone's microphone: the `[utt]` line (rate, seconds, bytes) and the ring on the target; `?mic=host` brings the board microphone back |
@@ -437,5 +444,6 @@ Nothing here is started or extended without his word.
 - **Before touching the link or the router:** [`docs/UNOQ_BRIDGE_RPC_EXPLAINED.md`](docs/UNOQ_BRIDGE_RPC_EXPLAINED.md), [ADR 0001](docs/adr/0001-release-the-uart-through-the-router.md)
 - **Before touching the page, the phone or the reading:** [`docs/viz.md`](docs/viz.md), [ADR 0006](docs/adr/0006-the-phone-is-the-interface.md), [ADR 0007](docs/adr/0007-the-reading.md), [ADR 0008](docs/adr/0008-the-phone-is-the-fishs-face.md)
 - **Board set-up:** [`deploy/README.md`](deploy/README.md) · **Sketches:** [`tools/sketches/README.md`](tools/sketches/README.md)
+- **Before touching the debug view:** [`docs/debug.md`](docs/debug.md), [ADR 0009](docs/adr/0009-a-debug-view-that-acts.md)
 - **Decisions:** [`docs/adr/`](docs/adr/) · **Measurements:** [`docs/results/`](docs/results/)
 - **User guide:** [`README.md`](README.md)

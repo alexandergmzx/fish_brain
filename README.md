@@ -236,7 +236,13 @@ At the fair the page is opened on the operator's phone (`FISH_VIZ_HOST=0.0.0.0`,
 the visitor who holds the phone: the fish in its sea, the state on a sign, speech bubbles; the
 operator's sheet (status, the badge photo, the name) opens by holding the corner shell
 ([ADR 0008](docs/adr/0008-the-phone-is-the-fishs-face.md)). `/?talk=1` gives a hold-to-talk button when a remote is on the board,
-`/?debug=1` the developer page with every tool, `/?lite=1` a still scene. The display below is parked.
+`/?debug=1` the developer page with every tool, `/?lite=1` a still scene.
+
+For debugging, open `/debug` on a laptop ([`docs/debug.md`](docs/debug.md)): the log, every key the
+remote sends, each turn stage by stage, the lines sent to the motors, the board, and hints
+that name the usual faults. It can also test the microphone, the speaker and the link, and,
+armed for 60 s, pulse a motor or restart the service. With `FISH_VIZ_TOKEN` empty all of that
+is open to everyone on the network. The display below is parked.
 
 With an HDMI touch display on the hub the board shows the visitor view of the page
 (`/?kiosk=1`) by itself: the fish and one hold-to-talk target. Set-up, what each screen state
