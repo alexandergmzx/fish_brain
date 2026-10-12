@@ -379,7 +379,7 @@ html.kiosk.ops-open #opsStatus {
 /* /?kiosk=1&lite=1: no idle motion on the talk target (for measuring what it costs). */
 html.kiosk.lite #pttButton { animation: none !important; }
 
-/* ---- operator console (/?console=1): the kiosk on a phone in portrait ------------------ */
+/* ---- operator console (the default view): the kiosk on a phone in portrait ------------------ */
 /* The fish on top (about 30 vh), the round hold target under it, and a strip at the bottom
    that is always there: a status line in words, the two transcript lines, a gear. */
 html.console, html.console body { cursor: auto; }
