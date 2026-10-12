@@ -188,3 +188,24 @@ body.armed .motor button:not(:disabled) { background: var(--hoja-aviso); border-
 .log tr.fish td.x { color: var(--hoja-bien); }
 .log tr.mark td { color: var(--hoja-aviso); border-top: 1px dashed var(--hoja-aviso); }
 @media (max-width: 1100px) { main { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); } #colLog { grid-column: 1 / -1; max-height: 34vh; border-top: 1px solid var(--hoja-linea); } }
+
+/* ---- checks and the model view ---------------------------------------------------------- */
+.checks td.g { padding-top: 9px; font: 600 11px/1 var(--ui); letter-spacing: 0.06em; text-transform: uppercase; color: var(--hoja-tenue); border-top: 0; }
+.checks td.s { width: 62px; font-weight: 700; }
+.checks td.s.pass { color: var(--hoja-bien); }
+.checks td.s.fail { color: var(--hoja); background: var(--hoja-mal); }
+.checks td.s.warn { color: var(--hoja-aviso); }
+.checks td.s.skip { color: var(--hoja-tenue); font-weight: 400; }
+.checks .fix { display: block; color: var(--hoja-bien); white-space: normal; }
+.msgs { display: flex; flex-direction: column; gap: 4px; }
+.m { padding: 5px 8px; border-left: 3px solid var(--hoja-linea); background: var(--hoja-campo); font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.m b { display: block; font: 600 10px/1.5 var(--ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--hoja-tenue); }
+.m.system { border-color: var(--hoja-aviso); }
+.m.user { border-color: #9fd0ff; }
+.m.assistant { border-color: var(--hoja-bien); }
+.m.err { border-color: var(--hoja-mal); color: var(--hoja-mal); }
+details { margin: 4px 0; border: 1px solid var(--hoja-linea); border-radius: 6px; }
+details > summary { padding: 4px 8px; cursor: pointer; font: 12px/1.5 var(--mono); }
+details[open] > summary { border-bottom: 1px solid var(--hoja-linea); }
+details > .msgs, details > pre { margin: 6px; border: 0; }
+details.bad > summary { color: var(--hoja-mal); }

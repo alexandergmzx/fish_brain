@@ -42,6 +42,7 @@
 
   // ---- store -------------------------------------------------------------------------------
   const S = { state: null, boot: "", log: [], keys: [], presses: {}, turns: [], tx: [], acts: [],
+              llm: [], stt: [], tts: [], vision: [], modelOnly: null,
               levels: [], sel: null, live: "", logOff: new Set(), logPaused: false,
               logWindow: null, armedUntil: 0, lastSeq: 0, missed: 0, connected: false };
   const dirty = new Set(["all"]);
@@ -104,6 +105,7 @@
         push(S.log, { kind: "log", t: Date.now() / 1000, mark: true,
                       text: "──── the fish restarted (pid " + r.pid + ") ────" }, CAP.log);
         S.turns = []; S.keys = []; S.tx = []; S.lastSeq = 0; S.sel = null;
+        S.llm = []; S.stt = []; S.tts = []; S.vision = [];
         mark("all");
       }
       S.boot = r.boot;
@@ -124,6 +126,7 @@
       case "level": S.levels.push(r.rms); if (S.levels.length > 200) S.levels.shift();
                     S.live = "recording"; mark("pipe"); wakeLevel(); break;
       case "action": case "http": push(S.acts, r, CAP.act); mark("clients"); break;
+      case "llm": case "stt": case "tts": case "vision": push(S[r.kind], r, 50); mark("model"); break;
       case "page": {
         const ev = r.ev || {};
         if (ev.type === "listen") S.live = ev.ready ? "waiting" : (S.live === "recording" ? "thinking" : S.live);
@@ -174,7 +177,8 @@
     if (d("log")) run(renderLog);
     if (d("panels") || d("keys")) run(renderInputs);
     if (d("panels") || d("motors") || d("tx")) run(renderMotors);
-    if (d("panels")) { run(renderVoice); run(renderCloud); run(renderBoard); run(renderConfig); }
+    if (d("panels")) { run(renderVoice); run(renderCloud); run(renderBoard); run(renderConfig); run(renderChecks); }
+    if (d("panels") || d("model")) run(renderModel);
     if (d("panels") || d("clients")) run(renderClients);
   }
 
@@ -230,6 +234,9 @@
     const hot = Math.max(0, ...(sys.thermal || []).map((z) => z.c));
     chips.push(chip((hot > 70 ? "▲ " : "● ") + "BOARD " + (hot ? hot.toFixed(0) + "C " : "") + "load " + ((sys.load || [])[0] ?? "?"),
                     hot > 70 ? "warn" : "ok"));
+    const cs = st.checks_summary;
+    if (cs) chips.unshift(chip((cs.failed ? "■ " : cs.warned ? "▲ " : "● ") + "CHECKS " + cs.passed + "/" + cs.of,
+                               cs.failed ? "bad" : cs.warned ? "warn" : "ok", cs.failed + " failed, " + cs.warned + " warnings"));
     fill($("hChips"), chips);
   }
 
@@ -339,6 +346,11 @@
     a.addEventListener("click", () => { S.logWindow = [t.t - ((t.times || {}).rec || 0) - 20, t.t + 2]; mark("log"); });
     b.addEventListener("click", () => copy(turnText(t)));
     row.appendChild(a); row.appendChild(b);
+    if ((t.model || []).length) {
+      const m = el("button", "", "What the models saw");
+      m.addEventListener("click", () => { S.modelOnly = new Set(t.model); showTab("model"); mark("model"); });
+      row.appendChild(m);
+    }
     box.appendChild(row);
   }
   function selectTurn(t) { S.sel = S.sel === t ? null : t; if (!S.sel) { S.logWindow = null; fill($("turnDetail"), [el("span", "", "Click a turn.")]); } mark("turns", "pipe", "log"); }
@@ -623,6 +635,107 @@
     }
     fill($("actRows"), rows);
   }
+
+  // ---- checks -----------------------------------------------------------------------------------
+  const WORD = { pass: "● PASS", fail: "■ FAIL", warn: "▲ WARN", skip: "○ skip" };
+  function renderChecks() {
+    const st = S.state || {}, rows = Array.isArray(st.checks) ? st.checks : [], cs = st.checks_summary || {};
+    $("checkCount").textContent = rows.length ? cs.passed + " of " + cs.of + " pass · " + cs.failed + " failed · " + cs.warned + " warnings" : "not available";
+    const out = [];
+    let group = "";
+    for (const r of rows) {
+      if (r.group !== group) {
+        group = r.group;
+        const g = el("tr"); const td = el("td", "g", group); td.colSpan = 3; g.appendChild(td); out.push(g);
+      }
+      const tr = el("tr");
+      tr.appendChild(el("td", "s " + r.status, WORD[r.status] || r.status));
+      tr.appendChild(el("td", "", r.name));
+      const d = el("td", "wrap", r.detail);
+      if (r.fix) d.appendChild(el("span", "fix", r.fix));
+      tr.appendChild(d);
+      out.push(tr);
+    }
+    fill($("checkRows"), out);
+  }
+  function testButton(id, path, label, say) {
+    $(id).addEventListener("click", async () => {
+      msg($("checkMsg"), label + "…");
+      const out = await post(path, {});
+      msg($("checkMsg"), out.ok ? label + ": " + say(out) : label + " refused: " + (out.error || out.status), 15000);
+      refresh();
+    });
+  }
+  testButton("loopBtn", "/debug/loop", "loop", (o) => o.verdict + " (room " + o.room + ", playing " + o.level + ")");
+  testButton("voiceBtn", "/debug/voice", "voice render", (o) => o.seconds + " s with " + o.backend);
+  testButton("cloudBtn", "/debug/cloud", "cloud", (o) => Object.entries(o.parts || {}).map(([k, v]) =>
+    k + " " + (v.skipped ? "skipped" : v.ok ? v.seconds + " s" : v.error + (v.status ? " " + v.status : ""))).join(" · "));
+
+  // ---- what the models see ------------------------------------------------------------------------
+  function bubble(role, text, cls) {
+    const m = el("div", "m " + (cls || role));
+    m.appendChild(el("b", "", role));
+    m.appendChild(document.createTextNode(text === undefined || text === null ? "" : String(text)));
+    return m;
+  }
+  function renderModel() {
+    const st = S.state || {}, mo = st.model || {};
+    $("modelNow").textContent = mo.profile ? (mo.echo ? "echo mode: no model is called · " : "") + mo.profile + " : " + mo.model +
+      " · history " + (mo.history || []).length + " of " + mo.history_max : "";
+    const now = [bubble("system", mo.prompt)];
+    if (mo.rules_active) now.push(bubble("system (the reading's rules)", mo.reading_rules, "system"));
+    for (const m of mo.history || []) now.push(bubble(m.role, m.content));
+    fill($("modelPrompt"), now);
+    const only = S.modelOnly, pick = (arr) => arr.filter((r) => !only || only.has(r.seq)).slice().reverse();
+    $("modelClear").hidden = !only;
+    const llm = pick(S.llm);
+    $("llmCount").textContent = llm.length ? llm.length + (only ? " of this turn" : " kept") : "none yet";
+    fill($("llmRows"), llm.map((r, i) => {
+      const d = el("details", r.error || r.sent === false ? "bad" : "");
+      if (i === 0) d.open = true;
+      const tok = r.tokens ? " · " + (r.tokens.prompt ?? "?") + "+" + (r.tokens.completion ?? "?") + " tok" : "";
+      d.appendChild(el("summary", "", clockMs(r.t) + "  " + r.model + "  " + (r.sent === false ? r.note
+        : r.error ? r.error.type + (r.error.status ? " " + r.error.status : "") : secs(r.seconds) + " s" + tok) +
+        "  · " + (r.messages || []).length + " messages"));
+      const box = el("div", "msgs");
+      if (r.params) box.appendChild(bubble("parameters", JSON.stringify(r.params), "params"));
+      for (const m of r.messages || []) box.appendChild(bubble(m.role, m.content));
+      if (r.reply !== undefined) box.appendChild(bubble("reply" + (r.finish ? " (" + r.finish + ")" : ""), r.reply || "(empty)", "assistant"));
+      if (r.error) box.appendChild(bubble("error", r.error.type + ": " + r.error.text, "err"));
+      d.appendChild(box);
+      return d;
+    }));
+    kv($("sttFacts"), [["prompt", mo.stt_prompt], ["keywords", (mo.stt_keywords || []).join(", ") || "none"]]);
+    fill($("sttRows"), pick(S.stt).map((r) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", "dim", clockMs(r.t)));
+      tr.appendChild(el("td", r.seconds > SLOW.stt ? "warn" : "", secs(r.seconds)));
+      tr.appendChild(el("td", "wrap", r.sent === false ? r.note : r.error ? r.error.type + ": " + r.error.text : (r.raw || "(empty)")));
+      tr.appendChild(el("td", r.dropped || r.error || r.sent === false ? "bad" : "ok",
+        r.dropped ? "DROPPED: " + r.dropped : r.error || r.sent === false ? "failed" : r.final ? "kept" : "empty"));
+      return tr;
+    }));
+    fill($("ttsRows"), pick(S.tts).map((r) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", "dim", clockMs(r.t)));
+      tr.appendChild(el("td", r.seconds > SLOW.tts ? "warn" : "", secs(r.seconds)));
+      tr.appendChild(el("td", "", r.backend + (r.voice ? " " + r.voice : "")));
+      tr.appendChild(el("td", r.error ? "bad wrap" : "wrap", r.error ? r.error.type + ": " + r.error.text : r.text));
+      return tr;
+    }));
+    fill($("visionRows"), pick(S.vision).map((r) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", "dim", clockMs(r.t)));
+      tr.appendChild(el("td", "", secs(r.seconds)));
+      tr.appendChild(el("td", "", r.tokens ?? ""));
+      tr.appendChild(el("td", r.error || !r.found ? "bad wrap" : "wrap", r.error ? r.error.type + ": " + r.error.text
+        : r.found ? r.name + " (says: " + r.name_for_speech + ", " + r.confidence + ")" + (r.look ? " · look: " + r.look : "") : "not found"));
+      tr.appendChild(el("td", "dim wrap", r.ask));
+      return tr;
+    }));
+    $("badgePrompt").textContent = mo.badge_prompt || "";
+  }
+  $("modelClear").addEventListener("click", () => { S.modelOnly = null; mark("model"); });
 
   // ---- tabs, arm, STOP ---------------------------------------------------------------------------
   function showTab(name) {

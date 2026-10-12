@@ -51,16 +51,46 @@
 
         <section class="col" id="colPanels">
             <nav id="tabs">
-                <button data-tab="inputs" class="on">Inputs</button>
+                <button data-tab="checks" class="on">Checks</button>
+                <button data-tab="inputs">Inputs</button>
                 <button data-tab="voice">Voice</button>
                 <button data-tab="motors">Motors</button>
+                <button data-tab="model">Model</button>
                 <button data-tab="cloud">Cloud</button>
                 <button data-tab="board">Board</button>
                 <button data-tab="config">Config</button>
                 <button data-tab="clients">Clients</button>
             </nav>
             <div class="scroll" id="panels">
-                <div class="panel" id="p-inputs">
+                <div class="panel" id="p-checks">
+                    <h3>Bring-up checks <small id="checkCount"></small></h3>
+                    <table class="feed checks"><tbody id="checkRows"></tbody></table>
+                    <h3>Tests <small>each runs while the fish waits; refused during a turn</small></h3>
+                    <div class="row">
+                        <button id="loopBtn" type="button" title="audible: plays a phrase and listens for it">Speaker → microphone loop</button>
+                        <button id="voiceBtn" type="button" title="renders one phrase with the configured voice; not played">Voice render</button>
+                        <button id="cloudBtn" type="button" title="one small call to each cloud model in use">Cloud round trip</button>
+                        <span id="checkMsg" class="msg"></span>
+                    </div>
+                </div>
+                <div class="panel" id="p-model" hidden>
+                    <h3>What the LLM is given now <small id="modelNow"></small></h3>
+                    <div id="modelPrompt" class="msgs"></div>
+                    <h3>LLM calls <small id="llmCount"></small> <button id="modelClear" type="button" hidden>show all</button></h3>
+                    <div id="llmRows"></div>
+                    <h3>Speech-to-text</h3>
+                    <div class="kv" id="sttFacts"></div>
+                    <table class="feed"><thead><tr><th>time</th><th>s</th><th>raw text from the model</th><th>kept</th></tr></thead>
+                        <tbody id="sttRows"></tbody></table>
+                    <h3>Voice</h3>
+                    <table class="feed"><thead><tr><th>time</th><th>s</th><th>voice</th><th>text</th></tr></thead>
+                        <tbody id="ttsRows"></tbody></table>
+                    <h3>Badge reading <small>never the photo</small></h3>
+                    <table class="feed"><thead><tr><th>time</th><th>s</th><th>tokens</th><th>result</th><th>asked</th></tr></thead>
+                        <tbody id="visionRows"></tbody></table>
+                    <details><summary>The badge prompt</summary><pre id="badgePrompt"></pre></details>
+                </div>
+                <div class="panel" id="p-inputs" hidden>
                     <h3>Trigger</h3>
                     <div class="kv" id="trigFacts"></div>
                     <table class="feed"><thead><tr><th>time</th><th>node</th><th>key</th><th></th><th>held</th>

@@ -223,3 +223,64 @@ def test_restart_needs_the_arm_the_word_and_a_service_and_signals_once(rig):
     assert rig.act.restart("restart")[0] in (403, 409)        # the arm dropped, and once only
     time.sleep(0.1)
     assert rig.terminated == [1]
+
+
+# ---- the bring-up tests: loop, voice render, cloud round trip (fakes) ----
+
+def _fake_recorder(monkeypatch, tmp_path, levels):
+    """ptt.record_for writes a WAV at the next level in `levels` (amplitude, 0..1)."""
+    import struct
+    import wave
+    from fish_brain import ptt
+    seq = list(levels)
+
+    def record_for(seconds, cfg, on_level=None):
+        amp = seq.pop(0)
+        p = tmp_path / f"r{len(seq)}.wav"
+        with wave.open(str(p), "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
+            w.writeframes(struct.pack("<4000h", *[int(amp * 32767) * (1 if i % 2 else -1) for i in range(4000)]))
+        return p
+    monkeypatch.setattr(ptt, "record_for", record_for)
+
+
+def test_loop_test_hears_the_speaker_or_says_why_not(rig, tmp_path, monkeypatch):
+    (tmp_path / "welcome-12345678.wav").write_bytes(b"RIFF")
+    _fake_recorder(monkeypatch, tmp_path, [0.01, 0.2, 0.01, 0.015, 0.0, 0.0])
+    status, out = rig.act.loop()
+    assert status == 200 and out["verdict"] == "heard" and out["played"] == "welcome"
+    assert rig.convo.player.played and rig.sent() == []           # sound only, no motor line
+    assert rig.act.last["loop"]["status"] == "pass"
+    assert rig.hub.recording_stats()["origin"] == "loop test"
+    assert rig.act.loop()[1]["verdict"] == "too quiet at the microphone"
+    assert rig.act.loop()[1]["verdict"] == "zeros" and rig.act.last["loop"]["status"] == "fail"
+    rig.convo.player = type("SilentPlayer", (), {})()
+    assert rig.act.loop()[1]["error"].startswith("no audio")
+
+
+def test_voice_render_is_timed_and_never_played(rig, monkeypatch):
+    from fish_brain import tts
+    made = []
+    monkeypatch.setattr(tts, "synthesize", lambda text, cfg, out_path=None: made.append(text))
+    status, out = rig.act.voice()
+    assert status == 200 and made == [debug_actions.VOICE_PHRASE] and "seconds" in out
+    assert rig.convo.player.played == [] and rig.sent() == []
+    monkeypatch.setattr(tts, "synthesize", lambda *a, **k: 1 / 0)
+    assert rig.act.voice()[1]["error"] == "ZeroDivisionError"
+    assert rig.act.last["voice"]["status"] == "fail"
+
+
+def test_cloud_round_trip_reports_each_service_and_skips_what_is_not_used(rig):
+    rig.cfg.stt.backend = "openai"
+    rig.convo.echo = False
+    rig.convo.stt = type("S", (), {"transcribe": lambda self, p: ""})()
+    rig.convo.llm = type("L", (), {"probe": lambda self: {"seconds": 0.4, "model": "m", "reply": "ok"}})()
+    parts = rig.act.cloud()[1]["parts"]
+    assert parts["stt"]["ok"] and parts["llm"]["ok"] and rig.act.last["cloud"]["status"] == "pass"
+    rig.convo.llm = type("L", (), {"probe": lambda self: 1 / 0})()
+    assert rig.act.cloud()[1]["parts"]["llm"] == {"ok": False, "error": "ZeroDivisionError", "status": None}
+    assert rig.act.last["cloud"]["status"] == "fail"
+    rig.cfg.stt.backend, rig.convo.echo = "local", True
+    parts = rig.act.cloud()[1]["parts"]
+    assert "skipped" in parts["stt"] and "skipped" in parts["llm"]
+    assert rig.act.last["cloud"]["status"] == "skip"
