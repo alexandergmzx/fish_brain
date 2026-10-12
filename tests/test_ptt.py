@@ -213,3 +213,44 @@ def test_a_dead_stream_ends_the_recording(monkeypatch, tmp_path):
     assert time.monotonic() - t0 < 2.0
     assert ptt.wav_duration_s(path) < 0.4            # three sound chunks and a short dead tail
     path.unlink()
+
+
+def test_a_pause_after_speech_ends_the_recording(monkeypatch):
+    """Tap, talk, stop talking: a pause longer than FISH_PTT_PAUSE_S ends the recording."""
+    import queue as queue_mod
+    import types
+    cfg = PTTConfig()
+    cfg.pause_s = 0.15
+    cfg.quiet_rms = 0.04
+    loud = np.full(160, 0.3, dtype="float32")
+    quiet = np.full(160, 0.01, dtype="float32")          # room noise, never exact zeros
+    chunks = [quiet] * 3 + [loud] * 4 + [quiet] * 300
+    served = {"n": 0}
+
+    class FakeStream:
+        def __init__(self, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_get(self, timeout=None):
+        if served["n"] >= len(chunks):
+            raise queue_mod.Empty
+        c = chunks[served["n"]]
+        served["n"] += 1
+        time.sleep(0.01)
+        return (c * 32767).astype(np.int16)
+
+    monkeypatch.setattr(ptt, "_resolve_input", lambda sd, cfg: (None, 16000))
+    monkeypatch.setitem(__import__("sys").modules, "sounddevice", types.SimpleNamespace(InputStream=FakeStream))
+    monkeypatch.setattr(queue_mod.Queue, "get", fake_get)
+    monkeypatch.setattr(queue_mod.Queue, "empty", lambda self: True)
+    t0 = time.monotonic()
+    path = _REAL_RECORD_UNTIL(lambda: False, cfg)
+    assert time.monotonic() - t0 < 2.0
+    assert 0.05 < ptt.wav_duration_s(path) < 0.4
+    path.unlink()

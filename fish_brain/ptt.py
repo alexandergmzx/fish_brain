@@ -166,6 +166,8 @@ def _record_until(stop_predicate, cfg: PTTConfig,
     # Dead-stream rule (cfg.dead_s): exact zeros after sound mean the device stopped streaming.
     heard = False
     last_sound = time.monotonic()
+    spoke = False
+    last_speech = time.monotonic()
     try:
         stream = sd.InputStream(samplerate=samplerate, channels=cfg.channels,
                                 dtype="float32", device=device, callback=callback)
@@ -184,6 +186,13 @@ def _record_until(stop_predicate, cfg: PTTConfig,
                     last_sound = time.monotonic()
                 elif heard and time.monotonic() - last_sound >= cfg.dead_s:
                     break                      # the microphone went dead: the key was released
+            if cfg.pause_s > 0:
+                f = chunk.astype(np.float32) / 32768.0
+                if float(np.sqrt(np.mean(f * f))) >= cfg.quiet_rms:
+                    spoke = True
+                    last_speech = time.monotonic()
+                elif spoke and time.monotonic() - last_speech >= cfg.pause_s:
+                    break                      # the visitor stopped talking
             if on_level is not None:
                 now = time.monotonic()
                 if now - last_level >= min_dt:

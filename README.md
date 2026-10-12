@@ -103,6 +103,7 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_PTT_KEY`, `FISH_PTT_MODE` | `KEY_VOICECOMMAND`, `hold` | Which key; `hold` to talk or `toggle` (press to start, press to stop) |
 | `FISH_PTT_MAX_S` | `15` | Longest recording; also ends a stuck button |
 | `FISH_PTT_DEAD_S` | `0` | End a recording once the microphone stream has delivered only digital zeros for this many seconds after sound (a remote whose microphone streams only while its key is held) |
+| `FISH_PTT_PAUSE_S`, `FISH_PTT_QUIET_RMS` | `0`, `0.04` | End a recording after this long a pause once speech (chunks above the RMS) was heard: tap, talk, stop talking |
 | `FISH_MIC_SOURCE`, `FISH_MIC_DEVICE`, `FISH_SPEAKER_DEVICE` | system default | PipeWire source name; or a device number or part of its name |
 | `FISH_MIC_CAPTURE` | `host` | `host`: this machine records. `browser`: the page records with the phone's microphone and uploads the WAV (`POST /utterance`); needs `--viz` and https on the phone, falls back to the host microphone per device (`docs/viz.md`) |
 | `FISH_VIZ_HOST`, `FISH_VIZ_PORT`, `FISH_VIZ_TOKEN` | `127.0.0.1`, `8723`, none | Where the page listens; with a token, open it as `/?token=...` |
