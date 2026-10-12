@@ -122,6 +122,47 @@ EOF (`--text`), or Ctrl-C quit.
 - In kiosk and console a non-passive `touchstart` cancels the touch default on the target
   (the iOS loupe on a long press); the pointer handlers are untouched.
 
+## The reading (2026-10-11)
+
+- **What it is** ([ADR 0007](adr/0007-the-reading.md)): the operator photographs a visitor's
+  fair badge on the console; the board reads the name with the vision model of
+  `FISH_READING_PROFILE` (empty = the LLM profile; `luna` is the one with image input);
+  the fish asks "¿Tú eres X?" by voice and the visitor's spoken answer is a normal turn,
+  with the question seeded into the LLM history and the per-visitor rules
+  (`ReadingConfig.rules`) attached to the persona for that visitor. A name typed on the
+  console skips the question: the fish tells the future at once.
+- **The row on the strip**: `Foto del gafete` (the camera, through a hidden file input with
+  `capture="environment"`), `Galería` (the same input without `capture`: Android Chrome
+  shows the camera tile with it and the gallery without), the name field with `Leer el
+  futuro`, and, only when `/status.reading_look` is true, the tick `Describir su look (con
+  permiso)`, cleared after every reading. The photo buttons are disabled when `/status.reading`
+  is false (no reader registered: the page was started without the reading).
+- **The photo** is decoded once in the page (`createImageBitmap` with the EXIF orientation,
+  resized to a 1024 px long edge; an `Image` and a canvas when the options are refused),
+  re-encoded as JPEG at 0.8 and posted as `POST /badge` (token, `Content-Type: image/jpeg`,
+  `X-Fish-Look: 1` when the tick is on, at most 1.5 MiB). The host says `reading_wait`
+  from the canned cache while the call runs, keeps the bytes only in the handler's local
+  variable, and answers `{ok, found, name, first_name, confidence}` (a `Reading` goes into
+  the inbox), `{ok, found: false}` (the fish says `reading_fail`), `409 busy` when the turn
+  loop is not listening, `503 offline` / `503 misconfigured` for cloud errors, `503 no
+  reader`, `400` for a non-JPEG. The page shows the name with its confidence colour (green
+  high, amber medium or low) and `el pez pregunta`, or `No se pudo leer: escribe el nombre`,
+  `El pez está ocupado`, `Sin internet para leer el gafete`.
+- **A typed name**: `POST /reading {"name"}` (cleaned on the server: letters, spaces,
+  hyphens and apostrophes, Title Case, at most 40 characters; `400` when nothing is left)
+  queues a confirmed `Reading`; `409 busy` as above.
+- **Events**: `{"type": "reading", "stage": "ask" | "speaking"}` (never replayed, never the
+  photo). On `ask` the hold target enters `k-reading` (a slow sway, transform only) and reads
+  `¿Tú eres…?`; the following `speak` event takes over as usual. Presses are refused while
+  reading, as while thinking. The page also enters `k-reading` with `Leyendo tu gafete…`
+  while a photo is on its way.
+- **Journal lines**: `[reading] badge <seconds>s tokens=<prompt tokens> found=<bool>
+  confidence=<high|medium|low>` (never the name), `fish> (lectura: pregunta por el nombre)` or `fish> (lectura)`, and a `[turn]
+  read=ask|tell …` line. The `fish>` and `you>` lines of the following turns carry the name
+  as any turn does.
+- **One-shot**: `python -m fish_brain.app --tts openai --llm luna --read-badge foto.jpg`
+  prints the result as JSON before any voice warm-up.
+
 ## Rule for anyone changing the page
 
 Animation must feel alive: spring easing with overshoot, idle motion, secondary motion.

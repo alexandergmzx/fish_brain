@@ -73,7 +73,10 @@ Flags: `--dry-run` (mock serial, prints commands), `--text` (type instead of mic
 `--port /dev/ttyACM0`, `--say "..."` (one-shot). Backends: `--stt local|openai|groq`,
 `--tts loq|openai`, `--llm groq|luna`, `--transport serial|bridge`, `--viz-host 0.0.0.0`.
 One-shots: `--check-link` (open the motor link, send `STOP`), `--prerender-canned`,
-`--say-canned NAME`, `--list-canned`, `--prefetch-stt`.
+`--say-canned NAME`, `--list-canned`, `--prefetch-stt`, `--read-badge FILE` (read the name on a
+badge photo with the vision model and print the JSON; it starts no voice and no motors:
+`python -m fish_brain.app --tts openai --llm luna --read-badge foto.jpg`, needs
+`OPENAI_API_KEY`).
 In the loop, say/type **`salir`** or hit Ctrl-C to quit; an unclear/empty recording just re-listens.
 Push-to-talk: with `--viz`, **hold the on-screen button** (or the browser spacebar) and pick your
 mic from the dropdown — easiest for debugging. Without `--viz`, hold **space** in the terminal
@@ -105,6 +108,8 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_LINK_LOG` | empty | A file that records every line sent to the MCU and every byte read back |
 | `FISH_VOICE_QUIT` | `true` | Saying "salir" ends the program |
 | `FISH_WELCOME_ONCE` | `false` | Greet once per boot instead of at every start |
+| `FISH_READING_PROFILE` | empty = `FISH_LLM_PROFILE` | LLM profile that reads a badge photo (the reading, ADR 0007). It needs image input: `luna` |
+| `FISH_READING_LOOK` | `false` | `true`: the console shows a per-visitor consent tick and the model may add one kind line on clothing, colours or accessories |
 | `FISH_CLOUD_TIMEOUT`, `FISH_CLOUD_CONNECT_TIMEOUT` | `10`, `3` | Seconds before a cloud call gives up |
 
 When a cloud call fails the fish says a short "no signal" line and listens again; nothing
