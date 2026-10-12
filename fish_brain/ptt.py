@@ -163,6 +163,9 @@ def _record_until(stop_predicate, cfg: PTTConfig,
     frames: list[np.ndarray] = []
     last_level = 0.0
     min_dt = 1.0 / _LEVEL_HZ
+    # Dead-stream rule (cfg.dead_s): exact zeros after sound mean the device stopped streaming.
+    heard = False
+    last_sound = time.monotonic()
     try:
         stream = sd.InputStream(samplerate=samplerate, channels=cfg.channels,
                                 dtype="float32", device=device, callback=callback)
@@ -175,6 +178,12 @@ def _record_until(stop_predicate, cfg: PTTConfig,
             except queue.Empty:
                 continue
             frames.append(chunk)
+            if cfg.dead_s > 0:
+                if chunk.any():
+                    heard = True
+                    last_sound = time.monotonic()
+                elif heard and time.monotonic() - last_sound >= cfg.dead_s:
+                    break                      # the microphone went dead: the key was released
             if on_level is not None:
                 now = time.monotonic()
                 if now - last_level >= min_dt:

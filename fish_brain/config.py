@@ -385,6 +385,10 @@ class PTTConfig:
     # hold = record while pressed; toggle = one press starts, the next stops.
     mode: str = field(default_factory=lambda: _env("FISH_PTT_MODE", "hold"))
     max_record_s: float = field(default_factory=lambda: _env_float("FISH_PTT_MAX_S", 15.0))
+    # A recording ends by itself once the stream has delivered only digital zeros for this long
+    # after carrying sound. For a remote whose microphone streams only while its key is held
+    # (the XING WEI: the key reports a 0.12 s tap, the audio stops at release). 0 = off.
+    dead_s: float = field(default_factory=lambda: _env_float("FISH_PTT_DEAD_S", 0.0))
     # Who records the turn: host = this machine's microphone (the laptop's behaviour);
     # browser = the page records with the phone's microphone and uploads a WAV
     # (POST /utterance), needs --viz and a secure context on the phone (https).
