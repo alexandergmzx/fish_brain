@@ -11,7 +11,8 @@
  *   Neck (Rest|Out) : Out while a NECK gesture is firing, else Rest.
  *   Tail (Rest|Flap): Flap while a TAIL gesture is firing, else Rest.
  * Sprite name: `neck{Rest|Out}_mouth{0..3}_tail{Rest|Flap}.png` (see web/img/README.md).
- * Bubbles: drawn on top. Connection: a corner dot (#conn-dot) — green/red/amber.
+ * Bubbles: drawn on top. Connection: the pearl in the corner shell (#conn-dot) — green/red/amber.
+ * The canvas is transparent: the sea behind it belongs to the page (fish.css).
  *
  * Assets live in fish_brain/web/img/ and are served at /img/<name>.png. Missing sprites fall
  * back to a simpler pose (see currentSprite); if none load, the stage shows a hint so the page
@@ -23,7 +24,6 @@
   const canvas = document.getElementById("stage");
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
-  const BG = "#91b9bc";
 
   const statusEl = document.getElementById("status");
   const dot = document.getElementById("conn-dot");
@@ -481,11 +481,10 @@
     return null;
   }
   function draw(now) {
-    ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = BG;
-    ctx.fillRect(0, 0, W, H);
+    ctx.clearRect(0, 0, W, H);                // transparent: the page's sea is the background
 
     if (!anyLoaded) {
+      if (KIOSK) return;                      // a slow first sprite: water, not a developer hint
       ctx.fillStyle = "rgba(20,50,55,0.7)";
       ctx.font = "16px 'Segoe UI', sans-serif";
       ctx.textAlign = "center";
@@ -565,40 +564,70 @@
   const kiosk = (() => {
     if (!KIOSK) return { conn() {}, event() {}, micResult() {} };
     const root = document.documentElement;
+    // Two lines: the first is the big one (the newline splits them, see #kioskHint in the CSS).
+    const READY = {
+      talk: "¡Deja apretado aquí!\ny háblame sin soltar",
+      remote: "¡Pregúntame algo!\nMantén apretado OK en el control y habla",
+    };
     const HINT = {
-      ready: "Mantén para hablar",
+      ready: READY.talk,
       listening: "Te escucho…",
-      waiting: "Un momento…",
-      thinking: "Pensando…",
-      speaking: "Estoy hablando…",
+      waiting: "Un segundito…",
+      thinking: "Déjame pensar…",
+      speaking: "¡Escúchame!",
       reading: "Leyendo tu gafete…",
-      offline: "Vuelvo enseguida…",
+      offline: "Ahorita vuelvo…",
     };
     const label = document.createElement("span");
     label.id = "kioskHint";
     pttButton.textContent = "";
+    // The well with the voice rings and one small drawing per state (index.html).
+    const parts = document.getElementById("talkParts");
+    if (parts && parts.content) pttButton.appendChild(parts.content.cloneNode(true));
     pttButton.appendChild(label);
-    // Transcript lines: over the fish in the kiosk, in the bottom strip in the console.
-    let heard, reply;
-    if (CONSOLE) {
-      heard = document.getElementById("cHeard");
-      reply = document.getElementById("cReply");
-    } else {
-      const say = document.createElement("div");
-      say.id = "kioskSay";
-      say.innerHTML = '<p id="kioskHeard"></p><p id="kioskReply"></p>';
-      document.querySelector(".stage-wrap").appendChild(say);
-      heard = say.querySelector("#kioskHeard"); reply = say.querySelector("#kioskReply");
+    // What was heard and the reply, as speech bubbles: no text, no bubble. The length picks
+    // the type size, a refusal ("… (no te entendí)") gets its own look, a change pops.
+    const heard = document.getElementById("cHeard"), reply = document.getElementById("cReply");
+    function say(el, text) {
+      text = text || "";
+      el.textContent = text;
+      const b = el.closest(".bubble") || el;
+      b.classList.toggle("has-text", !!text);
+      b.classList.toggle("miss", text.startsWith("…"));
+      b.dataset.len = text.length <= 28 ? "s" : text.length <= 110 ? "m" : "l";
+      b.classList.remove("pop");
+      if (text) { void b.offsetWidth; b.classList.add("pop"); }   // restart the pop
+    }
+    // The voice level on the target (--lvl, 0..1). A host level goes through a spring first:
+    // the remote's microphone idles near 0.3 and clamps on speech, and a raw value would
+    // flick between two sizes. The phone's own microphone arrives already eased.
+    const talkBox = pttButton.closest(".talk") || pttButton;
+    const lvlSpring = { value: 0, vel: 0, k: 90, d: 11 };
+    let lvlAt = 0;
+    function setLevel(target, eased) {
+      if (eased) { lvlSpring.value = target; lvlSpring.vel = 0; }
+      else {
+        const now = performance.now();
+        const dt = Math.min(0.1, (now - lvlAt) / 1000) || 0.04;
+        lvlAt = now;
+        step(lvlSpring, target, dt);
+      }
+      talkBox.style.setProperty("--lvl", lvlSpring.value.toFixed(3));
     }
 
     let online = false, state = "", pressedAt = 0, lastLevel = 0, speakUntil = 0;
     let thinkTimer = null;
     function show(next, text) {
       if (next !== state) {
+        const prev = state;
         state = next;
         for (const k of Object.keys(HINT)) root.classList.toggle("k-" + k, k === next);
+        // The next visitor starts talking, or a reading starts: the old lines leave.
+        if (next === "listening" || next === "reading") { say(heard, ""); say(reply, ""); }
+        if (prev === "listening") setLevel(0, true);
       }
-      label.textContent = text || HINT[next];
+      const t = text || HINT[next];
+      if (label.textContent !== t) label.textContent = t;   // level events call this 25 times a second
     }
     function settle() {                         // the state when nothing else is going on
       if (!online) return show("offline");
@@ -679,13 +708,19 @@
     // The reading (console only): a badge photo, downscaled here to a 1024 px JPEG and
     // posted to /badge, or a typed name posted to /reading. The host says the rest.
     const reader = (() => {
-      if (!CONSOLE) return { status() {}, done() {} };
+      if (!CONSOLE) return { status() {}, done() {}, busy: () => false };
       const el = (id) => document.getElementById(id);
       const cam = el("badgeCam"), file = el("badgeFile"), lookWrap = el("lookWrap"),
             lookTick = el("lookTick"), name = el("readName"), msg = el("readMsg"),
             badgeBtn = el("badgeBtn"), galleryBtn = el("galleryBtn"), readBtn = el("readBtn");
       const LONG_EDGE = 1024;
+      const CLOSE_MS = 900;                       // long enough to read the result line
       let busy = false;
+      // Accepted: the fish takes over, the sheet leaves and the next visitor finds it empty.
+      function accepted() {
+        name.blur();
+        setTimeout(() => { if (!busy) { ops(false); name.value = ""; say(""); } }, CLOSE_MS);
+      }
       function say(text, cls) { msg.textContent = text || ""; msg.className = cls || ""; }
       function headers(extra) {
         const h = Object.assign({}, extra || {});
@@ -728,7 +763,9 @@
       }
       async function sendBadge(f) {
         if (!f || busy) return;
+        let ok = false;
         setBusy(true);
+        ops(true);                                 // back from the camera: the sheet may have timed out
         say("Leyendo el gafete…", "busy");
         show("reading");
         try {
@@ -747,6 +784,7 @@
             name.value = out.name || "";
             const conf = { high: "segura", medium: "más o menos", low: "dudosa" }[out.confidence] || out.confidence;
             say(`Lectura ${conf} · el pez pregunta`, out.confidence || "medium");
+            ok = true;
           } else { say("No se pudo leer: escribe el nombre", "bad"); settle(); name.focus(); }
         } catch (e) {
           say("No se pudo enviar la foto", "bad");
@@ -755,11 +793,13 @@
           lookTick.checked = false;                // consent is per visitor
           cam.value = ""; file.value = "";
           setBusy(false);
+          if (ok) accepted();
         }
       }
       async function sendName() {
         const n = name.value.trim();
         if (!n || busy) { name.focus(); return; }
+        let ok = false;
         setBusy(true);
         say("Mandando el nombre…", "busy");
         try {
@@ -768,12 +808,13 @@
           if (r.status === 409) say("El pez está ocupado", "bad");
           else if (r.status === 400) say("Escribe un nombre", "bad");
           else if (!r.ok) say("No se pudo mandar el nombre", "bad");
-          else { say("El pez lee el futuro…", "busy"); show("thinking"); name.value = ""; }
+          else { say("El pez lee el futuro…", "busy"); show("thinking"); name.value = ""; ok = true; }
         } catch (_) {
           say("No se pudo mandar el nombre", "bad");
         } finally {
           lookTick.checked = false;
           setBusy(false);
+          if (ok) accepted();
         }
       }
       badgeBtn.addEventListener("click", () => cam.click());
@@ -789,11 +830,17 @@
           else if (!busy) { badgeBtn.disabled = false; galleryBtn.disabled = false; badgeBtn.title = ""; }
         },
         done() { if (msg.classList.contains("busy")) say(""); },
+        busy: () => busy,
       };
     })();
 
     function paintStrip(st) {
       if (!CONSOLE) return;
+      // The target shows only once /status has said whether it is a sign or a button; the
+      // mark by the shell tells the operator to open the sheet (the words are in there).
+      root.classList.add("st");
+      root.classList.toggle("ops-warn", !st || (st.link || {}).health !== "ok"
+                                        || st.online === false || !!st.wait);
       if (!st) {
         strip.link.textContent = "sin respuesta del cerebro";
         strip.link.className = "bad";
@@ -818,7 +865,7 @@
       const remote = /evdev/.test(b.ptt || "") && PARAMS.get("talk") !== "1";
       if (remote !== root.classList.contains("notalk")) {
         root.classList.toggle("notalk", remote);
-        HINT.ready = remote ? "Pulsa el control para hablar" : "Mantén para hablar";
+        HINT.ready = remote ? READY.remote : READY.talk;
         if (state === "ready") label.textContent = HINT.ready;
       }
       reader.status(st);
@@ -845,26 +892,71 @@
         paintStrip(null);
       }
     }
+    const sheet = document.querySelector(".controls");
+    // The sheet closes by itself 45 s after the last touch or keystroke in it, never under a
+    // running request or a field that is being typed in.
+    function opsArm() {
+      clearTimeout(opsTimer);
+      opsTimer = setTimeout(() => {
+        const a = document.activeElement;
+        if (reader.busy() || (a && sheet.contains(a) && typingTag(a) && a.value)) opsArm();
+        else ops(false);
+      }, 45000);
+    }
     function ops(open) {
+      const was = root.classList.contains("ops-open");
       root.classList.toggle("ops-open", open);
       clearTimeout(opsTimer); clearInterval(opsPoll);
       if (open) {
-        refreshStatus(); if (!CONSOLE) loadMics();
+        if (!was) { refreshStatus(); if (!CONSOLE) loadMics(); }
         if (!CONSOLE) opsPoll = setInterval(refreshStatus, 2000);   // the console polls anyway
-        opsTimer = setTimeout(() => ops(false), 45000);
+        opsArm();
+      } else if (was && document.activeElement && sheet.contains(document.activeElement)) {
+        document.activeElement.blur();            // the keyboard leaves with the sheet
       }
+    }
+    for (const t of ["pointerdown", "input", "focusin"]) {
+      sheet.addEventListener(t, () => { if (root.classList.contains("ops-open")) opsArm(); });
+    }
+    for (const id of ["sheetScrim", "sheetClose"]) {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener("click", (e) => { e.preventDefault(); ops(false); });
     }
     if (CONSOLE) {
       // Muted and without bubbles: the phone shows, the fish speaks.
       toggleAudio.checked = false;
       toggleBubbles.checked = false;
-      strip.mic.parentElement.appendChild(micGate);   // the gate lives on the strip here
       refreshStatus();
       setInterval(refreshStatus, 3000);
-      document.getElementById("consoleGear").addEventListener("click", (e) => {
+      // The shell: a child holds the phone, so the sheet opens on a hold, not a tap. The
+      // shell opens while it is held (that is the progress); a tap only makes it wobble.
+      const gear = document.getElementById("consoleGear");
+      const HOLD_MS = 800;
+      let holdTimer = null, holdX = 0, holdY = 0;
+      const letGo = (wobble) => {
+        if (!holdTimer) return;
+        clearTimeout(holdTimer); holdTimer = null;
+        gear.classList.remove("holding", "wobble");
+        if (wobble) { void gear.offsetWidth; gear.classList.add("wobble"); }
+      };
+      gear.addEventListener("pointerdown", (e) => {
         e.preventDefault();
-        ops(!root.classList.contains("ops-open"));
+        holdX = e.clientX; holdY = e.clientY;
+        try { gear.setPointerCapture(e.pointerId); } catch (_) {}
+        gear.classList.remove("wobble");
+        gear.classList.add("holding");
+        clearTimeout(holdTimer);
+        holdTimer = setTimeout(() => { letGo(false); ops(true); }, HOLD_MS);
       });
+      gear.addEventListener("pointermove", (e) => {
+        if (holdTimer && Math.hypot(e.clientX - holdX, e.clientY - holdY) > 10) letGo(true);
+      });
+      for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) {
+        gear.addEventListener(t, () => letGo(true));
+      }
+      gear.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
+    } else {
+      root.classList.add("st");                   // the visitor view: always the button
     }
     corner.addEventListener("pointerdown", (e) => {
       e.preventDefault();
@@ -919,7 +1011,7 @@
           // Level events flow only while the host records: a press on the page or the remote.
           if (pttDown || remoteHold || root.classList.contains("notalk") || !fingers.size) {
             show("listening");
-            pttButton.style.setProperty("--lvl", Math.min(1, ev.rms * 12).toFixed(3));
+            setLevel(Math.min(1, ev.rms * 12), !!(mic && mic.holding()));
           }
         } else if (ev.type === "listen") {
           // The host stopped waiting: a recording ended (thinking), or it waits again (ready).
@@ -938,10 +1030,10 @@
           if (state === "listening" || state === "waiting") show("thinking");
         } else if (ev.type === "stt") {
           if (ev.role === "user") {
-            heard.textContent = ev.text || "";
+            say(heard, ev.text);
             if ((ev.text || "").startsWith("…")) { clearTimeout(thinkTimer); nudge(); settle(); }
           } else {
-            reply.textContent = ev.text || "";
+            say(reply, ev.text);
           }
         } else if (ev.type === "speak") {
           clearTimeout(thinkTimer);

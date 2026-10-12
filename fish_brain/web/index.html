@@ -1,48 +1,159 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" translate="no">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Pez Pendejo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#8fe6f0">
+    <title>El Pez Adivino</title>
+    <link rel="icon" href="data:,">
+    <!-- The water before anything else arrives, and the view's classes before first paint
+         (the same rule as fish.js, which loads at the end of the body). -->
+    <style>html { background: #3fc9e6; }</style>
+    <script>
+        (function () {
+            var p = new URLSearchParams(location.search), c = document.documentElement.classList;
+            var con = p.get("kiosk") !== "1" && p.get("debug") !== "1";
+            if (con || p.get("kiosk") === "1") c.add("kiosk");
+            if (con) c.add("console");
+        })();
+    </script>
     <link rel="stylesheet" href="/fish.css">
 </head>
 <body>
+    <!-- Drawings used by the scene and the corner shell. Original shapes, drawn here. -->
+    <svg class="defs" aria-hidden="true" width="0" height="0" style="position:absolute">
+        <defs>
+            <mask id="m-flor"><rect width="100" height="100" fill="#fff"/><circle cx="50" cy="50" r="11" fill="#000"/></mask>
+        </defs>
+        <symbol id="s-flor" viewBox="0 0 100 100">
+            <g fill="#fff" mask="url(#m-flor)">
+                <ellipse cx="50" cy="26" rx="17" ry="25"/>
+                <ellipse cx="50" cy="26" rx="17" ry="25" transform="rotate(72 50 50)"/>
+                <ellipse cx="50" cy="26" rx="17" ry="25" transform="rotate(144 50 50)"/>
+                <ellipse cx="50" cy="26" rx="17" ry="25" transform="rotate(216 50 50)"/>
+                <ellipse cx="50" cy="26" rx="17" ry="25" transform="rotate(288 50 50)"/>
+            </g>
+        </symbol>
+        <symbol id="s-burbuja" viewBox="0 0 28 28">
+            <circle cx="14" cy="14" r="11.5" fill="rgba(255,255,255,0.3)" stroke="#23231c" stroke-width="2.5"/>
+            <path d="M8.5 12 A6.5 6.5 0 0 1 13 7.5" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="s-alga" viewBox="0 0 44 124">
+            <path d="M20,122 C4,98 34,86 18,62 C6,44 30,32 20,6 C36,32 16,46 28,64 C40,84 12,100 24,122Z"
+                  fill="#2fbf71" stroke="#23231c" stroke-width="3.5" stroke-linejoin="round"/>
+            <path d="M21,116 C10,98 30,86 21,64 C13,46 26,34 21,16" fill="none" stroke="#178a55" stroke-width="2.5" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="s-coral" viewBox="0 0 70 90">
+            <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M35,86 V30 M35,62 H16 V40 M35,50 H56 V22" stroke="#23231c" stroke-width="22"/>
+                <path d="M35,86 V30 M35,62 H16 V40 M35,50 H56 V22" stroke="#ff6f7d" stroke-width="14"/>
+            </g>
+        </symbol>
+        <symbol id="s-concha" viewBox="0 0 48 40">
+            <path d="M24,37 L4,22 C2,8 14,3 24,3 C34,3 46,8 44,22 Z" fill="currentColor" stroke="#23231c" stroke-width="3" stroke-linejoin="round"/>
+            <path d="M24,35 L12,10 M24,35 L20,6 M24,35 L28,6 M24,35 L36,10" fill="none" stroke="#23231c" stroke-width="2" stroke-linecap="round" opacity="0.55"/>
+        </symbol>
+        <symbol id="s-estrella" viewBox="0 0 60 56">
+            <polygon points="30,6 36.5,21.1 52.8,22.6 40.5,33.4 44.1,49.4 30,41 15.9,49.4 19.5,33.4 7.2,22.6 23.5,21.1"
+                     fill="#ffb22e" stroke="#23231c" stroke-width="3.5" stroke-linejoin="round"/>
+            <g fill="#d98a12"><circle cx="30" cy="20" r="1.8"/><circle cx="30" cy="30" r="2"/><circle cx="23" cy="27" r="1.6"/>
+                <circle cx="37" cy="27" r="1.6"/><circle cx="26" cy="36" r="1.6"/><circle cx="34" cy="36" r="1.6"/></g>
+        </symbol>
+    </svg>
+
+    <!-- The sea: clouds, bubbles, dunes and what lives on them. Decoration only. -->
+    <div class="scene" aria-hidden="true">
+        <svg class="flor f1"><use href="#s-flor"/></svg>
+        <svg class="flor f2"><use href="#s-flor"/></svg>
+        <svg class="flor f3"><use href="#s-flor"/></svg>
+        <svg class="flor f4"><use href="#s-flor"/></svg>
+        <svg class="flor f5"><use href="#s-flor"/></svg>
+        <svg class="burbuja b1"><use href="#s-burbuja"/></svg>
+        <svg class="burbuja b2"><use href="#s-burbuja"/></svg>
+        <svg class="burbuja b3"><use href="#s-burbuja"/></svg>
+        <svg class="duna d2" viewBox="0 0 360 120" preserveAspectRatio="none">
+            <path d="M-4,46 C60,18 120,22 180,40 S300,62 364,30 V124 H-4Z" fill="#e9b452" stroke="#23231c" stroke-width="4" vector-effect="non-scaling-stroke"/>
+        </svg>
+        <svg class="alga a1"><use href="#s-alga"/></svg>
+        <svg class="alga a2"><use href="#s-alga"/></svg>
+        <svg class="alga a3"><use href="#s-alga"/></svg>
+        <svg class="prop coral"><use href="#s-coral"/></svg>
+        <svg class="duna d1" viewBox="0 0 360 120" preserveAspectRatio="none">
+            <path d="M-4,70 C70,48 150,84 230,62 S330,50 364,66 V124 H-4Z" fill="#f7cf72" stroke="#23231c" stroke-width="4" vector-effect="non-scaling-stroke"/>
+            <g fill="#d99a3d"><ellipse cx="30" cy="92" rx="3" ry="1.6"/><ellipse cx="72" cy="104" rx="2.4" ry="1.4"/><ellipse cx="118" cy="96" rx="3" ry="1.6"/>
+                <ellipse cx="160" cy="110" rx="2.4" ry="1.4"/><ellipse cx="204" cy="94" rx="3" ry="1.6"/><ellipse cx="246" cy="106" rx="2.4" ry="1.4"/>
+                <ellipse cx="288" cy="88" rx="3" ry="1.6"/><ellipse cx="322" cy="102" rx="2.4" ry="1.4"/><ellipse cx="344" cy="86" rx="2.4" ry="1.4"/></g>
+        </svg>
+        <svg class="prop concha c1"><use href="#s-concha"/></svg>
+        <svg class="prop concha c2"><use href="#s-concha"/></svg>
+        <svg class="prop estrella"><use href="#s-estrella"/></svg>
+    </div>
+
     <div class="container">
-        <h1>🐟 Pez pendejo</h1>
+        <h1><span>El Pez Adivino</span></h1>
 
         <div class="stage-wrap">
-            <canvas id="stage" width="600" height="500"></canvas>
-            <div id="conn-dot" title="Conexión"></div>
+            <!-- .hang swings on the nail all the time; .hang-kick adds the jolt when the fish speaks. -->
+            <div class="hang"><div class="hang-kick">
+                <canvas id="stage" width="600" height="500"></canvas>
+            </div></div>
             <div class="status" id="status" role="status" aria-live="polite">Conectando…</div>
         </div>
 
-        <button id="pttButton" type="button">🎤 Mantén para hablar <small>(o barra espaciadora)</small></button>
-        <!-- The phone's microphone (FISH_MIC_CAPTURE=browser): one tap grants it; in the
-             console the page moves this into the strip. Hidden until /status asks for it. -->
+        <!-- What the fish said and what it heard, as speech bubbles (empty: no bubble). -->
+        <div class="say">
+            <p class="bubble bubble-reply"><span id="cReply"></span></p>
+            <p class="bubble bubble-heard"><span id="cHeard"></span></p>
+        </div>
+
+        <!-- The talk target. Three boxes so no motion overrides another: the state's loop on
+             .talk-loop, the lean with the voice on .talk-lean, press and nudge on the button. -->
+        <div class="talk"><div class="talk-loop"><div class="talk-lean">
+            <button id="pttButton" type="button">🎤 Mantén para hablar <small>(o barra espaciadora)</small></button>
+        </div></div></div>
+        <!-- The phone's microphone (FISH_MIC_CAPTURE=browser): one tap grants it. Hidden until
+             /status asks for it; it stays on the main surface because it comes back whenever
+             the phone slept. -->
         <button id="micGate" type="button" hidden>🎙️ Activar micrófono</button>
 
-        <!-- Operator console (the default view): the strip under the talk target, always visible. -->
-        <div id="consoleBar" hidden>
+        <!-- The corner: the shell opens the operator's sheet when held; the pearl in it is the
+             connection; the mark beside it says "operator, look here". -->
+        <div class="corner">
+            <button id="consoleGear" type="button" aria-label="Ajustes del operador">
+                <svg class="valva-abajo" viewBox="0 0 56 56" aria-hidden="true">
+                    <path d="M6,30 C8,46 20,52 28,52 C36,52 48,46 50,30 Z" fill="#e87fb4" stroke="#23231c" stroke-width="3" stroke-linejoin="round"/>
+                    <path d="M10,31 H46" stroke="#5b2a55" stroke-width="7" stroke-linecap="round"/>
+                </svg>
+                <span id="conn-dot" title="Conexión"></span>
+                <svg class="valva-arriba" viewBox="0 0 56 56" aria-hidden="true">
+                    <path d="M6,30 C4,14 16,6 28,6 C40,6 52,14 50,30 Z" fill="#ff9ecb" stroke="#23231c" stroke-width="3" stroke-linejoin="round"/>
+                    <path d="M28,29 L15,13 M28,29 L23,8 M28,29 L33,8 M28,29 L41,13" fill="none" stroke="#23231c" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+                </svg>
+            </button>
+            <span class="warn" aria-hidden="true">!</span>
+        </div>
+
+        <div id="sheetScrim"></div>
+        <!-- The operator's sheet (shown while html.ops-open): the reading and the status words
+             first, then the developer rows. Without ?kiosk or the console this is the plain
+             controls block of the ?debug=1 page. -->
+        <div class="controls">
+            <div class="sheet-head"><strong>Operador</strong><button id="sheetClose" type="button">Cerrar</button></div>
             <div class="c-status" role="status" aria-live="polite">
                 <span id="cLink">…</span><span id="cNet"></span><span id="cMic"></span><span id="cListen"></span>
             </div>
-            <p class="c-heard"><span class="t-tag">🗣️</span> <span id="cHeard">…</span></p>
-            <p class="c-reply"><span class="t-tag">🐟</span> <span id="cReply">…</span></p>
             <!-- The reading: a badge photo, or a typed name, becomes "¿Tú eres X?". -->
             <div class="c-read" id="cRead">
                 <button id="badgeBtn" type="button">📷 Foto del gafete</button>
                 <button id="galleryBtn" type="button">🖼️ Galería</button>
                 <label id="lookWrap" hidden><input type="checkbox" id="lookTick"> Describir su look (con permiso)</label>
-                <input type="text" id="readName" placeholder="Nombre" autocomplete="off" autocapitalize="words" enterkeyhint="go">
+                <input type="text" id="readName" placeholder="Nombre" autocomplete="off" autocapitalize="words"
+                       autocorrect="off" spellcheck="false" enterkeyhint="go">
                 <button id="readBtn" type="button">🔮 Leer el futuro</button>
                 <span id="readMsg" role="status" aria-live="polite"></span>
                 <input type="file" id="badgeCam" accept="image/jpeg,image/*" capture="environment" hidden>
                 <input type="file" id="badgeFile" accept="image/jpeg,image/*" hidden>
             </div>
-            <button id="consoleGear" type="button" aria-label="Ajustes" title="Ajustes">⚙</button>
-        </div>
-
-        <div class="controls">
             <div class="slider-container">
                 <label for="sensitivity">Sensibilidad: <span id="sensitivityValue">2.5</span></label>
                 <input type="range" id="sensitivity" min="1" max="5" step="0.1" value="2.5">
@@ -72,6 +183,22 @@
             </div>
         </div>
     </div>
+
+    <!-- What fish.js puts inside the talk target next to its words (it empties the button
+         first): the well with the two voice rings and one small drawing per state. -->
+    <template id="talkParts">
+        <span class="p-well" aria-hidden="true">
+            <span class="p-ring r1"></span><span class="p-ring r2"></span>
+            <svg class="p-icon i-remote" viewBox="0 0 24 24"><rect x="7.5" y="2" width="9" height="20" rx="3.5" fill="#fffdf2" stroke="#23231c" stroke-width="2.2"/><circle cx="12" cy="8" r="2.6" fill="#ff6f7d" stroke="#23231c" stroke-width="1.6"/><path d="M10.5 14.5h3M10.5 17.5h3" stroke="#23231c" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <svg class="p-icon i-press" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#23231c" stroke-width="2.2"/><circle cx="12" cy="12" r="3.8" fill="#ff6f7d" stroke="#23231c" stroke-width="1.8"/></svg>
+            <svg class="p-icon i-waiting" viewBox="0 0 24 24"><g fill="#23231c"><circle cx="5.5" cy="12" r="2.4"/><circle cx="12" cy="12" r="2.4"/><circle cx="18.5" cy="12" r="2.4"/></g></svg>
+            <svg class="p-icon i-listening" viewBox="0 0 24 24"><g fill="none" stroke="#23231c" stroke-width="2.3" stroke-linecap="round"><circle cx="5.5" cy="12" r="1.6" fill="#23231c"/><path d="M10 8a5.5 5.5 0 0 1 0 8M14 5a9.5 9.5 0 0 1 0 14M18 2.5a13 13 0 0 1 0 19"/></g></svg>
+            <svg class="p-icon i-thinking" viewBox="0 0 24 24"><path d="M12 12.2a1.6 1.6 0 1 1 1.7 1.9a3.6 3.6 0 1 1 2-6.4a6 6 0 1 1-7.6 9.5a8.6 8.6 0 0 1-2.6-9.4" fill="none" stroke="#23231c" stroke-width="2.3" stroke-linecap="round"/></svg>
+            <svg class="p-icon i-speaking" viewBox="0 0 24 24"><path d="M3 9.5h4l5.5-4.5v14L7 14.5H3Z" fill="#fffdf2" stroke="#23231c" stroke-width="2.2" stroke-linejoin="round"/><path d="M16 9a4.2 4.2 0 0 1 0 6M19 6.2a8 8 0 0 1 0 11.6" fill="none" stroke="#23231c" stroke-width="2.2" stroke-linecap="round"/></svg>
+            <svg class="p-icon i-reading" viewBox="0 0 24 24"><rect x="3" y="4" width="14" height="16" rx="2.5" fill="#fffdf2" stroke="#23231c" stroke-width="2.2"/><path d="M6.5 9h7M6.5 12.5h4.5" stroke="#23231c" stroke-width="1.8" stroke-linecap="round"/><circle cx="16" cy="15" r="4" fill="#eafcff" stroke="#23231c" stroke-width="2.2"/><path d="M19 18l2.6 2.6" stroke="#23231c" stroke-width="2.4" stroke-linecap="round"/></svg>
+            <svg class="p-icon i-offline" viewBox="0 0 24 24"><path d="M4 6h7l-7 8h7M14 12h6l-6 7h6" fill="none" stroke="#23231c" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+    </template>
     <script src="/fish.js"></script>
 </body>
 </html>
