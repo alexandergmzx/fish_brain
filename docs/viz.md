@@ -238,8 +238,11 @@ EOF (`--text`), or Ctrl-C quit.
   `held: false` and the remote reset (the page also enforces its own limit), and one still
   held when the wait ends is ended the same way, so the page never records forever. With
   no page ready (none open, the gate not tapped, the microphone denied) the remote records
-  with the board's microphone as before; the choice is made at every wait, so a phone that
-  comes or goes needs no restart. The start-up line reads
+  with the board's microphone as before; the choice is made at every wait, and checked
+  again at every press of the remote (`relay_ready`): a phone that leaves mid-wait (pocketed,
+  the keep-alive expired) hands the press to the board's microphone for the rest of that
+  wait instead of leaving the remote dead. A phone that arrives mid-wait is seen at the
+  next wait. The start-up line reads
   `ptt=web+browser-mic+evdev(…)→page`.
 - **`?mic=`**: `?mic=host` forces the `/ptt` path on that device (the board's microphone
   through the page, for a test or when the phone's is unusable); `?mic=browser` shows the

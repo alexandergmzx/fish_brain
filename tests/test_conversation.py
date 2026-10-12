@@ -76,7 +76,7 @@ class FakeLLM:
 def make(monkeypatch):
     # The wait returns the inbox item at once: no microphone, no button.
     monkeypatch.setattr(ptt, "record_multi",
-                        lambda cfg, sources, on_level=None, inbox=None, relay=None: inbox())
+                        lambda cfg, sources, inbox=None, **kw: inbox())
 
     def build(item, *, echo=True):
         cfg = Config()
@@ -210,8 +210,9 @@ def remote(make, monkeypatch):
     only captures its keyword arguments."""
     calls = []
 
-    def fake_record_multi(cfg, sources, on_level=None, inbox=None, relay=None):
-        calls.append({"sources": list(sources), "relay": relay})
+    def fake_record_multi(cfg, sources, on_level=None, inbox=None, relay=None,
+                          relay_ready=None):
+        calls.append({"sources": list(sources), "relay": relay, "relay_ready": relay_ready})
         return inbox()
 
     monkeypatch.setattr(ptt, "record_multi", fake_record_multi)
@@ -228,6 +229,10 @@ def test_remote_is_relayed_when_a_page_has_a_microphone(remote):
     assert convo.turn() is True
     assert src.relay is True
     assert calls[-1]["relay"] == viz.relay_ptt and calls[-1]["sources"] == convo.sources
+    # The check record_multi asks at each press follows the page's state live.
+    assert calls[-1]["relay_ready"]() is True
+    viz.pages = 0
+    assert calls[-1]["relay_ready"]() is False
 
 
 def test_remote_records_here_without_a_page(remote):

@@ -107,7 +107,7 @@ class FishConversation:
                 return ptt.record_multi(
                     self.cfg.ptt, self.sources, on_level=on_level,
                     inbox=self.viz.take_inbox if self.viz is not None else None,
-                    relay=self._relay())
+                    relay=self._relay(), relay_ready=self._relay_ready())
             finally:
                 if self.viz is not None:
                     self.viz.set_listening(False)
@@ -123,6 +123,14 @@ class FishConversation:
         for s in remotes:
             s.relay = use
         return self.viz.relay_ptt if use else None
+
+    def _relay_ready(self):
+        """Asked by `record_multi` at each press of a relayed source: is a page still there?
+        A phone pocketed mid-wait (ready false, or the keep-alive expired) hands the press
+        back to the board's microphone instead of leaving the remote dead."""
+        if self.viz is None:
+            return None
+        return lambda: self.viz.mic_pages() > 0
 
     def _handle_item(self, item) -> bool:
         """An input item that is not a recording (offered by the page). The single dispatch

@@ -124,6 +124,29 @@ def test_relayed_source_held_at_the_start_waits_for_a_release():
     assert got is item and calls == [True, False]
 
 
+def test_a_relayed_press_records_here_when_the_page_left(monkeypatch, tmp_path):
+    out = tmp_path / "rec.wav"
+    monkeypatch.setattr(ptt, "_record_until", lambda stop, cfg, on_level=None: out)
+    flag, calls = Flag(), []
+    threading.Timer(0.05, lambda: setattr(flag, "held", True)).start()
+    got = ptt.record_multi(PTTConfig(), [relayed(flag)], inbox=lambda: None,
+                           relay=calls.append, relay_ready=lambda: False)
+    assert got == out and calls == []
+
+
+def test_a_relayed_press_goes_to_the_page_while_it_is_there(monkeypatch):
+    monkeypatch.setattr(ptt, "_record_until",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("recorded")))
+    flag, calls, box, item = Flag(), [], [], Item()
+    threading.Timer(0.05, lambda: setattr(flag, "held", True)).start()
+    threading.Timer(0.15, lambda: setattr(flag, "held", False)).start()
+    threading.Timer(0.25, lambda: box.append(item)).start()
+    got = ptt.record_multi(PTTConfig(), [relayed(flag)],
+                           inbox=lambda: box.pop() if box else None,
+                           relay=calls.append, relay_ready=lambda: True)
+    assert got is item and calls == [True, False]
+
+
 def test_a_source_without_relay_still_records(monkeypatch, tmp_path):
     out = tmp_path / "rec.wav"
     monkeypatch.setattr(ptt, "_record_until", lambda stop, cfg, on_level=None: out)

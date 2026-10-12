@@ -231,7 +231,8 @@ _cut_last = False   # the previous recording hit max_record_s; wait for a releas
 def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
                  on_level: Callable[[float], None] | None = None,
                  inbox: Callable[[], object] | None = None,
-                 relay: Callable[[bool], None] | None = None) -> Path | object:
+                 relay: Callable[[bool], None] | None = None,
+                 relay_ready: Callable[[], bool] | None = None) -> Path | object:
     """Record while any of `sources` is held; returns the WAV path.
 
     Starts only on a fresh press: a source that already reads "held" when we begin waiting
@@ -249,6 +250,9 @@ def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
     that reaches `cfg.max_record_s` is ended with `relay(False)` and the source reset; one
     still held when this returns is ended the same way, so the page never records forever.
     A relayed source held when the wait begins is ignored until it is released.
+    `relay_ready()`, when given, is asked at every press edge whether the page is still
+    there: if not, that source records here for the rest of this wait (the phone went away
+    mid-wait and the remote must not go dead).
     """
     global _cut_last
     if not sources and inbox is None:
@@ -270,6 +274,12 @@ def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
         if rstate["need_release"]:
             if not now_held:
                 rstate["need_release"] = False
+            return
+        if now_held and not rstate["held"] and relay_ready is not None and not relay_ready():
+            # The page left since this wait began: this press records on the board.
+            print("[ptt] no page with a microphone: the remote records here", flush=True)
+            local.extend(relayed)
+            relayed.clear()
             return
         if now_held != rstate["held"]:
             rstate["held"] = now_held
@@ -296,13 +306,7 @@ def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
     for s in sources:
         s.arm(True)
     try:
-        if not local:
-            while True:                    # short sleeps keep Ctrl-C prompt
-                item = wait_step()
-                if item is not None:
-                    return item
-
-        def any_held() -> bool:
+        def any_held() -> bool:            # `local` may grow: a relayed source whose page left
             return any(s.is_held() for s in local)
 
         # Whatever is held right now is stale: clear it, then wait for idle.
