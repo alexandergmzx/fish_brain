@@ -70,6 +70,14 @@
     try { TOKEN = sessionStorage.getItem("fishToken") || ""; } catch (_) {}
   }
   const tokenQuery = () => (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : "");
+  // This tab's id for /micstate: the host counts the pages whose microphone is ready and
+  // relays a remote's press to them. Random, kept for the tab's life (a reload keeps it).
+  let PAGE_ID = "";
+  try { PAGE_ID = sessionStorage.getItem("fishPage") || ""; } catch (_) {}
+  if (!PAGE_ID) {
+    PAGE_ID = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    try { sessionStorage.setItem("fishPage", PAGE_ID); } catch (_) {}
+  }
   // Visitor view for a touch display (/?kiosk=1): fish and one talk target, the rest behind
   // an operator corner. The operator console (the default view) is the same machine on a phone in
   // portrait: the kiosk layout plus a status strip, muted. The default page is unchanged.
@@ -137,6 +145,25 @@
       headers: jsonHeaders(),
       body: JSON.stringify({ down }),
     }).catch(() => {});
+  }
+  // A remote on the board, relayed by the host ({"type":"ptt","held":…,"source":"remote"})
+  // in browser-mic mode: its press starts the same local hold the finger starts, its
+  // release ends it the same way (tail, discard rules, upload). With this page's
+  // microphone off (host mode, the gate not tapped, denied) the event is ignored: the
+  // host records itself then. The on-screen target stays the second button.
+  let remoteHold = false;
+  function remotePtt(held) {
+    if (!mic || !mic.ready()) { remoteHold = false; return; }
+    if (KIOSK) { kiosk.remote(held); return; }
+    if (held) {
+      if (pttDown) return;
+      remoteHold = true;
+      setPtt(false);                            // clears a "host ended the last press" latch
+      setPtt(true);
+    } else if (remoteHold) {
+      remoteHold = false;
+      setPtt(false);
+    }
   }
   if (!KIOSK) {
     pttButton.addEventListener("mousedown", (e) => { e.preventDefault(); setPtt(true); });
@@ -592,6 +619,7 @@
       fingers.add(e.pointerId);
       try { pttButton.setPointerCapture(e.pointerId); } catch (_) {}
       if (fingers.size > 1) return;
+      if (remoteHold) { nudge(); return; }      // the remote holds this turn
       if (!online || performance.now() < speakUntil || state === "thinking" || state === "reading") {
         nudge(); return;
       }
@@ -841,6 +869,28 @@
     show("offline");
     return {
       conn(live) { online = live; if (!pttDown) settle(); },
+      // The relayed remote: the same path as a finger down and up on the target.
+      remote(held) {
+        if (held) {
+          if (pttDown || fingers.size) return;  // a hold is already on
+          if (!online || performance.now() < speakUntil || state === "thinking"
+              || state === "reading" || !hostListening) { nudge(); return; }
+          remoteHold = true;
+          pressedAt = performance.now();
+          lastLevel = 0;
+          setPtt(false);
+          setPtt(true);
+          show("waiting");
+          return;
+        }
+        if (!remoteHold) return;
+        remoteHold = false;
+        if (!pttDown) { settle(); return; }
+        setPtt(false);
+        show("thinking");                        // the tail, the upload, then the result
+        clearTimeout(thinkTimer);
+        thinkTimer = setTimeout(settle, 45000);
+      },
       // What became of a clip recorded on this phone: "sent" (the host took it: thinking
       // goes on), "busy" (409), "short" or "quiet" (dropped here), "offline" (no answer).
       micResult(r) {
@@ -862,8 +912,11 @@
             show("listening");
             pttButton.style.setProperty("--lvl", Math.min(1, ev.rms * 12).toFixed(3));
           }
+        } else if (ev.type === "ptt" && ev.source) {
+          return;                                // a relayed edge: handled by remote()
         } else if (ev.type === "ptt" && !ev.held) {
           fingers.clear();
+          remoteHold = false;
           if (state === "listening" || state === "waiting") show("thinking");
         } else if (ev.type === "stt") {
           if (ev.role === "user") {
@@ -916,6 +969,27 @@
     let lastEmit = 0, lvl = { value: 0, vel: 0, k: 90, d: 11 }, lvlAt = 0;
     let wakeLock = null;
     const api = { anomaly: false };
+    // /micstate: the host counts the pages whose microphone is ready (and relays a remote's
+    // press to them). Sent after the gate, every KEEPALIVE_MS, and as false when the
+    // microphone goes (hidden, dropped, the page unloading: a beacon then).
+    const KEEPALIVE_MS = 20000;
+    let announced = false, keepTimer = null;
+    function micState(ready, beacon) {
+      announced = ready;
+      const body = JSON.stringify({ ready, page: PAGE_ID });
+      if (beacon && navigator.sendBeacon) {
+        const url = "/micstate" + tokenQuery();   // a beacon carries no header
+        if (navigator.sendBeacon(url, new Blob([body], { type: "application/json" }))) return;
+      }
+      fetch("/micstate", { method: "POST", headers: jsonHeaders(), body, keepalive: true }).catch(() => {});
+    }
+    function keepAlive() {
+      clearInterval(keepTimer);
+      keepTimer = setInterval(() => {
+        if (wanted && actx && trackAlive()) micState(true);
+        else { clearInterval(keepTimer); keepTimer = null; if (announced) micState(false); }
+      }, KEEPALIVE_MS);
+    }
 
     function gate(text, cls) {
       micGate.hidden = !wanted;
@@ -1010,12 +1084,16 @@
         keepAwake();
         micGate.hidden = true;
         pttButton.classList.add("local-mic");
+        micState(true);
+        keepAlive();
       } catch (e) {
         release();
         gate("micrófono del pez" + (e && e.name === "NotAllowedError" ? " (permiso negado)" : ""), "off");
       }
     }
     function release() {
+      clearInterval(keepTimer); keepTimer = null;
+      if (announced) micState(false, document.visibilityState === "hidden");
       if (stream) { for (const t of stream.getTracks()) { try { t.stop(); } catch (_) {} } }
       if (actx) { try { actx.close(); } catch (_) {} }
       stream = actx = node = source = sink = null;
@@ -1135,6 +1213,7 @@
         keepAwake();
       }
     });
+    window.addEventListener("pagehide", () => { if (announced) micState(false, true); });
     pttButton.addEventListener("pointerup", () => { if (actx && actx.state === "suspended") actx.resume().catch(() => {}); });
 
     // Whether this page should record: /status says so (or ?mic=browser forces it).
@@ -1193,6 +1272,7 @@
       if (ev.type === "speak") handleSpeak(markReplay(ev));
       else if (ev.type === "level") { pushMicLevel(ev.rms); wakeDraw(); }
       else if (ev.type === "stt") setTranscript(ev.role, ev.text);
+      else if (ev.type === "ptt" && ev.source) remotePtt(!!ev.held);
       else if (ev.type === "ptt" && !ev.held) hostReleasedPtt();
       else if (ev.type === "draft") { speakText.value = ev.text || ""; speakText.focus(); }
       else if (ev.type === "listen") hostListening = !!ev.ready;
