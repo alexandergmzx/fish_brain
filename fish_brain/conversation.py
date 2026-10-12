@@ -169,6 +169,7 @@ class FishConversation:
         from . import reading
         times: dict[str, float] = {}
         look_note = f" Lleva: {r.look}." if r.look else ""
+        debug.new_visitor()                        # /debug forgets the earlier visitor's prompts
         if not self.echo:
             self.llm.reset()
             self.llm.extra_rules = self.cfg.reading.rules

@@ -13,10 +13,11 @@ a reply that is just its own context prompt read back.
 from __future__ import annotations
 
 import re
+import time
 import unicodedata
 from pathlib import Path
 
-from . import cloud
+from . import cloud, debug
 from .config import STT_PROFILES, STTConfig
 
 # Normalized substrings Whisper hallucinates on near-silence; treated as "no speech".
@@ -84,12 +85,22 @@ class Transcriber:
         self._ensure_model()
 
     def transcribe(self, wav_path: str | Path) -> str:
-        model = self._ensure_model()
-        # vad_filter drops non-speech segments -> far fewer silence hallucinations.
-        segments, _info = model.transcribe(
-            str(wav_path), language=self.cfg.language, vad_filter=True)
-        text = " ".join(seg.text.strip() for seg in segments).strip()
-        return "" if _is_hallucination(text) else text
+        sent = {"backend": "local", "model": self.cfg.model, "language": self.cfg.language}
+        t0 = time.monotonic()
+        try:
+            model = self._ensure_model()
+            # vad_filter drops non-speech segments -> far fewer silence hallucinations.
+            segments, _info = model.transcribe(
+                str(wav_path), language=self.cfg.language, vad_filter=True)
+            text = " ".join(seg.text.strip() for seg in segments).strip()
+        except Exception as e:
+            debug.model("stt", sent, error=e, seconds=time.monotonic() - t0)
+            raise
+        dropped = "hallucination" if _is_hallucination(text) else ""
+        # For /debug: the text as the model gave it, and the filter that emptied it.
+        debug.model("stt", sent, seconds=time.monotonic() - t0, raw=text,
+                    final="" if dropped else text, dropped=dropped)
+        return "" if dropped else text
 
 
 class CloudTranscriber:
@@ -121,15 +132,26 @@ class CloudTranscriber:
         return req
 
     def transcribe(self, wav_path: str | Path) -> str:
+        sent = {"backend": self.cfg.backend, "model": self.model, "language": self.cfg.language,
+                "prompt": self.cfg.prompt, "keywords": list(self.cfg.keywords or ())}
         if not cloud.is_online():
+            debug.model("stt", sent, sent=False, note="not sent: known offline")
             raise cloud.CloudUnavailable("offline")
         client = cloud.client(self.profile["base_url"], self.profile["api_key_env"])
-        with cloud.guard():
-            resp = client.audio.transcriptions.create(**self._request(wav_path))
+        t0 = time.monotonic()
+        try:
+            with cloud.guard():
+                resp = client.audio.transcriptions.create(**self._request(wav_path))
+        except Exception as e:
+            debug.model("stt", sent, error=e, seconds=time.monotonic() - t0)
+            raise
         text = (getattr(resp, "text", "") or "").strip()
-        if _is_hallucination(text) or _is_prompt_echo(text, self.cfg.prompt):
-            return ""
-        return text
+        dropped = ("hallucination" if _is_hallucination(text) else
+                   "prompt echo" if _is_prompt_echo(text, self.cfg.prompt) else "")
+        # For /debug: the text as the model gave it, and the filter that emptied it.
+        debug.model("stt", sent, seconds=time.monotonic() - t0, raw=text,
+                    final="" if dropped else text, dropped=dropped)
+        return "" if dropped else text
 
 
 def _unknown_backend(backend: str) -> str:

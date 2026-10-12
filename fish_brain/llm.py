@@ -9,7 +9,7 @@ import os
 import sys
 import time
 
-from . import cloud
+from . import cloud, debug
 from .config import LLMConfig
 
 
@@ -80,12 +80,34 @@ class Conversation:
         return kwargs
 
     def _create(self, user_text: str):
-        return self._client.chat.completions.create(
-            model=self.cfg.model,
-            max_completion_tokens=self.cfg.max_completion_tokens,
-            messages=self._messages(user_text),
-            **self._kwargs(),
-        )
+        messages, kwargs = self._messages(user_text), self._kwargs()
+        sent = {"profile": self.cfg.profile, "model": self.cfg.model, "messages": messages,
+                "params": {"max_completion_tokens": self.cfg.max_completion_tokens, **kwargs}}
+        t0 = time.monotonic()
+        try:
+            resp = self._client.chat.completions.create(
+                model=self.cfg.model,
+                max_completion_tokens=self.cfg.max_completion_tokens,
+                messages=messages,
+                **kwargs,
+            )
+        except Exception as e:
+            debug.model("llm", sent, error=e, seconds=time.monotonic() - t0)   # for /debug
+            raise
+        debug.model("llm", sent, resp=resp, seconds=time.monotonic() - t0)
+        return resp
+
+    def probe(self) -> dict:
+        """One tiny call for the debug page's cloud check. It leaves the history and the
+        `last_*` fields alone, never retries and gives up after 6 s."""
+        client = self._client.with_options(max_retries=0, timeout=6.0)
+        kwargs = {k: v for k, v in self._kwargs().items() if k != "temperature"}
+        t0 = time.monotonic()
+        resp = client.chat.completions.create(
+            model=self.cfg.model, max_completion_tokens=16,
+            messages=[{"role": "user", "content": "Responde solo: ok"}], **kwargs)
+        return {"seconds": round(time.monotonic() - t0, 2), "model": self.cfg.model,
+                "reply": (resp.choices[0].message.content or "").strip()[:40]}
 
     def reply(self, user_text: str) -> str:
         """Send a user turn, return the assistant reply, and update history."""
@@ -96,6 +118,9 @@ class Conversation:
             # Known offline: answer at once instead of waiting out the timeout. The probe
             # watches api.openai.com, so it only speaks for profiles hosted there.
             self.last_error = "offline"
+            debug.model("llm", {"profile": self.cfg.profile, "model": self.cfg.model,
+                                "messages": self._messages(user_text)},
+                        sent=False, note="not sent: known offline")
             print(f"[llm] {self.cfg.profile} offline", file=sys.stderr)
             return self.cfg.fallback_reply
         try:

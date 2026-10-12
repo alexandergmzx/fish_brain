@@ -13,10 +13,11 @@ import hashlib
 import os
 import subprocess
 import tempfile
+import time
 import wave
 from pathlib import Path
 
-from . import cloud
+from . import cloud, debug
 from .config import TTSConfig
 
 
@@ -94,11 +95,21 @@ def synthesize(text: str, cfg: TTSConfig, out_path: str | Path | None = None) ->
         Path(name).unlink(missing_ok=True)  # the backend writes it; we just want the name
         out_path = name
     out_path = Path(out_path)
-    if cfg.backend == "loq":
-        _synthesize_loq(text, cfg, out_path)
-    elif cfg.backend == "openai":
-        _synthesize_openai(text, cfg, out_path)
-    else:
-        raise ValueError(f"FISH_TTS_BACKEND={cfg.backend!r}; choose loq or openai")
-    _validate_wav(out_path)
+    sent = {"backend": cfg.backend, "text": text}             # for /debug: what the voice got
+    if cfg.backend == "openai":
+        sent.update(model=cfg.openai_model, voice=cfg.openai_voice,
+                    instructions=cfg.openai_instructions)
+    t0 = time.monotonic()
+    try:
+        if cfg.backend == "loq":
+            _synthesize_loq(text, cfg, out_path)
+        elif cfg.backend == "openai":
+            _synthesize_openai(text, cfg, out_path)
+        else:
+            raise ValueError(f"FISH_TTS_BACKEND={cfg.backend!r}; choose loq or openai")
+        _validate_wav(out_path)
+    except Exception as e:
+        debug.model("tts", sent, error=e, seconds=time.monotonic() - t0)
+        raise
+    debug.model("tts", sent, seconds=time.monotonic() - t0)
     return out_path

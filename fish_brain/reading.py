@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import cloud
+from . import cloud, debug
 from .config import LLM_PROFILES, Config
 
 JPEG_MAGIC = b"\xff\xd8\xff"
@@ -123,9 +123,28 @@ def read_badge(jpeg: bytes, cfg: Config, *, want_look: bool) -> BadgeRead:
     ask = "Lee el gafete." + (" Describe también el look." if want_look
                               else " No describas a la persona: look es null.")
     data_url = "data:image/jpeg;base64," + base64.b64encode(bytes(jpeg)).decode("ascii")
+    # For /debug: what the vision model was asked. Never the photo or its data URL.
+    sent = {"model": profile["model"], "prompt": cfg.reading.badge_prompt, "ask": ask,
+            "image_bytes": len(jpeg)}
     t0 = time.monotonic()
+    try:
+        resp = _ask_badge(client, profile, cfg, ask, data_url)
+    except Exception as e:
+        debug.model("vision", sent, error=e, seconds=time.monotonic() - t0)
+        raise
+    seconds = time.monotonic() - t0
+    out = _parse_badge(resp, seconds, want_look)
+    debug.model("vision", sent, seconds=seconds, tokens=out.tokens, found=out.found,
+                confidence=out.confidence, name=out.full_name,
+                name_for_speech=out.name_for_speech, look=out.look)
+    print(f"[reading] badge {seconds:.1f}s tokens={out.tokens} found={str(out.found).lower()} "
+          f"confidence={out.confidence}", file=sys.stderr, flush=True)
+    return out
+
+
+def _ask_badge(client, profile: dict, cfg: Config, ask: str, data_url: str):
     with cloud.guard():
-        resp = client.chat.completions.create(
+        return client.chat.completions.create(
             model=profile["model"],
             reasoning_effort="none",
             max_completion_tokens=300,
@@ -141,7 +160,9 @@ def read_badge(jpeg: bytes, cfg: Config, *, want_look: bool) -> BadgeRead:
                 ]},
             ],
         )
-    seconds = time.monotonic() - t0
+
+
+def _parse_badge(resp, seconds: float, want_look: bool) -> BadgeRead:
     usage = getattr(resp, "usage", None)
     tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
     choice = resp.choices[0]
@@ -164,8 +185,6 @@ def read_badge(jpeg: bytes, cfg: Config, *, want_look: bool) -> BadgeRead:
             out.look = (str(look).strip()[:120] or None) if isinstance(look, str) else None
             conf = raw.get("confidence")
             out.confidence = conf if conf in ("high", "medium", "low") else "low"
-    print(f"[reading] badge {seconds:.1f}s tokens={tokens} found={str(out.found).lower()} "
-          f"confidence={out.confidence}", file=sys.stderr, flush=True)
     return out
 
 

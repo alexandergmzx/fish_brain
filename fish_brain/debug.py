@@ -40,7 +40,10 @@ PARTIAL_MAX = 4096        # a line with no newline is cut here
 RECORDING_MAX = 6 * 1024 * 1024    # bytes: 45 s at 48 kHz mono 16-bit is 4.3 MB
 MAX_STREAMS = 4           # debug pages at once (their own list: never one of the phones' 8)
 RINGS = {"log": LOG_LINES, "key": 300, "press": 200, "turn": 200, "perf": 100, "tx": 1000,
-         "page": 300, "level": 400, "action": 100, "http": 100, "sys": 240}
+         "page": 300, "level": 400, "action": 100, "http": 100, "sys": 240,
+         # what the models were sent and what they answered (cleared for a new visitor)
+         "llm": 50, "stt": 50, "tts": 50, "vision": 50}
+MODEL_KINDS = ("llm", "stt", "tts", "vision")
 _TAG = re.compile(r"^\[([a-z]+)\]")
 _SECRET_PATTERNS = (re.compile(r"\b(sk|gsk)[-_][A-Za-z0-9_\-]{12,}"),
                     re.compile(r"Bearer\s+[A-Za-z0-9._\-]{8,}"))
@@ -287,6 +290,40 @@ class DebugHub:
             turn["rec"] = self.recording_stats()
         self.emit("turn", **turn)
 
+    # ---- what the models see ----------------------------------------------------------------
+
+    def model(self, kind: str, request: dict, resp, error, seconds: float, extra: dict) -> None:
+        """One call to a model: what was sent, what came back. Every field is taken out of
+        the caller's objects here, so nothing can fail in the caller. Never an image."""
+        rec = {k: v for k, v in dict(request).items()}
+        rec.update(extra)
+        rec["seconds"] = round(float(seconds), 3)
+        if kind == "llm" and "messages" in rec:
+            rec["messages"] = [{"role": str(m.get("role", "")), "content": m.get("content")
+                                if isinstance(m.get("content"), str) else "(not text)"}
+                               for m in rec["messages"]]
+        if resp is not None and kind == "llm":
+            choice = resp.choices[0]
+            rec["reply"] = (choice.message.content or "")
+            rec["finish"] = getattr(choice, "finish_reason", None)
+            usage = getattr(resp, "usage", None)
+            rec["tokens"] = {"prompt": getattr(usage, "prompt_tokens", None),
+                             "completion": getattr(usage, "completion_tokens", None)}
+        if error is not None:
+            rec["error"] = {"type": type(error).__name__,
+                            "status": getattr(error, "status_code", None),
+                            "text": str(error)[:200]}
+        out = self.emit(kind, **rec)
+        if self._my_turn():
+            self._turn.setdefault("model", []).append(out["seq"])
+
+    def new_visitor(self) -> None:
+        """A reading starts: the earlier visitor's prompts and answers leave the rings (as
+        they leave the model's own history)."""
+        with self._lock:
+            for kind in MODEL_KINDS:
+                self._rings[kind].clear()
+
     # ---- the newest recording ---------------------------------------------------------------
 
     def recording(self, path, origin: str = "host") -> None:
@@ -480,6 +517,17 @@ def turn_close(h, outcome=None, error=None):
 @_safe
 def recording(h, path, origin="host"):
     h.recording(path, origin)
+
+
+@_safe
+def model(h, kind: str, request=None, resp=None, error=None, seconds=0.0, **extra):
+    """One call to a model (kind: llm, stt, tts, vision): what it was sent, what it said."""
+    h.model(kind, request or {}, resp, error, seconds, extra)
+
+
+@_safe
+def new_visitor(h):
+    h.new_visitor()
 
 
 @_safe
