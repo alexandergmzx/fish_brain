@@ -98,11 +98,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Configuration problem: unknown microphone capture {cfg.ptt.capture!r} "
               f"(FISH_MIC_CAPTURE: host or browser)", file=sys.stderr)
         return 78
-    if cfg.ptt.capture == "browser" and not args.viz:
-        print("Configuration problem: FISH_MIC_CAPTURE=browser needs --viz (the page records "
-              "and uploads; without it nothing could)", file=sys.stderr)
-        return 78
-
     # A stop request from a service manager should end like Ctrl-C: goodbye, then STOP.
     def _on_sigterm(_signum, _frame):
         raise KeyboardInterrupt
@@ -212,6 +207,12 @@ def main(argv: list[str] | None = None) -> int:
         print("No push-to-talk input: no terminal, no display, no --viz and FISH_PTT_DEVICE "
               "is unset. Add --viz or set FISH_PTT_DEVICE.", file=sys.stderr)
         return 78                                       # EX_CONFIG: restarting won't help
+    # The one-shots and typed turns need no microphone; a voice conversation in browser
+    # mode needs the page, or nothing could upload a recording.
+    if conversing and not args.text and not args.viz and cfg.ptt.capture == "browser":
+        print("Configuration problem: FISH_MIC_CAPTURE=browser needs --viz (the page records "
+              "and uploads; without it nothing could)", file=sys.stderr)
+        return 78
 
     # On-screen fish (browser fallback/debug view), optional.
     viz = None
