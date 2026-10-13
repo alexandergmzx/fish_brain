@@ -17,3 +17,4 @@ Format: **Status** (proposed, accepted, replaced by NNNN) · **Date** · **Conte
 | [0007](0007-the-reading.md) | The reading: a badge photo becomes a name through a vision model on the board; the fish asks before telling the future; memory only | proposed | 2026-10-11 |
 | [0008](0008-the-phone-is-the-fishs-face.md) | The phone is the fish's face in the visitor's hands; the remote is the control; the operator's controls are a sheet behind a held shell | proposed | 2026-10-12 |
 | [0009](0009-a-debug-view-that-acts.md) | A desktop debug view fed by a hub in the process; it may act: tests, and armed for 60 s motor pulses and a restart | proposed | 2026-10-12 |
+| [0010](0010-fillers-while-the-fish-thinks.md) | The fish says short cached phrases while a turn waits and drops a turn at 12 s with an apology; waiting stages run in workers, the loop's thread talks | proposed | 2026-10-13 |

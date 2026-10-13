@@ -129,6 +129,14 @@ EOF (`--text`), or Ctrl-C quit.
   rule arms only after the stream has sent one `hb`: a host whose stream carries only SSE
   comments (which never reach the page's handler) is reconnected only when the browser
   reports the stream closed, never on a timer.
+- **`filler` on a `speak` (2026-10-13, ADR 0010).** A phrase the fish says while the turn
+  still waits arrives as a `speak` with `"filler": true`, after an `stt` event with role
+  `fish` that carries its words. The page moves the mouth and shows the words in the fish's
+  bubble, and nothing else: the sign stays on "Déjame pensar…", a press stays refused and
+  the 45 s think timer keeps running until the reply's own `speak`. A filler is never the
+  event replayed to a page that connects later. The burble at the release of the button
+  arrives the same way, with an empty `mouth` track, one `TAIL` gesture and no `stt`
+  event: the fish on the page flaps its tail and says nothing.
 - **`age_ms` on a replayed `speak`.** A `speak` replayed to a page that connects within 30 s
   carries `age_ms`, the milliseconds since it was announced (`0` when live). The mouth track
   and the gestures start that far in, so a mid-phrase reconnect animates the remainder; a

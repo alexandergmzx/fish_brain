@@ -93,7 +93,7 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 |---|---|---|
 | `GROQ_API_KEY`, `OPENAI_API_KEY` | — | Keys. Groq: the `groq` LLM profile and Groq STT. OpenAI: the `luna` profile, OpenAI STT and TTS |
 | `FISH_LLM_PROFILE` | `groq` | `groq` (GPT-OSS-20B) or `luna` (GPT-6 Luna). `FISH_LLM_MODEL` and `FISH_LLM_REASONING` override one field. Compare them with `python -m fish_brain.ab` |
-| `FISH_STT_BACKEND` | `local` | `local` (faster-whisper, `FISH_STT_MODEL`), `openai` or `groq` (**the recording is uploaded**). `FISH_STT_CLOUD_MODEL`, `FISH_STT_PROMPT`, `FISH_STT_KEYWORDS` tune the cloud ones |
+| `FISH_STT_BACKEND` | `local` | `local` (faster-whisper, `FISH_STT_MODEL`; `FISH_STT_BEAM`, default 5, and `FISH_STT_WINDOW_S`, default 0 = the library's 30 s window), `canary` (NVIDIA Canary through sherpa-onnx, on this machine; needs `FISH_STT_MODEL_DIR` and the `unoq` extra; it takes recordings up to 6 s, a longer one goes to the services in `FISH_STT_LONG`, e.g. `groq`, while online, and to the local model on a 10 s window otherwise), `openai` or `groq` (**the recording is uploaded**). `FISH_STT_CLOUD_MODEL`, `FISH_STT_PROMPT`, `FISH_STT_KEYWORDS` tune the cloud ones |
 | `FISH_TTS_BACKEND` | `loq` | `loq` or `openai` (`FISH_TTS_MODEL`, `FISH_TTS_VOICE`, `FISH_TTS_INSTRUCTIONS`) |
 | `FISH_SERIAL_PORT` | `/dev/ttyACM0` | Motor board port |
 | `FISH_SERIAL_TRANSPORT` | `serial` | `serial`, or `bridge` (UNO Q: through the router to a Bridge sketch) |
@@ -115,6 +115,10 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_LINK_LOG` | empty | A file that records every line sent to the MCU and every byte read back |
 | `FISH_VOICE_QUIT` | `true` | Saying "salir" ends the program |
 | `FISH_WELCOME_ONCE` | `false` | Greet once per boot instead of at every start |
+| `FISH_FILLER` | `true` | While a voice turn waits for its transcription, its reply or its voice, the fish says short cached phrases, and past the turn's budget it apologizes and listens again (ADR 0010). `false` = silent waits and no limit. With `FISH_BURBLE=false` too, every stage runs as before both. Never in text mode |
+| `FISH_FILLER_DELAY_S`, `FISH_FILLER_GAP_S` | `2.5`, `2.0` | Silence before the first phrase, and between two phrases |
+| `FISH_BURBLE` | `true` | When the button is released on a recording the fish can use, it answers at once with a short bubble sound and one chain of the tail, a flap or two (never the mouth; no tail with the gestures off). No burble means it did not hear. The sounds are synthesized (`python -m fish_brain.burble --out DIR` writes them to listen to) |
+| `FISH_TURN_TIMEOUT_S` | `12` | From the end of the recording to the start of the reply's voice; past it the turn is dropped |
 | `FISH_READING_PROFILE` | empty = `FISH_LLM_PROFILE` | LLM profile that reads a badge photo (the reading, ADR 0007). It needs image input: `luna` |
 | `FISH_READING_LOOK` | `false` | `true`: the console shows a per-visitor consent tick and the model may add one kind line on clothing, colours or accessories |
 | `FISH_CLOUD_TIMEOUT`, `FISH_CLOUD_CONNECT_TIMEOUT` | `10`, `3` | Seconds before a cloud call gives up |
@@ -184,17 +188,54 @@ daemon is warm (`loq --start`), about 8 s without the daemon. The board's exampl
 uses it (`FISH_TTS_BACKEND=loq`, `FISH_LOQ_BIN` with the full path, because a service does
 not have `~/.local/bin` on its path). `FISH_TTS_BACKEND=openai` is the alternative.
 
-Speech-to-text on the board is set to a cloud backend, because the local models are slow on
-this CPU. Measured per turn, whatever the length of the recording:
+Speech-to-text on the board is local and uses Canary (`FISH_STT_BACKEND=canary`), because
+faster-whisper spends its time on a fixed 30 s window whatever the length of the recording.
+Measured on the board ([candidates](docs/results/2026-10-12-unoq-stt-candidates.md),
+[the first measurement](docs/results/2026-10-10-unoq-local-stt.md)):
 
-| Local model | Time | Quality on the test sentence |
+| Setting | Time for a short turn | Word errors on the owner's 36 recorded lines |
 |---|---|---|
-| `tiny` | 3.5 to 4.8 s | Spelling-level mistakes |
-| `base` | about 8 s | Correct |
-| `small` (the laptop default) | about 20 to 23 s | Correct |
+| `local`, `small` (the laptop default) | about 20 s | 23 % |
+| `local`, `small`, `FISH_STT_WINDOW_S=10`, `FISH_STT_BEAM=5` | about 7 s | 29 % |
+| `local`, `base`, `FISH_STT_WINDOW_S=10` | about 2 s | 38 to 40 % |
+| `canary` | about 2.5 s | 22 % |
 
-For a board with no internet, `FISH_STT_BACKEND=local` with `FISH_STT_MODEL=tiny` is the
-only local choice that is close to usable.
+Canary is for short phrases: its time grows faster than the clip, so it takes recordings up
+to 6 s. A longer one goes to the services listed in `FISH_STT_LONG` while the board is online
+(the board's: `groq`, under a second, 7 % word errors on those recordings) and otherwise to
+the local model on a 10 s window (about 10 s for a 7 s recording, 16 to 42 s over 10 s). The limit and the route come from his 62
+push-to-talk takes ([results](docs/results/2026-10-13-unoq-stt-his-takes.md),
+[online against local](docs/results/2026-10-12-unoq-online-stt.md)); OpenAI's transcription
+is the most accurate there (4 %) and is held for the fair. `deploy/unoq_setup.sh stt` fetches
+the Canary model and prints the `.env` lines. `tools/stt_bench.py` times and scores any route
+on a folder of clips and records clips from the remote. In real turns through the service
+Canary took 1.8 to 3.0 s for recordings of 1 to 2 s
+([results](docs/results/2026-10-13-unoq-burble-and-fillers.md)); the long route has not been
+measured in a real turn.
+
+### While the fish thinks
+
+What a visitor hears between releasing the button and the reply (ADR 0010):
+
+| When | What | Setting |
+|---|---|---|
+| 0.1 to 0.2 s after release | A burble: a short bubble sound and one chain of the tail (a flap or two), never the mouth. Only when the recording can be used, so **no burble means the fish did not hear**: a tap, a silent recording, a microphone that did not open | `FISH_BURBLE` |
+| 2.5 s into a stage that is still running | A short phrase ("Mmm… a ver.", "Leyendo tu mente…", "No cuelgues la mente."), about 1 to 2 s. Each stage (transcription, LLM, voice) gets the 2.5 s of its own until a phrase has been said, so a quick turn has none | `FISH_FILLER`, `FISH_FILLER_DELAY_S` |
+| every 2 s of silence after that | Another phrase ("Sigo leyendo.", "Ya merito."), never the same twice in a turn | `FISH_FILLER_GAP_S` |
+| 12 s with a stage still running | "Perdón, no te escuché bien. ¿Me lo repites?" during the transcription, the lost-signal line after it; the turn is dropped and the fish listens again | `FISH_TURN_TIMEOUT_S` |
+
+The reply always follows the phrase being said; a phrase is never cut and the reply is never
+dropped for one. The phrases are entries of `CannedConfig.phrases` in
+[`config.py`](fish_brain/config.py) (`filler_first_*`, `filler_more_*`, `timeout_stt_*`):
+change a text and it is rendered again at the next start. Keep them short: a 3 s phrase that
+starts just before the answer is ready holds the reply back 3 s. The burbles are synthesized
+by [`burble.py`](fish_brain/burble.py) into `~/.cache/fish_brain/sounds`
+(`python -m fish_brain.burble --out DIR` writes them somewhere to listen to).
+
+On `/debug` → Switches the burble, the fillers and the first filler's delay change on the
+running fish, to compare by ear. In the `[turn]` line, `burble=` is the time from the end of
+the recording to the sound and `fill=` the time spent saying phrases. Measured on the board:
+a short turn is the burble, then the reply 2.3 to 2.8 s after release.
 
 ### The motor MCU
 
