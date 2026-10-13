@@ -149,6 +149,7 @@
         const ev = r.ev || {};
         if (ev.type === "listen") S.live = ev.ready ? "waiting" : (S.live === "recording" ? "thinking" : S.live);
         else if (ev.type === "stt" && ev.role === "user") S.live = "thinking";
+        else if (ev.type === "speak" && ev.filler) { if (S.caughtUp) fish.speak(ev); }   // the turn still waits
         else if (ev.type === "speak") { if (S.caughtUp) fish.speak(ev); S.live = "speaking"; setTimeout(() => { if (S.live === "speaking") { S.live = "waiting"; mark("pipe"); } }, (ev.duration_ms || 0) + 300); }
         mark("pipe");
         break;
@@ -381,7 +382,7 @@
   // The stage a turn ended in, by its outcome.
   const DIED = { "too short": 1, "silence": 1, "mic error": 1, "not understood": 2, "offline": 3,
                  "misconfigured": 3, "empty reply": 3, "dropped: speaking": 4, "error": -1,
-                 "read: no signal": 3 };
+                 "read: no signal": 3, "timeout: stt": 2, "timeout: llm": 3, "timeout: tts": 4 };
   function stagesOf(t) {
     const times = t.times || {}, rec = t.rec || {}, perf = t.perf || {};
     const names = ["Trigger", "Microphone", "Speech-to-text", "LLM", "Voice", "Speaker", "Motors"];

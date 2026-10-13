@@ -324,7 +324,61 @@ class CannedConfig:
         "no_mic": "No te escucho, revisa el micrófono.",
         "reading_wait": "A ver, a ver… déjame leer ese gafete. No te muevas.",
         "reading_fail": "Uy, no alcanzo a leer tu gafete. ¿Cómo te llamas?",
+        # Said while a turn waits (FillerConfig): the first of a turn, then the next ones.
+        # Short on purpose (his word, 2026-10-13): 0.9 to 1.9 s in Loquendo, so a phrase
+        # that starts just before the answer is ready delays it little.
+        "filler_first_1": "Mmm… a ver.",
+        "filler_first_2": "Leyendo tu mente…",
+        "filler_first_3": "No cuelgues la mente.",
+        "filler_first_4": "Espérame tantito.",
+        "filler_first_5": "Ya te oí, ya te oí.",
+        "filler_first_6": "Sintonizando…",
+        "filler_first_7": "Qué interesante…",
+        "filler_first_8": "Un momento, por favor.",
+        "filler_more_1": "Sigo leyendo.",
+        "filler_more_2": "Ya casi, ya casi.",
+        "filler_more_3": "Sigo contigo.",
+        "filler_more_4": "Tu turno ya viene.",
+        "filler_more_5": "Paciencia, paciencia.",
+        "filler_more_6": "Ya merito.",
+        # The turn passed its budget while the recording was being transcribed.
+        "timeout_stt_1": "Perdón, no te escuché bien. ¿Me lo repites?",
+        "timeout_stt_2": "Uy, se me cruzaron las burbujas. ¿Me lo dices otra vez?",
     })
+
+
+@dataclass
+class FillerConfig:
+    """Short canned phrases said while a turn waits for its transcription, its reply or its
+    voice, and the limit after which the fish apologizes and listens again (ADR 0010)."""
+    enabled: bool = field(default_factory=lambda: _env_bool("FISH_FILLER", True))
+    # Silence after the recording before the first phrase, and between two phrases.
+    delay_s: float = field(default_factory=lambda: _env_float("FISH_FILLER_DELAY_S", 2.5))
+    gap_s: float = field(default_factory=lambda: _env_float("FISH_FILLER_GAP_S", 2.0))
+    # From the end of the recording to the start of the reply's voice. Past it the fish says
+    # it did not hear well (or lost the signal) and the turn is dropped.
+    turn_timeout_s: float = field(default_factory=lambda: _env_float("FISH_TURN_TIMEOUT_S", 12.0))
+    # A stage that starts late (a filler was still playing when the one before it ended)
+    # gets at least this long before the turn is given up, so a reply that was ready in
+    # time is not dropped for the filler.
+    stage_grace_s: float = 3.0
+    # Names in CannedConfig.phrases, by prefix: the first phrase of a turn, the later ones,
+    # the apology when the transcription ran out of time.
+    first_prefix: str = "filler_first_"
+    more_prefix: str = "filler_more_"
+    timeout_stt_prefix: str = "timeout_stt_"
+
+
+@dataclass
+class BurbleConfig:
+    """The short bubble sound the fish makes when the button is released on a recording it
+    can use: "I heard you", at once and without words. No burble means it did not hear."""
+    enabled: bool = field(default_factory=lambda: _env_bool("FISH_BURBLE", True))
+    # One flap of the tail with the sound. Never the mouth: the fish is not talking.
+    tail: bool = True
+    # Where the synthesized sounds are written once (WAVs are not tracked nor synced).
+    cache_dir: Path = field(default_factory=lambda: Path(
+        os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "fish_brain" / "sounds")
 
 
 @dataclass
@@ -439,6 +493,8 @@ class Config:
     cloud: CloudConfig = field(default_factory=CloudConfig)
     ptt: PTTConfig = field(default_factory=PTTConfig)
     canned: CannedConfig = field(default_factory=CannedConfig)
+    filler: FillerConfig = field(default_factory=FillerConfig)
+    burble: BurbleConfig = field(default_factory=BurbleConfig)
     viz: VizConfig = field(default_factory=VizConfig)
     reading: ReadingConfig = field(default_factory=ReadingConfig)
 

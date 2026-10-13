@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import threading
 import time
+import wave
 from pathlib import Path
 
 from . import gestures, tts
@@ -24,9 +25,11 @@ def perform_wav(
     player: Player | None = None,
     viz=None,
     text: str | None = None,
+    filler: bool = False,
 ) -> float:
     """Perform an already-rendered WAV on the fish: mouth track + gestures + playback.
-    Returns the monotonic time playback started.
+    Returns the monotonic time playback started. `filler` marks a phrase said while a turn
+    still waits, so the page does not take it for the reply.
 
     Shared by `speak()` (fresh TTS) and `canned.play()` (cached WAV). If `viz` is given
     (a VizServer), announce the speech to the on-screen fish before performing. `text`, when
@@ -40,7 +43,11 @@ def perform_wav(
         if cfg.gesture.enabled else []
     )
     if viz is not None:
-        viz.announce_speech(wav, duration_ms, gesture_events, mouth_track=level_track)
+        if filler:
+            viz.announce_speech(wav, duration_ms, gesture_events, mouth_track=level_track,
+                                filler=True)
+        else:
+            viz.announce_speech(wav, duration_ms, gesture_events, mouth_track=level_track)
     return perform(wav, pulses, gesture_events, link, cfg, player=player)
 
 
@@ -109,14 +116,70 @@ class Speaker:
         finally:
             self._lock.release()
 
-    def say_canned(self, name: str) -> bool:
+    def say_canned(self, name: str, *, filler: bool = False, render: bool = True) -> bool:
         """Play a canned phrase by name under the same lock. Returns False when the fish is
-        already speaking (dropped) or the name is empty; an unknown name is a no-op."""
+        already speaking (dropped) or the name is empty; an unknown name is a no-op.
+        `filler`: the phrase covers a wait inside a turn (see `perform_wav`); it is never
+        rendered here. `render=False`: the same for a phrase that is not a filler."""
         if not name or not self._lock.acquire(blocking=False):
             return False
         try:
             from . import canned   # lazy: canned imports this module
-            canned.play(name, self.link, self.cfg, player=self.player, viz=self.viz)
+            if filler or not render:
+                canned.play(name, self.link, self.cfg, player=self.player, viz=self.viz,
+                            filler=filler, render=False)
+            else:
+                canned.play(name, self.link, self.cfg, player=self.player, viz=self.viz)
             return True
         finally:
             self._lock.release()
+
+    def play_sound(self, wav: str | Path, *, tail_chain: str | None = None) -> float | None:
+        """Play a sound that is not speech (the burble) under the same lock: no mouth pulse,
+        at most one tail chain, and the close pulse that ends every performance. The page
+        gets it as a filler with an empty mouth track. Returns when playback started, or
+        None when the fish was already speaking (dropped)."""
+        if not self._lock.acquire(blocking=False):
+            return None
+        try:
+            events = [(0, "TAIL", tail_chain)] if tail_chain else []
+            if self.viz is not None:
+                with wave.open(str(wav), "rb") as w:
+                    duration_ms = int(1000 * w.getnframes() / (w.getframerate() or 1))
+                self.viz.announce_speech(wav, duration_ms, events, mouth_track=[], filler=True)
+            return perform(wav, [], events, self.link, self.cfg, player=self.player)
+        finally:
+            self._lock.release()
+
+    # The reply in two steps, for a turn that says fillers while the voice is rendered:
+    # `speak` holds the lock from the first byte of synthesis, which would drop them.
+    def synthesize(self, text: str, timing: dict) -> Path:
+        """Render `text` to a WAV, without the lock (any thread). `timing` gets "tts" and
+        the moment the rendering started, from which `perform` counts "play_start"."""
+        t0 = time.monotonic()
+        wav = tts.synthesize(text, self.cfg.tts)
+        timing["tts"] = time.monotonic() - t0
+        timing["_t0"] = t0
+        return wav
+
+    def perform(self, wav: str | Path, text: str, timing: dict, *, role: str = "fish") -> bool:
+        """Say a WAV rendered by `synthesize`, under the lock; the file is deleted. Returns
+        False when the fish is already speaking (dropped), like `speak`."""
+        if not self._lock.acquire(blocking=False):
+            Path(wav).unlink(missing_ok=True)
+            return False
+        try:
+            if self.viz is not None:
+                self.viz.push_transcript(text, role)   # show what was actually spoken
+            t0 = timing.pop("_t0", time.monotonic())
+            self.last_timing = timing
+            retry = getattr(self.link, "try_attach", None)
+            if retry is not None and not self.link.attached:
+                threading.Thread(target=retry, name="link-retry", daemon=True).start()
+            started = perform_wav(wav, self.link, self.cfg, player=self.player, viz=self.viz,
+                                  text=text)
+            timing["play_start"] = started - t0
+            return True
+        finally:
+            self._lock.release()
+            Path(wav).unlink(missing_ok=True)

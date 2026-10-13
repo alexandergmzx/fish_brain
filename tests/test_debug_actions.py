@@ -295,7 +295,8 @@ def _values(rig):
 def test_switches_list_their_value_their_start_and_what_changed(rig):
     sw = _values(rig)
     assert set(sw) == {"mode", "llm_profile", "stt", "stt_model", "tts", "gestures", "reading_look",
-                       "voice_quit", "max_record_s", "mic", "motors"}
+                       "voice_quit", "burble", "filler", "filler_delay_s", "max_record_s",
+                       "mic", "motors"}
     assert sw["mode"]["value"] == "llm" and not any(w["changed"] for w in sw.values())
     assert rig.act.set("gestures", False) == (200, {"ok": True, "value": False})
     assert rig.cfg.gesture.enabled is False
@@ -309,6 +310,13 @@ def test_switches_list_their_value_their_start_and_what_changed(rig):
     assert rig.cfg.stt.model == "base" and rig.convo._stt is None
     assert rig.act.set("stt_model", "large-v3")[0] == 400
     assert rig.act.set("mic", "browser")[0] == 200 and rig.cfg.ptt.capture == "browser"
+    assert sw["filler"]["value"] is False                       # off in tests (conftest)
+    assert rig.act.set("filler", True)[0] == 200 and rig.cfg.filler.enabled is True
+    assert "apology at 12 s" in _values(rig)["filler"]["note"]
+    assert sw["burble"]["value"] is False and sw["filler_delay_s"]["value"] == 2.5
+    assert rig.act.set("burble", True)[0] == 200 and rig.cfg.burble.enabled is True
+    assert rig.act.set("filler_delay_s", 3.5)[1]["value"] == 3.5 and rig.cfg.filler.delay_s == 3.5
+    assert rig.act.set("filler_delay_s", 60)[0] == 400
     assert "HTTPS" in _values(rig)["mic"]["note"]
 
 

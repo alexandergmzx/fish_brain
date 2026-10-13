@@ -53,10 +53,18 @@ def _validate_wav(path: Path) -> None:
         raise RuntimeError(f"TTS produced an unusable WAV ({path.name})")
 
 
+_LOQ_TIMEOUT_S = 30.0
+
+
 def _synthesize_loq(text: str, cfg: TTSConfig, out_path: Path) -> None:
     # "--" so a reply starting with "-" is not read as an option.
     cmd = [cfg.loq_bin, "-o", str(out_path), "-r", str(cfg.sample_rate), "--", text]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        # A warm render is under a second and a cold one about 8 s; one that hangs must
+        # still end, or the turn loop waits for it at every later turn.
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=_LOQ_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"loq failed: no WAV after {_LOQ_TIMEOUT_S:.0f} s") from None
     if proc.returncode != 0 or not out_path.exists():
         raise RuntimeError(
             f"loq failed (rc={proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}"

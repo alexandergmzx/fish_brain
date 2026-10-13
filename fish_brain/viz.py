@@ -317,11 +317,14 @@ class VizServer:
     # --- public API (called from speak.perform_wav) ---
     def announce_speech(self, wav: str | Path, duration_ms: int,
                         gesture_events: list[tuple[int, str, str]],
-                        mouth_track: list[tuple[int, float]] | None = None) -> None:
+                        mouth_track: list[tuple[int, float]] | None = None,
+                        filler: bool = False) -> None:
         """Snapshot the WAV and tell connected browsers to play + animate it.
 
         `mouth_track` is the (t_ms, level) openness schedule (0..1) — the same intent the
         hardware realizes via timed pulses — so the browser animates from it directly.
+        `filler`: a phrase said while the turn still waits. The event says so, and it is
+        never the one replayed to a page that connects later.
         """
         try:
             token = self._store_audio(wav)
@@ -329,7 +332,7 @@ class VizServer:
             print(f"[viz] could not snapshot audio: {e}")
             return
         mouth = [[t, round(float(level), 3)] for (t, level) in (mouth_track or [])]
-        data = json.dumps({
+        event = {
             "type": "speak",
             "audio": f"/audio/{token}",
             "duration_ms": duration_ms,
@@ -337,10 +340,14 @@ class VizServer:
             "mouth": mouth,
             "open_pwm": self.cfg.mouth.open_pwm,
             "age_ms": 0,
-        })
-        with self._lock:
-            self._last_event = data
-            self._last_event_ts = time.monotonic()
+        }
+        if filler:
+            event["filler"] = True
+        data = json.dumps(event)
+        if not filler:
+            with self._lock:
+                self._last_event = data
+                self._last_event_ts = time.monotonic()
         self._publish(data)
 
     def push_level(self, rms: float) -> None:

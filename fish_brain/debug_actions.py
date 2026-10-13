@@ -175,6 +175,8 @@ def _set_motors(a, value: str) -> str:
 
 _gest, _look, _quit, _limit = (_attr("gesture.enabled"), _attr("reading.look"),
                                _attr("ptt.voice_quit"), _attr("ptt.max_record_s"))
+_fill, _fill_delay, _burble = (_attr("filler.enabled"), _attr("filler.delay_s"),
+                               _attr("burble.enabled"))
 SWITCHES: dict = {
     "mode": ("Mode", "choice", ("echo", "llm"),
              lambda a: "echo" if getattr(a.convo, "echo", False) else "llm", _set_mode),
@@ -188,6 +190,10 @@ SWITCHES: dict = {
     "gestures": ("Gestures", "bool", (), lambda a: bool(_gest[0](a)), _gest[1]),
     "reading_look": ("Reading's look line", "bool", (), lambda a: bool(_look[0](a)), _look[1]),
     "voice_quit": ("Voice quit word", "bool", (), lambda a: bool(_quit[0](a)), _quit[1]),
+    "burble": ("Burble on release", "bool", (), lambda a: bool(_burble[0](a)), _burble[1]),
+    "filler": ("Fillers while it thinks", "bool", (), lambda a: bool(_fill[0](a)), _fill[1]),
+    "filler_delay_s": ("First filler after (s)", "number", (0.5, 6.0),
+                       lambda a: float(_fill_delay[0](a)), _fill_delay[1]),
     "max_record_s": ("Recording limit (s)", "number", (3.0, 60.0),
                      lambda a: float(_limit[0](a)), _limit[1]),
     "mic": ("Microphone", "choice", ("host", "browser"), lambda a: a.cfg.ptt.capture,
@@ -216,6 +222,14 @@ def _switch_note(a, name: str, value) -> str:
         return "the phone records" if value == "browser" else "this machine's microphone records"
     if name == "motors" and value == "muted":
         return "every motor line is dropped; the fish only talks"
+    if name == "burble":
+        return ("a bubble sound and a tail flap when a recording is taken; none = not heard"
+                if value else "no sound at release")
+    if name == "filler":
+        f = a.cfg.filler
+        return (f"a phrase after {f.delay_s:g} s of waiting, {f.gap_s:g} s between phrases, "
+                f"an apology at {f.turn_timeout_s:g} s" if value
+                else "silent while it waits, and no limit on a turn")
     if name == "llm_profile":
         return a.cfg.llm.model or ""
     return ""

@@ -364,7 +364,10 @@
   async function handleSpeak(ev) {
     const age = Math.max(0, Number(ev.age_ms) || 0);   // 0 live; replayed: time already gone
     scheduleGestures(ev.gestures || [], age);
-    startMouthTrack(ev.mouth || null, age);   // drives the mouth even with sound off
+    // An empty track is a sound that is not speech (the burble): the mouth stays shut for
+    // its length, instead of following the audio as the manual WAV test does.
+    const quiet = Array.isArray(ev.mouth) && ev.mouth.length === 0;
+    startMouthTrack(quiet ? [[0, 0], [ev.duration_ms || 0, 0]] : (ev.mouth || null), age);   // drives the mouth even with sound off
     wakeDraw();
     if (age > (ev.duration_ms || 0)) return;  // an old reply: nothing left to hear
     if (!toggleAudio.checked || CONSOLE) return;  // sound off, or the console (always muted)
@@ -1043,6 +1046,10 @@
             say(reply, ev.text);
           }
         } else if (ev.type === "speak") {
+          // A filler is said while the turn still waits: the mouth moves (handleSpeak) and
+          // its words are in the bubble, but the sign stays on "thinking", the press stays
+          // refused and the think timer keeps running until the reply's own event.
+          if (ev.filler) return;
           clearTimeout(thinkTimer);
           const left = (ev.duration_ms || 0) - Math.max(0, Number(ev.age_ms) || 0);
           if (left < 0) { settle(); return; }    // a replay of a reply that already ended

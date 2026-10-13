@@ -202,6 +202,20 @@ def test_replayed_speak_event_carries_its_age(server, tmp_path):
     server._unsubscribe(q)
 
 
+def test_a_filler_is_marked_and_never_the_replayed_event(server, tmp_path):
+    q = server._subscribe()
+    server.announce_speech(tiny_wav(tmp_path / "reply.wav"), 10, [], [])
+    reply = json.loads(q.get_nowait())
+    server.announce_speech(tiny_wav(tmp_path / "wait.wav"), 10, [], [], filler=True)
+    filler = json.loads(q.get_nowait())
+    assert filler["filler"] is True and "filler" not in reply
+    assert filler["audio"] != reply["audio"]
+    late = server._subscribe()                       # a page that connects now
+    assert json.loads(late.get_nowait())["audio"] == reply["audio"]
+    server._unsubscribe(q)
+    server._unsubscribe(late)
+
+
 def test_live_speak_event_has_age_zero_and_the_audio_is_served(server, tmp_path):
     q = server._subscribe()
     server.announce_speech(tiny_wav(tmp_path / "a.wav"), 10, [], [])

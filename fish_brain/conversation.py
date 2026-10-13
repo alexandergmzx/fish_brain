@@ -15,15 +15,25 @@ Nothing that goes wrong inside a turn ends the loop: a failed cloud call, a miss
 microphone or a bad audio file makes the fish say a short canned line and listen again.
 Only quitting (Ctrl-C, a stop signal, "salir", end of input) ends it.
 
+A recording the fish can use is answered at once with a burble (`BurbleConfig`): a short
+bubble sound and a flap of the tail. While a voice turn waits for its transcription, its
+reply or its voice, the fish says short canned phrases (`FillerConfig`, ADR 0010): the stage runs in a worker and this thread, which
+still owns everything that is said and recorded about the turn, fills the wait. Past the
+turn's budget it apologizes, drops the turn and listens again; the worker ends on its own
+and its result is thrown away. With `FISH_FILLER=false` and `FISH_BURBLE=false`, and always
+in text mode, every stage is called directly, as before.
+
 Components are built lazily so `--text --dry-run` works without a mic, and so the heavy
 STT model only loads when voice mode actually needs it.
 """
 from __future__ import annotations
 
 import os
+import random
 import threading
 import time
 import traceback
+from collections import deque
 from pathlib import Path
 
 from . import cloud, debug, ptt, speak as speak_mod
@@ -34,10 +44,57 @@ from .serial_link import BaseLink
 _QUIT_WORDS = {"salir", "quit", "exit"}
 
 
+class TurnTimeout(Exception):
+    """The turn passed its budget while `stage` (stt, llm or tts) was still running."""
+
+    def __init__(self, stage: str):
+        super().__init__(f"the turn's time ran out during {stage}")
+        self.stage = stage
+
+
+class _Job:
+    """One stage of a turn running in a worker thread, so the turn loop can talk meanwhile.
+    A job the turn gave up on finishes by itself; `discard` then gets its result (a file to
+    delete)."""
+
+    def __init__(self, stage: str, fn, discard=None):
+        self.stage, self.done = stage, threading.Event()
+        self.result, self.exc, self.seconds = None, None, 0.0
+        self._discard, self._abandoned, self._lock = discard, False, threading.Lock()
+        threading.Thread(target=self._run, args=(fn,), name=f"turn-{stage}", daemon=True).start()
+
+    def _run(self, fn) -> None:
+        t0 = time.monotonic()
+        try:
+            self.result = fn()
+        except BaseException as e:               # handed to the turn loop, raised there
+            self.exc = e
+        self.seconds = time.monotonic() - t0     # the stage alone, without the fillers
+        with self._lock:
+            self.done.set()
+            drop = self._abandoned
+        if drop:
+            self._drop()
+
+    def abandon(self) -> None:
+        with self._lock:
+            self._abandoned = True
+            finished = self.done.is_set()
+        if finished:
+            self._drop()
+
+    def _drop(self) -> None:
+        if self._discard is not None and self.exc is None:
+            try:
+                self._discard(self.result)
+            except Exception:
+                pass
+
+
 class FishConversation:
     def __init__(self, cfg: Config, link: BaseLink, *,
                  text_input: bool = False, play_audio: bool = True, viz=None,
-                 echo: bool = False):
+                 echo: bool = False, clock=time.monotonic, wait=None, rng=None):
         self.cfg = cfg
         self.link = link
         self.text_input = text_input
@@ -50,6 +107,16 @@ class FishConversation:
         self._stt = None
         self._errors = 0                  # consecutive failed turns (for the back-off)
         self._last_apology = 0.0          # when a canned error line was last spoken
+        # Fillers (see the module docstring). `_wait` is the open turn's: its deadline, when
+        # the next phrase is due, the phrases said, the seconds spent saying them.
+        self._clock = clock
+        self._wait_on = wait or (lambda event, seconds: event.wait(seconds))
+        self._rng = rng or random.Random()
+        self._wait: dict | None = None
+        self._stale: dict[str, _Job] = {}     # a stage a turn gave up on, still running
+        self._stage_s: float | None = None    # the last awaited stage's own seconds
+        self._last_burble = None              # the burble said last, not to repeat it
+        self._recent: deque[str] = deque(maxlen=3)   # fillers not to say again so soon
         # Button-like push-to-talk sources (browser button, remote). Empty -> keyboard.
         self.button = None
         self.sources: list[ptt.ButtonSource] = []
@@ -102,6 +169,180 @@ class FishConversation:
             except Exception as e:               # the turn that needs it reports it again
                 print(f"[stt] could not load the model: {type(e).__name__}: {e}", flush=True)
         threading.Thread(target=load, name="stt-warm", daemon=True).start()
+
+    # --- waiting for a stage: fillers and the turn's budget ----------------------------
+    def _start_wait(self, t0: float, *, burble: bool = False) -> None:
+        """A voice turn's wait starts (the recording just ended): from here the fillers and
+        the budget count, and a turn that came from a recording (`burble`) is answered with
+        the burble first. Nothing in text mode, or with the fillers and the burble off.
+        With only the burble on there is no budget: it acknowledges, nothing more."""
+        f = self.cfg.filler
+        fillers = f.enabled and self.cfg.canned.enabled and not self.text_input
+        burble = burble and self.cfg.burble.enabled and not self.text_input
+        if not (fillers or burble):
+            self._wait = None
+            return
+        never = float("inf")
+        self._wait = {"deadline": t0 + f.turn_timeout_s if fillers else never,
+                      "next": t0 + f.delay_s if fillers else never,
+                      "used": [], "fill": 0.0, "burble": burble, "ended": time.monotonic()}
+
+    def _settle(self, stage: str) -> None:
+        """Wait for a job of `stage` that an earlier turn gave up on, so the same model is
+        never asked twice at once. The fillers and the budget apply to this wait too; with
+        the fillers off (switched off since) it is a plain wait."""
+        job = self._stale.pop(stage, None)
+        if job is None:
+            return
+        if self._wait is None:
+            job.done.wait()
+        else:
+            self._wait_for(job, self._wait["deadline"])
+
+    def _await(self, stage: str, fn, *, discard=None):
+        """`fn()`: a stage of the turn. Directly when the turn has no wait state; else in a
+        worker while this thread says fillers, up to the turn's deadline (`TurnTimeout`).
+        What `fn` raises is raised here."""
+        self._stage_s = None
+        if self._wait is not None and self._wait["burble"] and stage in self._stale:
+            self._say_burble()                   # the release is answered before the old job is waited for
+        self._settle(stage)
+        if self._wait is None:
+            return fn()
+        mark = debug.seq()
+        w, now = self._wait, self._clock()
+        if not w["used"] and w["next"] != float("inf"):
+            # Until a filler has been said, each stage gets the whole delay of its own: a
+            # transcript that came in under the delay is not followed by a phrase just
+            # because the voice render crossed it.
+            w["next"] = max(w["next"], now + self.cfg.filler.delay_s)
+        job = _Job(stage, fn, discard)
+        if self._wait["burble"]:
+            self._say_burble()                   # the stage is already running beside it
+        # A stage always gets a moment of its own, even when a filler ran past the budget.
+        deadline = max(self._wait["deadline"], self._clock() + self.cfg.filler.stage_grace_s)
+        try:
+            self._wait_for(job, deadline)
+        finally:
+            self._stage_s = job.seconds if job.done.is_set() else None
+            debug.turn_adopt(mark)               # the worker's model records, to this turn
+        if job.exc is not None:
+            raise job.exc
+        return job.result
+
+    def _stage_time(self, wall: float) -> float:
+        """Seconds for the `[turn]` line: the stage's own when it ran in a worker (the
+        fillers said meanwhile are `fill`), else the time around the call."""
+        return self._stage_s if self._stage_s is not None else wall
+
+    def _wait_for(self, job: _Job, deadline: float) -> None:
+        w = self._wait
+        while not job.done.is_set():
+            now = self._clock()
+            if now >= deadline:
+                job.abandon()
+                self._stale[job.stage] = job
+                raise TurnTimeout(job.stage)
+            until = min(deadline, w["next"])
+            if until == float("inf"):
+                job.done.wait()                  # the burble alone: no filler, no budget
+            elif now < until:
+                self._wait_on(job.done, until - now)
+            else:
+                self._say_filler()
+
+    def _say_burble(self) -> None:
+        """The answer to a released button: a short bubble sound and one flap of the tail,
+        once per turn, never the same sound twice running. Skipped when something else has
+        the speaker."""
+        from . import burble
+        w = self._wait
+        w["burble"] = False
+        lock = getattr(self.speaker, "_lock", None)
+        if lock is not None and lock.locked():
+            return
+        try:
+            sounds = burble.ensure(self.cfg.burble.cache_dir)
+            wav = self._rng.choice([p for p in sounds if p != self._last_burble] or sounds)
+            chain = (self._rng.choice(self.cfg.gesture.tail_chains)
+                     if self.cfg.burble.tail and self.cfg.gesture.enabled else None)
+            started = self.speaker.play_sound(wav, tail_chain=chain)
+            if started is not None:
+                self._last_burble = wav
+                w["burble_s"] = max(0.0, started - w["ended"])
+        except Exception as e:                   # a burble must never be the problem
+            print(f"[turn] could not burble: {e}", flush=True)
+
+    def _say_filler(self) -> None:
+        """One phrase to cover the wait: a "first" one, then "more" ones, never the same
+        twice in a turn nor one of the last few said. Only phrases already rendered: a
+        missing one is skipped, not rendered here."""
+        from . import canned
+        w, f = self._wait, self.cfg.filler
+        prefix = f.more_prefix if w["used"] else f.first_prefix
+        pool = sorted(n for n in self.cfg.canned.phrases
+                      if n.startswith(prefix) and n not in w["used"]
+                      and canned.cached(n, self.cfg))
+        fresh = [n for n in pool if n not in self._recent]
+        t0 = self._clock()
+        lock = getattr(self.speaker, "_lock", None)
+        if lock is not None and lock.locked():
+            pool = []                            # the page's text box or a badge is talking
+        if pool:
+            name = self._rng.choice(fresh or pool)
+            text = self.cfg.canned.phrases[name]
+            print(f"fish> (espera) {text}", flush=True)
+            if self.viz is not None:
+                self.viz.push_transcript(text, "fish")
+            try:
+                if self.speaker.say_canned(name, filler=True):
+                    w["used"].append(name)
+                    self._recent.append(name)
+            except Exception as e:               # a filler must never be the problem
+                print(f"[turn] could not say {name!r}: {e}", flush=True)
+        now = self._clock()
+        w["fill"] += now - t0
+        w["next"] = now + f.gap_s
+
+    def _speak_reply(self, text: str) -> bool:
+        """Say the reply. With a wait state the voice is rendered in a worker (fillers may
+        cover it) and then performed; a filler that is still playing is finished first, so
+        the reply follows it and is never dropped for it."""
+        if self._wait is None:
+            return self.speaker.speak(text)
+        text = (text or "").strip()
+        if not text:
+            return False
+        timing: dict = {}
+        wav = self._await("tts", lambda: self.speaker.synthesize(text, timing),
+                          discard=lambda path: Path(path).unlink(missing_ok=True))
+        return self.speaker.perform(wav, text, timing)
+
+    def _note_fill(self, times: dict) -> None:
+        """The burble and the fillers of this turn, into its timings and its record:
+        `burble` is the time from the end of the recording to the sound."""
+        w = self._wait
+        if w and "burble_s" in w:
+            times["burble"] = w["burble_s"]
+        if w and w["used"]:
+            times["fill"] = w["fill"]
+            debug.turn_set(fillers=list(w["used"]))
+
+    def _say_timeout(self, stage: str, *, bubble: bool = True) -> None:
+        """The line for a turn that ran out of time: "I did not hear you well" while it was
+        being transcribed, the lost-signal line after that. From a WAV that exists: nothing
+        is rendered here."""
+        from . import canned
+        name = self.cfg.canned.no_signal
+        if stage == "stt":
+            pool = sorted(n for n in self.cfg.canned.phrases
+                          if n.startswith(self.cfg.filler.timeout_stt_prefix)
+                          and canned.cached(n, self.cfg))
+            if pool:
+                name = self._rng.choice(pool)
+            if bubble and self.viz is not None:
+                self.viz.push_transcript("… (no te escuché bien)", "user")
+        self._apologize(name, render=False)
 
     # --- one turn, in stages ---------------------------------------------------------
     def _record(self) -> Path | object:
@@ -166,10 +407,11 @@ class FishConversation:
         times: dict[str, float] = {"rec": u.hold_s + u.upload_s}
         debug.turn_set(trigger="phone microphone")
         t0 = time.monotonic()
+        self._start_wait(self._clock(), burble=True)
         try:
             user = self._transcribe(u.path, origin="upload")   # unlinks the file
         finally:
-            times["stt"] = time.monotonic() - t0
+            times["stt"] = self._stage_time(time.monotonic() - t0)
             debug.turn_set(times=times)            # also when the stage failed
         return self._finish_turn(user, times)
 
@@ -181,6 +423,12 @@ class FishConversation:
         from . import reading
         times: dict[str, float] = {}
         look_note = f" Lleva: {r.look}." if r.look else ""
+        self._start_wait(self._clock())
+        if not self.echo:
+            try:
+                self._settle("llm")                # a late answer must not land after the reset
+            except TurnTimeout:
+                pass                               # still running: the name is not lost for it
         if r.confirmed:
             # A typed name: /debug forgets the earlier visitor's prompts here. With a badge
             # that happened before the photo was read (viz.read_badge), so its own record stays.
@@ -193,12 +441,15 @@ class FishConversation:
             if self.viz is not None:
                 self.viz.push_reading("ask")
             print("fish> (lectura: pregunta por el nombre)", flush=True)
-            said = self.speaker.speak(question)
             if not self.echo:
+                # Before the question is said: if its voice runs out of time the answer
+                # "sí" must still find the name in the history.
                 self.llm.remember(
                     f"[Lectura] El visitante muestra su gafete: se llama {r.name}.{look_note}"
                     " Pregúntale si es él o ella; cuando confirme, dile su futuro.", question)
+            said = self._speak_reply(question)
             times.update(self.speaker.last_timing)
+            self._note_fill(times)
             debug.turn_set(trigger="reading", times=times, link=self.link.health(),
                            outcome="read: ask" if said else "dropped: speaking")
             print("[turn] read=ask " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
@@ -208,9 +459,10 @@ class FishConversation:
             reply = reading.echo_fortune(r.first_name)
         else:
             t0 = time.monotonic()
-            reply = self.llm.reply(
-                f"[Lectura] Se llama {r.name}, confirmado.{look_note} Dile su futuro.")
-            times["llm"] = time.monotonic() - t0
+            ask = self.llm.reply                   # the client is built here, on this thread
+            said_to_llm = f"[Lectura] Se llama {r.name}, confirmado.{look_note} Dile su futuro."
+            reply = self._await("llm", lambda: ask(said_to_llm))
+            times["llm"] = self._stage_time(time.monotonic() - t0)
             if self.llm.last_error and self.cfg.tts.backend != "loq":
                 # The model is unreachable and so, most likely, is cloud TTS: the cached line.
                 print(f"[turn] lectura sin señal: {self.llm.last_error}", flush=True)
@@ -222,8 +474,9 @@ class FishConversation:
             return True
         if self.viz is not None:
             self.viz.push_reading("speaking")
-        said = self.speaker.speak(reply)
+        said = self._speak_reply(reply)
         times.update(self.speaker.last_timing)
+        self._note_fill(times)
         debug.turn_set(trigger="reading", times=times, link=self.link.health(),
                        outcome="read: tell" if said else "dropped: speaking")
         print("[turn] read=tell " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
@@ -232,6 +485,7 @@ class FishConversation:
 
     def _transcribe(self, wav: Path, origin: str = "host") -> str:
         """Recording -> text ("" when there is nothing usable in it)."""
+        self._stage_s = None
         try:
             debug.recording(wav, origin)           # the newest one, in memory, for /debug
             if ptt.wav_duration_s(wav) < self.cfg.stt.min_clip_s:
@@ -246,7 +500,8 @@ class FishConversation:
                     self.viz.push_transcript("… (silencio, ¿micrófono correcto?)", "user")
                 debug.turn_set(outcome="silence")
                 return ""
-            text = self.stt.transcribe(wav).strip()
+            transcribe = self.stt.transcribe       # the transcriber is built on this thread
+            text = self._await("stt", lambda: transcribe(wav)).strip()
         finally:
             Path(wav).unlink(missing_ok=True)
         debug.turn_set(user=text, **({} if text else {"outcome": "not understood"}))
@@ -255,8 +510,9 @@ class FishConversation:
             self.viz.push_transcript(text or "… (no te entendí)", "user")
         return text
 
-    def _apologize(self, phrase: str, *, min_gap_s: float = 0.0) -> None:
-        """Say a canned error line (best effort), at most once per `min_gap_s`."""
+    def _apologize(self, phrase: str, *, min_gap_s: float = 0.0, render: bool = True) -> None:
+        """Say a canned error line (best effort), at most once per `min_gap_s`.
+        `render=False`: only from a WAV that exists (after a turn's wait)."""
         now = time.monotonic()
         if not phrase or now - self._last_apology < min_gap_s:
             return
@@ -264,7 +520,9 @@ class FishConversation:
         try:
             # Under the speaker lock: the /badge handler thread says its own canned lines
             # through the same lock, so two phrases never drive the link at once.
-            if not self.speaker.say_canned(phrase):
+            said = (self.speaker.say_canned(phrase) if render
+                    else self.speaker.say_canned(phrase, render=False))
+            if not said:
                 print(f"[turn] skipped {phrase!r}: already speaking", flush=True)
         except Exception as e:                      # the apology must never be the problem
             print(f"[turn] could not say {phrase!r}: {e}", flush=True)
@@ -289,10 +547,11 @@ class FishConversation:
             debug.turn_set(trigger=info.get("trigger", "button"), ended=info.get("ended", ""),
                            device=info.get("device", ""))
             t0 = time.monotonic()
+            self._start_wait(self._clock(), burble=True)
             try:
                 user = self._transcribe(wav)
             finally:
-                times["stt"] = time.monotonic() - t0
+                times["stt"] = self._stage_time(time.monotonic() - t0)
                 debug.turn_set(times=times)        # also when the stage failed
             if cut and user:
                 # The visitor was still talking at the limit: the fish must know it heard a
@@ -311,6 +570,12 @@ class FishConversation:
                 self.text_input or self.cfg.ptt.voice_quit):
             return False
         if not user:
+            self._note_fill(times)
+            if times:
+                debug.turn_set(times=times)
+            if self._wait and self._wait["used"]:
+                # A filler promised an answer and there is nothing to answer: say so.
+                self._say_timeout("stt", bubble=False)
             return True                            # nothing captured -> keep listening
 
         # Echo mode just speaks the transcription back -> never touches the LLM (no API key).
@@ -318,8 +583,9 @@ class FishConversation:
             reply = user
         else:
             t0 = time.monotonic()
-            reply = self.llm.reply(user)
-            times["llm"] = time.monotonic() - t0
+            ask = self.llm.reply                   # the client is built here, on this thread
+            reply = self._await("llm", lambda: ask(user))
+            times["llm"] = self._stage_time(time.monotonic() - t0)
             debug.turn_set(times=times)
             if self.llm.last_error and self.cfg.tts.backend != "loq":
                 # The LLM is unreachable and so, most likely, is cloud TTS: use the cached line.
@@ -337,9 +603,10 @@ class FishConversation:
             debug.turn_set(outcome="draft (wait-to-speak)")
         else:
             # Speaker pushes the "fish" transcript + speaks; False = it was already speaking.
-            if not self.speaker.speak(reply):
+            if not self._speak_reply(reply):
                 debug.turn_set(outcome="dropped: speaking")
             times.update(self.speaker.last_timing)
+        self._note_fill(times)
         debug.turn_set(times=times, link=self.link.health())
         if times:
             print("[turn] " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
@@ -350,6 +617,7 @@ class FishConversation:
         """Run one turn. Returns False to end the loop (EOF/quit). Never raises for a
         problem inside the turn; see the module docstring."""
         debug.turn_open()
+        self._wait = None
         try:
             keep_going = self._turn()
             self._errors = 0
@@ -357,6 +625,17 @@ class FishConversation:
             return keep_going
         except ptt.PTTUnavailable:
             raise                                  # a setup problem, not a bad turn
+        except TurnTimeout as e:
+            # Not a failure to back off from: the fish already spent the turn's budget.
+            w = self._wait or {"used": []}
+            debug.turn_set(fillers=list(w["used"]))
+            debug.turn_close(f"timeout: {e.stage}")
+            print(f"[turn] timeout: {e.stage} still running after "
+                  f"{self.cfg.filler.turn_timeout_s:.0f}s, {len(w['used'])} fillers said",
+                  flush=True)
+            self._wait = None
+            self._say_timeout(e.stage)
+            return True
         except cloud.CloudUnavailable as e:
             debug.turn_close("offline", e)
             print(f"[turn] sin señal: {e}", flush=True)
@@ -376,6 +655,8 @@ class FishConversation:
             print(f"[turn] error {type(e).__name__}: {e}", flush=True)
             traceback.print_exc()
             self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
+        finally:
+            self._wait = None                      # the welcome and the like are no turn's
         # A failing turn that returns at once must not spin: pause, longer if it keeps failing.
         self._errors += 1
         time.sleep(5.0 if self._errors >= 5 else 1.0)

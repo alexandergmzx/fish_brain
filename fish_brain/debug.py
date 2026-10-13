@@ -317,6 +317,18 @@ class DebugHub:
         if self._my_turn():
             self._turn.setdefault("model", []).append(out["seq"])
 
+    def turn_adopt(self, since_seq: int) -> None:
+        """Link to the open turn the model records made since `since_seq` by a worker the
+        turn loop was waiting on (a record is kept whatever thread makes it; only this
+        list needs the turn's own thread)."""
+        if not self._my_turn():
+            return
+        with self._lock:
+            seqs = sorted(r["seq"] for kind in MODEL_KINDS for r in self._rings.get(kind, ())
+                          if r["seq"] > since_seq)
+        have = self._turn.setdefault("model", [])
+        have.extend(s for s in seqs if s not in have)
+
     def new_visitor(self) -> None:
         """A reading starts: the earlier visitor's prompts and answers leave the rings (as
         they leave the model's own history)."""
@@ -513,6 +525,20 @@ def turn_set(h, **fields):
 @_safe
 def turn_close(h, outcome=None, error=None):
     h.turn_close(outcome, error)
+
+
+@_safe
+def turn_adopt(h, since_seq):
+    h.turn_adopt(since_seq)
+
+
+def seq() -> int:
+    """The newest record's number (0 without a hub): a mark for `turn_adopt`."""
+    try:
+        h = hub()
+        return h.seq if h is not None else 0
+    except Exception:
+        return 0
 
 
 @_safe
