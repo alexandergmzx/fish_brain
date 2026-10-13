@@ -108,21 +108,37 @@ def _set_llm_profile(a, value: str) -> str:
     return ""
 
 
+def _fresh_stt(a) -> str:
+    """Check the new setting now, so a missing model or package is the switch's answer and
+    not the next turn's; then drop the old transcriber and load the new one off the loop."""
+    from .stt import make_transcriber
+    try:
+        make_transcriber(a.cfg.stt)              # cheap: nothing is loaded here
+    except (ValueError, RuntimeError) as e:
+        return str(e)
+    a.convo._stt = None                          # the next turn builds the transcriber
+    warm = getattr(a.convo, "warm_stt", None)
+    if warm is not None:
+        warm()
+    return ""
+
+
 def _set_stt(a, value: str) -> str:
     from .config import STT_PROFILES
     if value in STT_PROFILES:
         missing = _key_missing(STT_PROFILES[value]["api_key_env"])
         if missing:
             return missing
-    a.cfg.stt.backend = value
-    a.convo._stt = None                          # the next turn builds the transcriber
-    return ""
+    old, a.cfg.stt.backend = a.cfg.stt.backend, value
+    problem = _fresh_stt(a)
+    if problem:
+        a.cfg.stt.backend = old
+    return problem
 
 
 def _set_stt_model(a, value: str) -> str:
-    a.cfg.stt.model = value
-    a.convo._stt = None                          # the next local turn loads this model
-    return ""
+    a.cfg.stt.model = value                      # canary uses it for the long recordings
+    return _fresh_stt(a) if a.cfg.stt.backend in ("local", "canary") else ""
 
 
 def _set_tts(a, value: str) -> str:
@@ -164,7 +180,7 @@ SWITCHES: dict = {
              lambda a: "echo" if getattr(a.convo, "echo", False) else "llm", _set_mode),
     "llm_profile": ("LLM profile", "choice", ("groq", "luna"),
                     lambda a: a.cfg.llm.profile, _set_llm_profile),
-    "stt": ("Speech-to-text", "choice", ("openai", "groq", "local"),
+    "stt": ("Speech-to-text", "choice", ("openai", "groq", "local", "canary"),
             lambda a: a.cfg.stt.backend, _set_stt),
     "stt_model": ("Local speech model", "choice", ("tiny", "base", "small"),
                   lambda a: a.cfg.stt.model, _set_stt_model),
@@ -185,9 +201,14 @@ def _switch_note(a, name: str, value) -> str:
     if name == "mode" and value == "echo":
         return "the fish only repeats what it hears"
     if name == "stt" and value == "local":
-        return f"faster-whisper '{a.cfg.stt.model}' on this machine: loads on the next turn"
+        return f"faster-whisper '{a.cfg.stt.model}' on this machine: loading now"
+    if name == "stt" and value == "canary":
+        far = " > ".join([*a.cfg.stt.long_online, f"local '{a.cfg.stt.model}'"])
+        return (f"Canary on this machine for recordings up to {a.cfg.stt.canary_long_s:g} s, "
+                f"about 2.5 s a turn on the board; longer ones: {far}")
     if name == "stt_model":
-        used = "" if a.cfg.stt.backend == "local" else "not in use (speech-to-text is not local) · "
+        used = {"local": "", "canary": "used for the long recordings when nothing online answers · "}.get(
+            a.cfg.stt.backend, "not in use (speech-to-text is not local) · ")
         return used + "on the board: tiny about 4 s a turn, base 8 s, small 20 s (measured 2026-10-10)"
     if name == "mic":
         if value == "browser" and not (a.cfg.viz.tls_cert and a.cfg.viz.tls_key):

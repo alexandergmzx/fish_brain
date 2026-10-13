@@ -184,12 +184,34 @@ STT_PROFILES: dict[str, dict] = {
 
 @dataclass
 class STTConfig:
-    # local = faster-whisper on this machine; openai | groq = upload the recording (STT_PROFILES).
+    # local = faster-whisper on this machine; canary = NVIDIA Canary through sherpa-onnx on
+    # this machine (the board's: about 2.5 s a turn where `small` takes 20);
+    # openai | groq = upload the recording (STT_PROFILES).
     backend: str = field(default_factory=lambda: _env("FISH_STT_BACKEND", "local"))
     model: str = field(default_factory=lambda: _env("FISH_STT_MODEL", "small"))  # local model
     language: str = "es"
     device: str = "cpu"
     compute_type: str = "int8"      # CPU-friendly faster-whisper setting
+    # faster-whisper's beam. 5 is the library's; 1 is quicker and a little worse.
+    beam_size: int = field(default_factory=lambda: _env_int("FISH_STT_BEAM", 5))
+    # Encoder window for the local model, seconds. 0 = the library's fixed 30 s. 10 makes a
+    # short turn about 3.5 times quicker on a small CPU at some cost in accuracy
+    # (docs/results/2026-10-12-unoq-stt-candidates.md).
+    window_s: float = field(default_factory=lambda: _env_float("FISH_STT_WINDOW_S", 0.0))
+    # canary: the folder with encoder(.int8).onnx, decoder(.int8).onnx and tokens.txt.
+    model_dir: str = field(default_factory=lambda: _env("FISH_STT_MODEL_DIR", ""))
+    canary_threads: int = 4
+    # canary loses one-word answers on a clip cut tight: this much silence goes around it.
+    canary_pad_s: float = 1.0
+    # canary is for short phrases: its time grows faster than the clip, and at 7 s it is at
+    # its worst (9 s, 26 % word errors). A recording longer than this goes elsewhere (his
+    # word, 2026-10-13; docs/results/2026-10-13-unoq-stt-his-takes.md).
+    canary_long_s: float = 6.0
+    # canary: where that longer recording goes while the machine is online, in order: names
+    # from STT_PROFILES. A service that refuses, times out or has no key gives way to the
+    # next; after the last, and whenever offline, the local model on a 10 s window. Empty =
+    # always the local model.
+    long_online: tuple[str, ...] = field(default_factory=lambda: _env_list("FISH_STT_LONG"))
     # Cloud model override; empty = the profile's model.
     cloud_model: str = field(default_factory=lambda: _env("FISH_STT_CLOUD_MODEL", ""))
     # Context sentence and literal vocabulary hints for the cloud model.

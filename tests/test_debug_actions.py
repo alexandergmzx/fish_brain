@@ -316,6 +316,12 @@ def test_a_switch_refuses_what_it_cannot_do(rig, monkeypatch):
     assert rig.act.set("nope", 1)[0] == 400
     assert rig.act.set("max_record_s", 500)[0] == 400 and rig.act.set("max_record_s", "x")[0] == 400
     assert rig.act.set("stt", "whisper-9")[0] == 400
+    rig.cfg.stt.model_dir = ""                       # canary without its model: refused, kept
+    answer = rig.act.set("stt", "canary")
+    assert "FISH_STT_MODEL_DIR" in answer[1]["error"] and rig.cfg.stt.backend == "local"
+    rig.cfg.stt.backend, rig.convo._stt = "openai", "kept"   # the local model is not in use:
+    assert rig.act.set("stt_model", "tiny")[0] == 200 and rig.convo._stt == "kept"   # nothing to rebuild
+    rig.cfg.stt.backend = "local"
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     assert rig.act.set("stt", "groq")[1]["error"] == "GROQ_API_KEY is not set"

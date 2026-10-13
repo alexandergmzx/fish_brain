@@ -92,6 +92,15 @@ def mark_offline() -> None:
         _online = False
 
 
+def mark_online() -> None:
+    """Take back a `mark_offline` that came from a service the flag does not speak for
+    (the probe watches one host); the probe's next pass has the last word."""
+    global _online
+    if not _online:
+        _log("online (the failed call was another service's)")
+        _online = True
+
+
 # --- clients ----------------------------------------------------------------------------
 def client(base_url: str = "", api_key_env: str = "OPENAI_API_KEY",
            timeout_s: float | None = None):

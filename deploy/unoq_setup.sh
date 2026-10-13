@@ -9,6 +9,7 @@
 #   deploy/unoq_setup.sh hotspot "<SSID>" "<password>" [connect]   board: save the phone hotspot
 #   deploy/unoq_setup.sh kiosk on|off|pause|resume|status   board: the fish page on its own display
 #   deploy/unoq_setup.sh tls [--force] [--local] [ip ...]   self-signed certificate for the phone page
+#   deploy/unoq_setup.sh stt                  board: fetch the Canary speech-to-text model
 #   deploy/unoq_setup.sh status               board: what is running, who has the port
 #
 # This script never calls sudo. Steps that need root are printed for the owner to run.
@@ -678,6 +679,45 @@ tls_print_cert() {  # the lines an operator checks: subject, SAN, dates
     openssl x509 -noout -ext subjectAltName -in "$crt" 2>/dev/null | sed -n '2p' | sed 's/^ */  SAN: /'
 }
 
+# The Canary speech-to-text model (FISH_STT_BACKEND=canary), as packaged by sherpa-onnx.
+STT_MODEL_NAME=sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8
+STT_MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$STT_MODEL_NAME.tar.bz2"
+STT_DIR="${FISH_STT_DIR:-$HOME/.cache/fish_brain/stt}"
+
+cmd_stt() {
+    local dir="$STT_DIR/$STT_MODEL_NAME" f
+    require_board stt
+    step "Canary model in $dir"
+    if [[ -s "$dir/encoder.int8.onnx" && -s "$dir/decoder.int8.onnx" && -s "$dir/tokens.txt" ]]; then
+        ok "already there"
+    else
+        have curl || die "curl not found (apt update && apt install curl)"
+        mkdir -p "$STT_DIR"
+        say "  downloading about 200 MB..."
+        curl -fsSL -o "$STT_DIR/$STT_MODEL_NAME.tar.bz2" "$STT_MODEL_URL" \
+            || die "download failed: $STT_MODEL_URL"
+        tar -xjf "$STT_DIR/$STT_MODEL_NAME.tar.bz2" -C "$STT_DIR"
+        rm -f "$STT_DIR/$STT_MODEL_NAME.tar.bz2"
+        for f in encoder.int8.onnx decoder.int8.onnx tokens.txt; do
+            [[ -s "$dir/$f" ]] || die "the archive has no $f"
+        done
+        ok "unpacked"
+    fi
+    if "$PY" -c 'import sherpa_onnx' 2>/dev/null; then
+        ok "sherpa-onnx is installed"
+    else
+        warn "sherpa-onnx is not in the venv: run 'deploy/unoq_setup.sh install' (it is in the unoq extra)"
+    fi
+
+    step "Your .env lines (this script never edits .env)"
+    say "  FISH_STT_BACKEND=canary"
+    say "  FISH_STT_MODEL_DIR=$dir"
+    say "  then: systemctl --user restart fish-brain"
+    say "  FISH_STT_LONG=groq          (optional: recordings over 6 s go online first)"
+    say "  A recording over 6 s goes to faster-whisper (FISH_STT_MODEL) when nothing online"
+    say "  answers, so keep that model fetched: $PY -m fish_brain.app --stt local --prefetch-stt"
+}
+
 cmd_tls() {
     local force=0 local_mode=0 arg ip ips=() san crt key tls_port viz_port
     for arg in "$@"; do
@@ -756,6 +796,7 @@ main() {
         hotspot) cmd_hotspot "$@" ;;
         kiosk)   cmd_kiosk "$@" ;;
         tls)     cmd_tls "$@" ;;
+        stt)     cmd_stt "$@" ;;
         status)  cmd_status "$@"; cmd_kiosk status ;;
         ""|-h|--help|help) usage ;;
         *) usage >&2; die "unknown subcommand: $cmd" ;;

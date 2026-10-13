@@ -216,6 +216,12 @@ def _backends(hub) -> dict:
     from . import cloud
     out["online"] = cloud.is_online()
     keys = {"OPENAI_API_KEY", cfg.llm.api_key_env}
+    # Speech-to-text's own services: a cloud backend, or where canary sends long recordings.
+    from .config import STT_PROFILES
+    names = (cfg.stt.backend,) if cfg.stt.backend in STT_PROFILES else (
+        cfg.stt.long_online if cfg.stt.backend == "canary" else ())
+    out["stt_keys"] = sorted({STT_PROFILES[n]["api_key_env"] for n in names if n in STT_PROFILES})
+    keys.update(out["stt_keys"])
     out["keys"] = {k: bool(os.environ.get(k)) for k in sorted(k for k in keys if k)}
     return out
 
@@ -372,7 +378,8 @@ def hints(st: dict, hub) -> list[dict]:
     if be.get("online") is False:
         add("bad", "cloud", "No internet: cloud stages will fail.", "check the hotspot's data")
     for name, present in (be.get("keys") or {}).items():
-        if not present and not (name != "OPENAI_API_KEY" and be.get("echo")):
+        if not present and not (name != "OPENAI_API_KEY" and be.get("echo")
+                                and name not in (be.get("stt_keys") or ())):
             add("warn", "cloud", f"{name} is not set.", "add it to .env, then restart")
 
     turns = hub.recent("turn", 5)

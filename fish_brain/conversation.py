@@ -21,6 +21,7 @@ STT model only loads when voice mode actually needs it.
 from __future__ import annotations
 
 import os
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -90,6 +91,17 @@ class FishConversation:
             from .stt import make_transcriber
             self._stt = make_transcriber(self.cfg.stt)
         return self._stt
+
+    def warm_stt(self) -> None:
+        """Load the speech model in the background (nothing to do for a cloud backend)."""
+        transcriber = self.stt
+
+        def load():
+            try:
+                transcriber.ensure_loaded()
+            except Exception as e:               # the turn that needs it reports it again
+                print(f"[stt] could not load the model: {type(e).__name__}: {e}", flush=True)
+        threading.Thread(target=load, name="stt-warm", daemon=True).start()
 
     # --- one turn, in stages ---------------------------------------------------------
     def _record(self) -> Path | object:

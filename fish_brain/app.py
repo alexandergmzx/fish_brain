@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--viz-port", type=int, help="port for --viz (default from config)")
     parser.add_argument("--viz-host", help="address --viz listens on (0.0.0.0 = reachable "
                                            "from other devices)")
-    parser.add_argument("--stt", choices=["local", "openai", "groq"],
+    parser.add_argument("--stt", choices=["local", "canary", "openai", "groq"],
                         help="speech-to-text backend (default: FISH_STT_BACKEND or local)")
     parser.add_argument("--tts", choices=["loq", "openai"],
                         help="text-to-speech backend (default: FISH_TTS_BACKEND or loq)")
@@ -125,13 +125,18 @@ def main(argv: list[str] | None = None) -> int:
         cloud_keys.add("OPENAI_API_KEY")
     if cfg.stt.backend in STT_PROFILES and not args.text:
         cloud_keys.add(STT_PROFILES[cfg.stt.backend]["api_key_env"])
+    if cfg.stt.backend == "canary" and not args.text:
+        # The services its long recordings go to (an unknown name is reported further down).
+        cloud_keys.update(STT_PROFILES[name]["api_key_env"] for name in cfg.stt.long_online
+                          if name in STT_PROFILES)
     if not args.echo:
         cloud_keys.add(cfg.llm.api_key_env)
     one_shot = (args.list_canned or args.prefetch_stt or args.check_link
                 or args.read_badge is not None)
-    if cloud_keys and not one_shot:
-        # Know whether the internet is there without ever blocking a turn on it.
-        cloud.start_probe(wait_s=3.0)
+    if (cloud_keys or args.viz) and not one_shot:
+        # Know whether the internet is there without ever blocking a turn on it. With the
+        # page up, a switch on /debug can bring a cloud stage in later.
+        cloud.start_probe(wait_s=3.0 if cloud_keys else 0.0)
 
     if args.list_canned:
         for name in cfg.canned.phrases:
@@ -153,13 +158,20 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.prefetch_stt:
-        if cfg.stt.backend != "local":
+        from .config import STT_PROFILES
+        from .stt import make_transcriber
+        if cfg.stt.backend in STT_PROFILES:
             print(f"STT backend '{cfg.stt.backend}' runs in the cloud: nothing to fetch.")
             return 0
-        from .stt import Transcriber
-        print(f"Fetching STT model '{cfg.stt.model}' (first run may take a while)…", flush=True)
-        Transcriber(cfg.stt).ensure_loaded()
-        print("STT model ready (cached under ~/.cache/huggingface).")
+        try:
+            transcriber = make_transcriber(cfg.stt)
+        except (ValueError, RuntimeError) as e:
+            print(f"Configuration problem: {e}", file=sys.stderr)
+            return 78
+        what = cfg.stt.model_dir if cfg.stt.backend == "canary" else cfg.stt.model
+        print(f"Loading STT model '{what}' (first run may take a while)…", flush=True)
+        transcriber.ensure_loaded()
+        print("STT model ready.")
         return 0
 
     if args.prerender_canned:
@@ -268,8 +280,8 @@ def main(argv: list[str] | None = None) -> int:
                 convo = FishConversation(cfg, link, text_input=args.text,
                                          play_audio=not args.no_audio, viz=viz, echo=args.echo)
                 if not args.text:
-                    from .stt import make_transcriber
-                    make_transcriber(cfg.stt)       # a wrong backend name is a setup error
+                    _ = convo.stt                   # a wrong backend or model is a setup error
+                    convo.warm_stt()                # so the first turn does not pay the load
             except (ValueError, RuntimeError) as e:
                 print(f"Configuration problem: {e}", file=sys.stderr)
                 return 78
@@ -287,6 +299,8 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"[viz] debug view without actions: {type(e).__name__}",
                               file=sys.stderr)
             stt = "-" if args.text else cfg.stt.backend
+            if stt == "canary" and cfg.stt.long_online:
+                stt = ">".join(["canary", *cfg.stt.long_online])    # where the long ones go
             llm = "echo" if args.echo else f"{cfg.llm.profile}:{cfg.llm.model}"
             if viz is not None:
                 # Read when asked, not fixed here: the debug page's switches change them.

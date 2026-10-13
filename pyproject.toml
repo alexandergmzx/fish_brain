@@ -17,8 +17,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Arduino UNO Q: remote-button push-to-talk and the router RPC (port release, Bridge transport).
-unoq = ["evdev>=1.9", "msgpack>=1.0"]
+# Arduino UNO Q: remote-button push-to-talk, the router RPC (port release, Bridge transport)
+# and the Canary speech-to-text backend (1.13.8 is the version measured).
+unoq = ["evdev>=1.9", "msgpack>=1.0", "sherpa-onnx>=1.13.8,<2"]
 dev = ["pytest>=8", "msgpack>=1.0"]
 
 [project.scripts]
