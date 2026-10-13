@@ -232,6 +232,17 @@ deploy/unoq_setup.sh tls --force <ip> [<ip>]   # a new certificate (the phone as
 deploy/unoq_setup.sh tls --local <ip>          # on the laptop instead; prints the scp line
 ```
 
+### The local speech-to-text model
+
+```bash
+deploy/unoq_setup.sh stt      # on the board: fetches Canary (about 200 MB) into ~/.cache/fish_brain/stt, prints the .env lines
+```
+
+`sherpa-onnx` comes with the `unoq` extra (`deploy/unoq_setup.sh install`). Recordings over
+6 s go to the services in `FISH_STT_LONG` while the board is online and to faster-whisper
+otherwise, so its model stays fetched (`--prefetch-stt`). Both load in the
+background when the service starts (Canary about 10 s, `small` about 6 s).
+
 It makes a self-signed certificate (RSA 2048, SHA-256, 820 days, `CN=segunda.local`, SAN
 `segunda.local`, `localhost`, `127.0.0.1` and every IP given) with the board's own OpenSSL,
 outside the synced tree (`sync` runs `rsync --delete`), directory 700 and files 600, and
