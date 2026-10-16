@@ -1,6 +1,6 @@
 # 0008 — The phone is the fish's face in the visitor's hands; the remote is the control
 
-**Status:** proposed · **Date:** 2026-10-12
+**Status:** replaced by [0011](0011-one-page-for-the-operator.md) · **Date:** 2026-10-12
 
 ## Context
 

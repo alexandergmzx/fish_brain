@@ -1,4 +1,10 @@
 # On-screen fish (`--viz`)
+
+> **Since 2026-10-16 ([ADR 0011](adr/0011-one-page-for-the-operator.md)) `/` serves the
+> operator's page ([`debug.md`](debug.md)): the debug view with the drawn hat, made for his
+> phone.** This file describes the old visitor face (`index.html`, `fish.js`, `fish.css`),
+> which stays at `/face` (`/face?kiosk=1`, `/face?debug=1`, `/face?talk=1`) until after the
+> fair and is then removed. Where it says `/`, read `/face`.
 A browser fallback/debug view of what the fish is saying — useful when the physical fish
 misbehaves. `viz.py` runs a stdlib `ThreadingHTTPServer` (daemon thread): it serves `web/`,
 streams a `speak` event per reply over **Server-Sent Events** (`/events`) carrying the audio
@@ -288,8 +294,8 @@ EOF (`--text`), or Ctrl-C quit.
 
 ## The debug view
 
-`/debug` is a separate desktop page with its own routes and stream: [`debug.md`](debug.md).
-It does not touch the phone page, `/status` or `/events`.
+`/` (also `/debug`) is the operator's page with its own routes and stream:
+[`debug.md`](debug.md). It does not touch the old face at `/face`, `/status` or `/events`.
 
 ## Rule for anyone changing the page
 
@@ -306,4 +312,4 @@ Every id `fish.js` looks up must exist in `index.html`, and `fish.js` replaces t
 
 ## The hat's face (branch `sorting-hat`, 2026-10-16)
 
-On `sorting-hat` the page is the Sorting Hat's, "El Sombrero Adivino", in a study at night: a window with the moon, books, a candle, a stool under the hat. The hat is drawn in `index.html` (`svg#hat`: `#brim`, `#crown`, `#brows`, `#eyes`, `#mouth`, `#lip-lower`, `#tip-bend`/`#tip`); `fish.js`'s `hat` block writes the mouth from the spring, bends the tip on NECK holds and the burble, and wags the brim on TAIL chains, only when a value changes. Its idle life is CSS (`respira`, `cabecea`, `parpadea`, the candle's `titila`, the stars' `deriva`): 7 loops in the console view, counted, not measured. The corner's candle is the old shell: its flame is the connection, a 0.8 s hold opens the sheet. Sprites take over when the four base poses load (`web/img/README.md`); `/?pose=<state>&mouth=0..1&tip=1&brim=1` shows a still. The fish's sprites are parked in `web/img/fish/`; the `/debug` page's small fish is blank on this branch.
+On `sorting-hat` the page is the Sorting Hat's, "El Sombrero Adivino", in a study at night: a window with the moon, books, a candle, a stool under the hat. The hat is drawn in `index.html` (`svg#hat`: `#brim`, `#crown`, `#brows`, `#eyes`, `#mouth`, `#lip-lower`, `#tip-bend`/`#tip`); `fish.js`'s `hat` block writes the mouth from the spring, bends the tip on NECK holds and the burble, and wags the brim on TAIL chains, only when a value changes. Its idle life is CSS (`respira`, `cabecea`, `parpadea`, the candle's `titila`, the stars' `deriva`): 7 loops in the console view, counted, not measured. The corner's candle is the old shell: its flame is the connection, a 0.8 s hold opens the sheet. Sprites take over when the four base poses load (`web/img/README.md`); `/?pose=<state>&mouth=0..1&tip=1&brim=1` shows a still. The fish's sprites are parked in `web/img/fish/`. The operator's page draws the same `svg#hat` (copied into `debug.html`, posed through wrapper groups) and never the sprites.

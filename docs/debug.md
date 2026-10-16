@@ -1,14 +1,19 @@
-# The debug view (`/debug`)
+# The operator's page (`/`, also `/debug`)
 
-A desktop page for the fish's owner: `http://<fish>:8723/debug` (or `https://…:8724/debug`;
-`?token=<value>` when one is set). It exists whenever the fish runs with `--viz`. Decision and
-its limits: [ADR 0009](adr/0009-a-debug-view-that-acts.md).
+The owner's page, on a desktop or on his phone: `http://<fish>:8723/` (on the phone
+`https://<ip>:8724/`, which keeps the screen on and allows the phone's microphone;
+`?token=<value>` when one is set). It exists whenever the fish runs with `--viz`. Decisions and
+their limits: [ADR 0009](adr/0009-a-debug-view-that-acts.md),
+[ADR 0011](adr/0011-one-page-for-the-operator.md). The old visitor face is at `/face` until
+after the fair.
 
 ## What is on it
 
 | Part | Shows |
 |---|---|
-| Fish | Top left: the sprite follows the reply being spoken (the reply's mouth track and gestures, as on the phone), a state word, and three lamps (MOUTH, NECK, TAIL) that light for every line the link really sent; a muted or dropped line lights its lamp hollow |
+| Hat | Top left (on a phone: on top, always): the drawn hat follows the reply being spoken (the mouth track lifts the mouth and brows, NECK bends the tip, TAIL wags the brim, the burble perks it). Its pose and the band under it say what the fish is doing: WAITING, LISTENING, THINKING with the seconds against the turn's budget and "hearing" or "model", SPEAKING; a grey slump when the stream is down; NO INTERNET. Through a visit its face grows surer, and a verdict shows the house's colour and name for 10 s. A turn that died shakes it and names the stage. Three lamps (MOUTH, NECK, TAIL) light for every line the link really sent (hollow when muted or dropped), and after each phrase "motor: N lines" (or "no lines"). The last heard and said lines. `?hat=<state>&mouth=0..1&stage=n&house=<House>` shows a still |
+| Visit | The tab first on a phone: the visit's stage, the cue chips the hat turns into visions (a lit chip has not been used yet), the badge photo and the typed name. "Nuevo visitante" and a hold-to-talk button (the board records) sit in the thumb bar |
+| Phone | Voice: the phone's microphone switch (off by default; on asks for permission and sets `mic=browser`). System: this phone's screen, secure context, screen lock and stream; vibrate and still toggles. The band: seconds since the last record, the visit, "secure" and "screen on" chips |
 | Bar | Host, uptime, commit, mode badges (`ECHO`, `DRY-RUN`, `WAIT`, `no token`, "code changed: restart"), a chip per part (link, internet, trigger, microphone, the three models, speaker, board), ARM and STOP |
 | Hints | A sentence and the fix: a key that is not the configured one, no remote, a key that only taps, a recording of zeros or near silence, echo / dry-run / wait-to-speak, code on disk newer than the process, link off, MCU silent, offline, a missing key name, playback failed, a slow stage, the board in USB device mode |
 | Checks | The bring-up checks as PASS / FAIL / WARN rows with the value found and the fix (`fish_brain/debug_checks.py`): USB host role and devices; a playback card, the sound server, the default sink, its volume and mute; a capture card, the default source, `FISH_MIC_SOURCE`; the remote's devices and readable input nodes; the port, the link, the router's socket; `loq`, canned phrases, key names, internet; service, linger, groups, `.env`; the last result of each test. Rows that do not apply on this machine read `skip` and are not counted. Three buttons: speaker → microphone loop, voice render, cloud round trip |
@@ -22,10 +27,12 @@ its limits: [ADR 0009](adr/0009-a-debug-view-that-acts.md).
 | Cloud, Board, Config, Clients | Models and key names; temperature, load, USB, the unit, restart; the configuration in effect with its `FISH_*` names; pages, dropped events, refused requests |
 | Log | Every printed line with its time and tag; filter, search, pause, copy |
 
-The middle column has six tabs: **Checks**, **Live** (inputs and motors), **Model** (with the
-cloud facts), **Voice**, **Switches**, **System** (board, service, configuration, pages). Hints
-fold into one line; every action answers in one toast at the bottom; the chosen tab is
-remembered in the browser.
+The middle column has seven tabs: **Visit**, **Checks**, **Live** (inputs and motors),
+**Model** (with the cloud facts), **Voice**, **Switches**, **System** (board, service,
+configuration, pages, this phone). On a phone (≤ 700 px) the hat and the tabs stay on top, one
+column shows at a time and two more tabs open the **Turns** and **Log** columns. Hints fold
+into one line; every action answers in one toast at the bottom; the chosen tab is remembered in
+the browser.
 
 ## Routes
 
@@ -34,9 +41,9 @@ open. POSTs must be `application/json`. Without `--viz` there is no hub and no r
 
 | Route | What |
 |---|---|
-| `GET /debug`, `/debug.js`, `/debug.css` | The page |
-| `GET /debug/state` | The slow state as one JSON (`fish_brain/debug_state.py`) |
-| `GET /debug/events?since=<boot>-<seq>` | Server-sent events: every record, replayed from the rings on connect, at most 200 per quarter second; `hello` first with the boot id |
+| `GET /`, `/debug`, `/debug.js`, `/debug.css` | The page |
+| `GET /debug/state` | The slow state as one JSON (`fish_brain/debug_state.py`); `page` carries what the tools need (the visit's view, the reader, the capture, the TLS port) |
+| `GET /debug/events?since=<boot>-<seq>&page=<id>&tail=<n>` | Server-sent events: every record, replayed from the rings on connect (`tail`: only the last n on a first connection), at most 200 per quarter second; `hello` first with the boot id. A stream that names its page replaces that page's earlier one |
 | `GET /debug/rec.wav` | The newest recording |
 | `POST /debug/ping`, `/debug/mic {seconds}`, `/debug/say {name}` | The harmless tests |
 | `POST /debug/loop`, `/debug/voice`, `/debug/cloud` | The bring-up tests: audible loop (a rendered phrase or a tone, played while recording; never changes the volume); one phrase rendered with the configured voice, timed, not played; one small call to each cloud model in use (the LLM one through `Conversation.probe()`, which leaves the history alone) |
@@ -46,7 +53,8 @@ open. POSTs must be `application/json`. Without `--viz` there is no hub and no r
 
 Refusals are `{"ok": false, "error": "<word>"}`: `not armed`, `busy`, `speaking`, `recording`,
 `link off`, `test running`, `not picked up`, `not rendered`, `not a service…`, `a phone is the
-microphone` (no test in browser-microphone mode while a phone is ready: it records by itself).
+microphone` (no test in browser-microphone mode while a phone is ready: it records by itself; a
+switch is still allowed, so the page can turn its microphone off).
 Every test, the ping included, runs in the turn loop, so each is refused with `busy` during a
 turn. A fifth debug page is refused (503) rather than pushing an older one out.
 
@@ -75,8 +83,11 @@ result}` · `http {method, path, status, error}`. Sizes of the rings: `RINGS` in
   only from inside that loop; it never writes `.env` or a unit file.
 - Muted motors (`BaseLink.mute`): every line but `STOP` is dropped at the link and recorded
   with the flag `muted`.
-- The phone page and `/status` are not this view's to change (`/status` reads the mode and
-  the backends when asked, so it follows a switch).
+- `/status` is not this page's to change (`/status` reads the mode and the backends when asked,
+  so it follows a switch). The old face at `/face` is left as it is until it is removed.
+- Records replayed on connect only set state; what moves the hat, buzzes the phone or starts a
+  recording runs only for records that arrive live (`S.caughtUp`). Each tool block starts in
+  `guard()`, after ARM and STOP are wired.
 
 ## Trying it without hardware
 

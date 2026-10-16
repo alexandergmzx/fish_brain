@@ -343,21 +343,21 @@ heartbeat, blue per command).
 
 | # | Test | How | Pass |
 |---|---|---|---|
-| 1 | Cold boot | Hotspot on, then power the board; touch nothing | The welcome plays; `[fish] link=serial /dev/ttyHS1 …` in the log; the phone opens the page and the pearl in the corner shell is green. Note the seconds from power to voice |
-| 2 | Remote turn | Hold the remote's OK button, talk into the remote, release | The sign on the phone page reads "Te escucho…" then "Déjame pensar…" then "¡Escúchame!", and what was heard and the reply appear as speech bubbles; a `[turn]` line with five timings and `link=ok`; the mouth lane of the matrix moves with the voice |
-| 2b | Phone turn, remote microphone | `?talk=1` on the page: hold the blue button, ask into the remote, release | Same as 2; no restart needed to fall back to this row from any other |
-| 3 | Phone turn, phone microphone | `Activar micrófono` once, then as 2 with the phone held toward the visitor | Same as 2, plus an `[utt]` line; `?mic=host` brings row 2 back without a restart |
-| 3d | The debug view | On the laptop: `http://<board>:8723/debug`; press OK on the remote; switch the remote to its mouse mode and press again | Each press shows in Inputs with its key; in mouse mode a red hint names `BTN_LEFT` (unless it is already in `FISH_PTT_KEY`); a turn fills the pipeline and the Turns table |
-| 3b | The reading from the shell | Hold the corner shell until the sheet opens, `Foto del gafete`, photograph a badge | A tap on the shell only wobbles it; the sheet closes by itself; the fish asks "¿Tú eres X?" and the question shows as a bubble. With a failed read the sheet stays open on the name field |
-| 3c | Small hands | A minute of tapping, dragging, pinching and long presses on the page | Nothing opens, scrolls, zooms or is selected; the sheet opens only on a held shell |
-| 4 | Page without token | From a phone: `http://segunda.local:8723/` and press | Nothing is recorded or spoken |
+| 1 | Cold boot | Hotspot on, then power the board; touch nothing | The welcome plays; `[fish] link=serial /dev/ttyHS1 …` in the log; the phone opens `https://<ip>:8724/` (accept the certificate once per address), the band reads "now" and "secure", "screen on" after a tap. Note the seconds from power to voice |
+| 2 | Remote turn | Hold the remote's OK button, talk into the remote, release | The hat on the phone leans in (LISTENING), then THINKING with its seconds (hearing → model), then SPEAKING with the mouth moving; heard and said under it; a `[turn]` line with five timings and `link=ok`; after the phrase "motor: N lines"; the mouth lane of the matrix moves with the voice |
+| 2b | Hold-to-talk backup | Hold "Hold to talk" in the thumb bar, ask into the remote, release | Same as 2: the board records |
+| 3 | Phone turn, phone microphone | Voice tab: tick "Record with this phone's microphone" (allow once), then hold the thumb button toward the visitor | Same as 2, plus an `[utt]` line; untick (or the screen sleeping) gives the board its microphone back without a restart |
+| 3d | Inputs on the page | Live tab; press OK on the remote; switch the remote to its mouse mode and press again | Each press shows in Inputs with its key; in mouse mode a red hint names `BTN_LEFT` (unless it is already in `FISH_PTT_KEY`); a turn fills the pipeline (Turns tab) |
+| 3b | A visit | Visit tab: "Nuevo visitante", two cues, then three answers through the remote; or `Badge photo` instead of the greeting | The greeting (or "¿Tú eres X?"), the stage chip 1/4 → 4/4, the lit cues go dark once used; at the verdict the house's colour and name on the hat |
+| 3c | Fallback page | Open `/face` in the same tab | The old face (sign, bubbles, candle sheet) works as on 2026-10-16; back to `/` afterwards. One page at a time |
+| 4 | Who can open the page | With `FISH_VIZ_TOKEN` empty (his hotspot), any phone on the hotspot opens everything, ARM and restart included (ADR 0011). On another network set the token | Noted |
 | 5 | Turn time | Read five `[turn]` lines | Release-to-voice mostly under about 5 s |
 | 6 | Hotspot data off | Mobile data off, ask something | "Se me fue la señal…" within about 10 s, about 2 s on the next tries |
 | 7 | Hotspot back | Data on, ask something | `[cloud] online`, a normal answer, no restart |
 | 8 | Hotspot gone at boot | Boot with the hotspot off, then turn it on | The fish starts anyway; answers once the board joins |
-| 9 | Stuck press | `?talk=1`: hold the button for 20 s | One recording of at most 15 s; the button returns by itself |
-| 10 | Press while it speaks | `?talk=1`: press during an answer | The button shakes; nothing is recorded |
-| 11 | Service restart | `systemctl --user restart fish-brain` | Goodbye; the sign goes grey ("Ahorita vuelvo…") and the pearl red, then both come back by themselves; **no** second welcome |
+| 9 | Stuck press | Hold "Hold to talk" for 20 s | One recording of at most 15 s; the button returns by itself |
+| 10 | Press while it speaks | Hold "Hold to talk" during an answer | Nothing is recorded |
+| 11 | Service restart | `systemctl --user restart fish-brain` | Goodbye; the hat slumps grey (NO STREAM), then comes back by itself; **no** second welcome |
 | 12 | Clean stop | `systemctl --user stop fish-brain` | Goodbye; matrix dark except the ticks; the display shows the waiting page; `start` it again |
 | 13 | Crash recovery | `systemctl --user kill -s KILL fish-brain` | Matrix dark within a second; back by itself; the first line of the new process is `STOP` |
 | 14 | Router restart | `sudo systemctl restart arduino-router` mid-answer | The voice continues; the matrix shows the boot animation, then the ticks; `[link] router is back; released /dev/ttyHS1 again`; the matrix moves on the next answer |
@@ -366,10 +366,11 @@ heartbeat, blue per command).
 | 17 | Remote unplugged | Pull the remote's dongle, hold the page target and speak, replug | Noted: with the board's own input as fallback the recording is silence and the fish says nothing; the remote key is gone until the replug. Works again after the replug |
 | 18 | Speaker replug | Pull and replug the speaker, ask | Sound returns without a restart (if not: restart, and note it) |
 | 19 | Display attached by mistake | Boot with a display plugged in | The fish is the same; `deploy/unoq_setup.sh kiosk status`: the parked kiosk may start a browser, `kiosk pause` closes it |
-| 20 | Phone stays on | Leave the phone untouched for 30 minutes (auto-lock off, on a power bank) | The pearl still green, the scene still moving; a turn works |
+| 20 | Phone stays on | Leave the phone on the page for 30 minutes (https address, on a power bank, power saving off) | "screen on" still green, the band's seconds small; a turn works. Over http the screen may sleep: the page resumes on its own when woken |
 | 21 | "salir" | Say "salir" | Answered like any phrase; the fish stays on (`FISH_VOICE_QUIT=false`) |
 | 22 | Soak | 30 minutes, a turn every minute or two | No restart, no growing delay, temperature steady |
 | 23 | Battery | Full charge, a turn now and then | Runtime noted; longer than the fair shift |
+| 24 | Stream refused | Open the page in five tabs or phones | The fifth reads NO STREAM (four places); closing one frees it; the same phone reconnecting never takes a second place |
 
 If a row fails on the day: 3 → row 2 (`?mic=host`, no restart). The phone → the laptop on the
 hotspot, or `ssh -L 8723:127.0.0.1:8723 arduino@segunda.local` and `http://localhost:8723/`.
