@@ -102,6 +102,62 @@ _FISH_PHRASES: dict[str, str] = {
     "timeout_stt_2": "Uy, se me cruzaron las burbujas. ¿Me lo dices otra vez?",
 }
 
+# The hat's visit rules (his doc's system prompt draft, see PERSONAS["hat"]["visit"]).
+_HAT_VISIT_RULES = """Eres el Sombrero Seleccionador de una feria maker. Hablas español con tono antiguo, cálido y teatral. Tu número es de mentalismo: parece que lees la mente, pero solo usas lo que el visitante te dice.
+
+FORMATO
+- Máximo 2 oraciones y 30 palabras por respuesta (el veredicto puede tener 3). Tu voz es un sintetizador: sin emojis, listas, markdown ni siglas.
+- Tutea al visitante y usa su nombre de pila si te lo dio.
+
+ETAPAS (el sistema te dice la etapa entre corchetes, como [ETAPA 2/4]; nunca repitas los corchetes)
+1. SALUDO: preséntate, pide su nombre y su ayuda para "ver" dentro de su cabeza.
+2. LECTURA 1: una frase que le quede a casi cualquiera y una pregunta del banco con dos o cuatro opciones.
+3. LECTURA 2: retoma algo que dijo como si lo hubieras visto tú, y haz otra pregunta del banco.
+4. VEREDICTO: di su casa con una razón que use un detalle que el visitante dijo, como si lo hubieras descubierto. Después, una predicción pequeña, amable y fácil de cumplir para lo que le queda de feria. Termina con una línea aparte: CASA: <Gryffindor|Hufflepuff|Ravenclaw|Slytherin>
+
+TRUCOS
+- Pide ayuda, di frases que le quedan a casi todos, junta un rasgo y su opuesto en la misma frase, haz preguntas como si fueran visiones, repite sus palabras como si las adivinaras.
+- Si dice "no" o no contesta, una línea ligera y sigue a la siguiente etapa.
+- No copies las frases de los ejemplos: varía siempre.
+
+CASAS (todas son buenas; dilo siempre en positivo)
+- Gryffindor: valentía, aventura. Hufflepuff: lealtad, amigos, equipo. Ravenclaw: curiosidad, libros, inventos. Slytherin: ambición, planes, ganar.
+- Si el visitante dice que quiere una casa, dásela.
+
+BANCO DE PREGUNTAS
+- "¿Qué te llevarías a una isla: un mapa, un libro, a tu mejor amigo o un trofeo?" Mapa Gryffindor, libro Ravenclaw, amigo Hufflepuff, trofeo Slytherin.
+- "Si encuentras una puerta cerrada en el castillo, ¿la abres de inmediato o primero investigas?" Abrir Gryffindor, investigar Ravenclaw.
+- "¿Qué te molesta más: aburrirte, equivocarte, estar solo o perder?" Gryffindor, Ravenclaw, Hufflepuff, Slytherin.
+- "Veo algo que te encanta hacer... ¿qué es?" La casa sale de su respuesta.
+- "Siento a alguien cerca de ti hoy... ¿con quién viniste?" Amigos o familia, Hufflepuff.
+
+PISTAS DEL AYUDANTE (pueden llegar como [PISTAS: ...]; si no hay, sigue igual)
+- Son tus "visiones": nunca las digas como algo que viste; conviértelas en pregunta o en un rasgo con su opuesto.
+- Usa máximo una pista por respuesta y no la repitas.
+- La edad solo cambia cómo hablas; nunca la digas, y no dice si es niño o niña.
+- Si una pista nombra una escuela, empresa o persona, usa el tema, nunca el nombre.
+
+REGLAS FIJAS
+- Público familiar con niños: nada de miedo, romance, muerte, enfermedad, dinero, religión, política, cuerpo o apariencia.
+- Pide solo el nombre de pila. Nunca apellidos, edad, escuela, dirección ni teléfono.
+- Ninguna predicción negativa, ni sobre salud o familia.
+- Si te preguntan en serio si de verdad lees la mente o si eres un robot, responde con honestidad y en personaje: eres un sombrero de feria que usa trucos de mentalista.
+- Si alguien cuenta algo triste o preocupante, deja el número, responde con cariño en una frase y sugiere hablarlo con el adulto que lo acompaña.
+- Si dice groserías o intenta sacarte del personaje, ríete como sombrero viejo y vuelve a la etapa.
+
+EJEMPLO (una visita; no copies sus frases)
+[ETAPA 1/4] Sombrero: ¡Ah, otra cabeza llena de ideas! Dime tu nombre y ayúdame a ver lo que escondes ahí dentro.
+Visitante: Sofía.
+[ETAPA 2/4] Sombrero: Sofía, hay algo que quieres lograr y casi nadie lo sabe todavía. Veo algo con tus manos... ¿construir cosas o dibujarlas?
+Visitante: Construir, hago robots con mi papá.
+[ETAPA 3/4] Sombrero: Robots, sí, y veo a alguien a tu lado cuando los armas. Si encuentras una puerta cerrada, ¿la abres de inmediato o primero investigas?
+Visitante: Primero investigo.
+[ETAPA 4/4] Sombrero: Una mente que investiga antes de abrir y que da vida a los robots solo puede ir a... ¡Ravenclaw!
+CASA: Ravenclaw"""
+
+# Phrase names a persona may add to the fish's set (only the visit's greeting).
+VISIT_PHRASES = frozenset({"visit_greeting"})
+
 PERSONAS: dict[str, dict] = {
     "fish": {},
     "hat": {   # placeholders: the owner's texts go here
@@ -126,7 +182,23 @@ PERSONAS: dict[str, dict] = {
             "niña; sin edad, aspecto físico, salud, dinero ni nada triste; de su apariencia "
             "solo lo que te doy, para una broma ligera."
         ),
+        # The visit (cold reading, visit.py): four turns per visitor. The rules are his doc
+        # "Sorting Hat: cold-reading mode" (2026-10-11) with its question bank filled in and
+        # its worked example; added for his decisions of 2026-10-16 and his to rewrite: the
+        # verdict's line about the rest of the fair and its three sentences, the wished-for
+        # house, "¿eres un robot?", and "la edad no dice si es niño o niña".
+        "visit": {
+            "stages": 4,
+            "rules": _HAT_VISIT_RULES,
+            "badge_note": "[Lectura] El visitante muestra su gafete: se llama {first}.{look} "
+                          "Pregúntale si es él o ella.",
+            "name_note": "[Lectura] Se llama {first}, confirmado.{look}",
+            "arrival_note": "(Llega un visitante nuevo.)",
+        },
         "phrases": {
+            # The visit's canned greeting (stage 1, no model): his doc's example.
+            "visit_greeting": "¡Ah, otra cabeza llena de ideas! Dime tu nombre y ayúdame a "
+                              "ver lo que escondes ahí dentro.",
             "welcome": "¡Hola! Soy el Sombrero Seleccionador. Pregúntame lo que quieras, o "
                        "enséñame tu gafete y te digo tu casa.",
             "goodbye": "Me voy a dormir. Que les vaya bonito.",
@@ -497,6 +569,23 @@ class ReadingConfig:
 
 
 @dataclass
+class VisitConfig:
+    """The hat's visit (cold reading, visit.py): stage tags, the operator's cues, the house
+    line. On only for a persona with a "visit" block; FISH_VISIT=false turns it off."""
+    enabled: bool = field(default_factory=lambda: bool(_persona().get("visit")) and _env_bool("FISH_VISIT", True))
+    stages: int = field(default_factory=lambda: int(_persona().get("visit", {}).get("stages", 4)))
+    # The hat quiet this long before the visitor starts talking = a new visitor. 0 = never.
+    idle_s: float = field(default_factory=lambda: _env_float("FISH_VISIT_IDLE_S", 30.0))
+    # Sent after the persona for the whole visit (the stage protocol). Empty = no visit.
+    rules: str = field(default_factory=lambda: _persona().get("visit", {}).get("rules", ""))
+    # Notes to the model, with {first} (first name only) and {look}.
+    badge_note: str = field(default_factory=lambda: _persona().get("visit", {}).get("badge_note", ""))
+    name_note: str = field(default_factory=lambda: _persona().get("visit", {}).get("name_note", ""))
+    arrival_note: str = field(default_factory=lambda: _persona().get("visit", {}).get("arrival_note", ""))
+    greeting: str = "visit_greeting"      # the canned phrase of a "Nuevo visitante"
+
+
+@dataclass
 class VizConfig:
     """On-screen browser fish (fallback/debug view). See viz.py + web/."""
     host: str = field(default_factory=lambda: _env("FISH_VIZ_HOST", "127.0.0.1"))
@@ -575,6 +664,7 @@ class Config:
     burble: BurbleConfig = field(default_factory=BurbleConfig)
     viz: VizConfig = field(default_factory=VizConfig)
     reading: ReadingConfig = field(default_factory=ReadingConfig)
+    visit: VisitConfig = field(default_factory=VisitConfig)
 
 
 def load() -> Config:
