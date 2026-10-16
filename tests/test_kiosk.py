@@ -57,4 +57,4 @@ def test_settings_read_only_their_own_lines(tmp_path):
 
 def test_wait_page_ships_with_the_package():
     assert kiosk.WAIT_PAGE.is_file()
-    assert (kiosk.WAIT_PAGE.parent / "img" / "neckRest_mouth0_tailRest.png").is_file()
+    assert "img/" not in kiosk.WAIT_PAGE.read_text(encoding="utf-8")   # no sprite to miss

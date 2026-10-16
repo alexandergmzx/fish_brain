@@ -3,25 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Pez</title>
+<title>Sombrero</title>
 <style>
   html, body { height: 100%; margin: 0; overflow: hidden; cursor: none; user-select: none;
-               touch-action: none; background: linear-gradient(135deg, #2b6cb0 0%, #1a365d 100%);
+               touch-action: none; background: linear-gradient(180deg, #2a2550 0%, #0f0e24 100%);
                color: #e2e8f0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
   main { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  img { height: 58vh; animation: bob 3.6s cubic-bezier(0.45, 0, 0.25, 1) infinite; }
   p { font-size: clamp(18px, 5vh, 44px); margin: 3vh 0 0; animation: breathe 2.4s ease-in-out infinite; }
   small { position: fixed; bottom: 1.5vh; right: 2vw; font: 14px ui-monospace, monospace; opacity: 0.6; }
-  @keyframes bob { 0%, 100% { transform: translateY(0) rotate(-1.5deg); } 50% { transform: translateY(-2.2vh) rotate(1.5deg); } }
   @keyframes breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 </style>
 </head>
 <body>
 <main>
-  <img src="img/neckRest_mouth0_tailRest.png" alt="">
-  <p>El pez está despertando…</p>
+  <p>El sombrero está despertando…</p>
 </main>
-<!-- For the owner: how long the fish (fish-brain, port 8723) has not answered. -->
+<!-- For the owner: how long fish-brain (port 8723) has not answered. -->
 <small id="t">fish-brain sin respuesta · 0 s</small>
 <script>
   const t0 = Date.now(), el = document.getElementById("t");
