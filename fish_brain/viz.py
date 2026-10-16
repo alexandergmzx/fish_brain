@@ -880,7 +880,10 @@ def _make_handler(server: "VizServer"):
                 boot, _, n = asked.rpartition("-")
                 if boot == hub.boot and n.isdigit():
                     seq = max(seq, int(n))
-            me = hub.stream_open()
+            tail = parse_qs(query).get("tail", [""])[0]
+            if seq == 0 and tail.isdigit():       # a first load: only the last records
+                seq = max(0, hub.seq - min(int(tail), 5000))
+            me = hub.stream_open(parse_qs(query).get("page", [""])[0][:64])
             if me is None:                        # four pages already: refuse, never rotate
                 self._send_json({"ok": False, "error": "too many debug pages"}, status=503)
                 return

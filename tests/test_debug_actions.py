@@ -201,6 +201,13 @@ def test_no_test_while_a_phone_is_the_microphone(rig, monkeypatch):
     assert rig.sent() == []
 
 
+def test_a_switch_passes_while_a_phone_is_the_microphone(rig, monkeypatch):
+    rig.cfg.ptt.capture = "browser"
+    monkeypatch.setattr(rig.viz, "mic_pages", lambda: 1)
+    status, out = rig.act.set("mic", "host")       # how the page turns its microphone off
+    assert status == 200 and rig.cfg.ptt.capture == "host"
+
+
 def test_speaker_test_plays_a_rendered_phrase_and_nothing_else(rig, tmp_path, monkeypatch):
     from fish_brain import tts
     monkeypatch.setattr(tts, "synthesize", lambda *a, **k: 1 / 0)    # must never be reached

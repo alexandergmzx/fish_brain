@@ -825,3 +825,12 @@ def test_an_unread_badge_asks_for_a_new_visitor(server):
     server.set_listening(True)
     assert post_badge(server, headers=AUTH)[1]["found"] is False
     assert v.needs_new(time.monotonic())
+
+
+def test_a_first_debug_stream_with_tail_replays_only_the_last_records(server, dbg):
+    for i in range(50):
+        dbg.emit("log", stream="out", tag="t", thread="x", text=f"line {i}")
+    status, head = stream_head(server, "/debug/events?token=s3cret-token&tail=5&page=p1",
+                               want=b"line 49")
+    text = head.decode()
+    assert status == 200 and "line 49" in text and "line 45" in text and "line 44" not in text

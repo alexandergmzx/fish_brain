@@ -284,6 +284,21 @@ def _flags(hub) -> dict:
     return {n: bool(getattr(a, n, False)) for n in names} if a is not None else {}
 
 
+def _page(hub) -> dict:
+    """What the operator's page needs to show its tools: the visit, the reader, the limits.
+    (/status has the same facts for the old face; this page reads only the debug state.)"""
+    viz, cfg = getattr(hub, "viz", None), hub.cfg
+    visit = getattr(viz, "_visit", None) if viz is not None else None
+    tls = getattr(viz, "_tls_httpd", None) if viz is not None else None
+    return {"visit_enabled": visit is not None and bool(cfg.visit.enabled),
+            "visit": visit.view() if visit is not None else None,
+            "reading": getattr(viz, "_reader", None) is not None,
+            "reading_look": bool(cfg.reading.look),
+            "max_record_s": float(cfg.ptt.max_record_s),
+            "capture": cfg.ptt.capture,
+            "tls_port": cfg.viz.tls_port if tls is not None else None}
+
+
 def build(hub) -> dict:
     cfg = hub.cfg
     st = {"ok": True, "boot": hub.boot, "now": round(time.time(), 3),
@@ -292,6 +307,7 @@ def build(hub) -> dict:
     st["flags"] = _section(lambda: _flags(hub))
     st["version"] = _section(lambda: {**version(), "changed_since_start": hub.code_changed()})
     st["mode"] = _section(lambda: _mode(hub))
+    st["page"] = _section(lambda: _page(hub))
     st["remote"] = _section(lambda: _remote(hub))
     st["link"] = _section(lambda: _link(hub))
     st["backends"] = _section(lambda: _backends(hub))

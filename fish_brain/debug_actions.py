@@ -345,12 +345,12 @@ class DebugActions:
 
     # ---- through the turn loop --------------------------------------------------------------
 
-    def _offer(self, fn, wait_s: float) -> tuple[int, dict]:
+    def _offer(self, fn, wait_s: float, *, phone_ok: bool = False) -> tuple[int, dict]:
         if self.viz is None or not self.viz.listening:
             return 409, {"ok": False, "error": "busy"}
         if any(s.is_held() for s in getattr(self.convo, "sources", ())):
             return 409, {"ok": False, "error": "recording"}
-        if self.cfg.ptt.capture == "browser" and self.viz.mic_pages() > 0:
+        if not phone_ok and self.cfg.ptt.capture == "browser" and self.viz.mic_pages() > 0:
             # A phone records by itself and only says so when it uploads: a test could land
             # in the middle of a visitor's sentence. Not in this mode.
             return 409, {"ok": False, "error": "a phone is the microphone"}
@@ -693,7 +693,9 @@ class DebugActions:
                 return {"ok": False, "error": problem}
             return {"ok": True, "value": read(self)}
 
-        status, out = self._offer(run, 5.0)
+        # A switch applies at once and says nothing, so a phone's microphone is no reason to
+        # refuse it (the page turns that microphone off with a switch).
+        status, out = self._offer(run, 5.0, phone_ok=True)
         if out.get("ok"):
             # In the journal too: a mode change is something to find later.
             print(f"[debug] {label.lower()}: {before} -> {out['value']}", flush=True)

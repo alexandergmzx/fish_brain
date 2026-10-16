@@ -275,3 +275,27 @@ def test_a_fifth_debug_page_is_refused_not_rotated(make_hub):
     assert all(pages) and hub.stream_open() is None and not any(p["closed"] for p in pages)
     hub.stream_close(pages[0])
     assert hub.stream_open() is not None
+
+
+def test_a_page_that_reconnects_replaces_its_own_stream(make_hub):
+    hub = make_hub()
+    others = [hub.stream_open() for _ in range(debug.MAX_STREAMS - 1)]
+    first = hub.stream_open("phone")
+    assert all(others) and first and hub.viewers() == debug.MAX_STREAMS
+    again = hub.stream_open("phone")               # the same page, after a sleep
+    assert again and first["closed"] and hub.viewers() == debug.MAX_STREAMS
+    assert hub.stream_open("stranger") is None     # anyone else is still refused
+
+
+def test_the_state_tells_the_page_about_the_visit_and_the_reader(make_hub):
+    from types import SimpleNamespace
+    from fish_brain.visit import Visit
+    hub = make_hub()
+    assert hub.state()["page"]["visit_enabled"] is False
+    v = Visit()
+    v.start("Ana")
+    hub.attach(viz=SimpleNamespace(_visit=v, _reader=object(), _tls_httpd=None))
+    hub.cfg.visit.enabled = True
+    page = hub.state()["page"]
+    assert page["visit_enabled"] and page["visit"]["first"] == "Ana" and page["reading"]
+    assert page["tls_port"] is None and page["capture"] == hub.cfg.ptt.capture

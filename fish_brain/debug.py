@@ -372,11 +372,16 @@ class DebugHub:
 
     # ---- debug pages ------------------------------------------------------------------------
 
-    def stream_open(self) -> dict | None:
+    def stream_open(self, page: str = "") -> dict | None:
         """A place for one more debug page, or None when all are taken (the newcomer is
-        refused: evicting the oldest would make five tabs push each other out for ever)."""
-        me = {"closed": False, "since": time.time()}
+        refused: evicting the oldest would make five tabs push each other out for ever). A
+        page that names itself (`page`, one id per load) replaces its own earlier stream: a
+        phone that slept and reconnects never locks itself out behind its dead sockets."""
+        me = {"closed": False, "since": time.time(), "page": page}
         with self._lock:
+            for old in [s for s in self._streams if page and s.get("page") == page]:
+                old["closed"] = True
+                self._streams.remove(old)
             if len(self._streams) >= MAX_STREAMS:
                 return None
             self._streams.append(me)
