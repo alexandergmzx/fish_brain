@@ -258,6 +258,8 @@ details.bad > summary { color: var(--hoja-mal); }
     background: radial-gradient(ellipse 60% 55% at 50% 62%, rgba(255, 196, 120, 0.42), transparent 75%), linear-gradient(180deg, #2a2550, #1b1a3a);
 }
 #hat { display: block; width: 100%; height: auto; overflow: visible; }
+#hatSprite { display: block; width: 100%; height: auto; transform-origin: 50% 86%; }
+#hatSprite[hidden] { display: none; }
 .perch, .perch-kick, .perch-fx { transform-origin: 50% 90%; }
 .perch { animation: respira 4.2s var(--sine) infinite alternate; }
 @keyframes respira { from { transform: translateY(0) scale(1, 1); } to { transform: translateY(-2px) scale(1.012, 1.018); } }

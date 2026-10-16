@@ -34,4 +34,8 @@ neck{Rest|Out}_mouth{0..3}_tail{Rest|Flap}.png
 - Check a pose without a turn: `/?pose=speaking&mouth=1&tip=1&brim=1` (also `ready`,
   `listening`, `thinking`, `reading`; `mouth` from 0 to 1).
 
+The operator's page (`/`, `debug.js`) draws the same four base poses once they have all loaded:
+the frame picks the mouth, and the tip (NECK) and the brim (TAIL) tilt the whole picture, since
+those poses have no sprites of their own. `/?hat=speaking&mouth=1` shows a still there.
+
 The fish's sixteen sprites are parked in `fish/` (not served: `/img/` takes bare names only).

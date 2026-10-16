@@ -260,6 +260,25 @@
     const shown = { m: -1, tip: -1, brim: -1 };
     let track = null, clock0 = 0, trackEnd = 0, windows = [], neck = [], perkUntil = 0;
     let running = false, last = 0, lastDraw = 0;
+    // His sprites: one whole hat per mouth opening (0 closed … 3 widest). Once all four are
+    // here the canvas replaces the drawing; the tip (NECK) and the brim (TAIL), which have no
+    // sprites of their own, tilt the whole picture instead.
+    const sprite = $("hatSprite"), sctx = sprite.getContext("2d"), frames = [];
+    let sprites = false, shownFrame = -1, shownTilt = "", stillMouth = null;
+    for (let m = 0; m < 4; m++) {
+      const im = new Image();
+      im.onload = () => {
+        frames[m] = im;
+        if (!sprites && [0, 1, 2, 3].every((i) => frames[i])) {
+          sprites = true;
+          $("hat").setAttribute("hidden", "");
+          sprite.hidden = false;
+          shownFrame = -1;
+          draw(stillMouth !== null ? stillMouth : mouth.value, performance.now());
+        }
+      };
+      im.src = "/img/neckRest_mouth" + m + "_tailRest.png";
+    }
     // What the fish is doing: waiting | listening | thinking | speaking (offline is an overlay).
     const ST = { state: "waiting", since: performance.now(), sub: "", speakUntil: 0 };
     let tick = null, errTimer = null, houseTimer = null, stillMode = false;
@@ -269,6 +288,18 @@
       sp.value += sp.vel * dt;
     }
     function draw(m, now) {
+      if (sprites) {
+        const f = Math.min(3, Math.round(m * 3));
+        if (f !== shownFrame) {
+          shownFrame = f;
+          sctx.clearRect(0, 0, 600, 500);
+          sctx.drawImage(frames[f], 0, 0, 600, 500);
+        }
+        const brimA = 3.5 * brim.value * Math.sin(now * 0.018), tipA = -6 * tip.value;
+        const tilt = `rotate(${(brimA + tipA).toFixed(2)}deg) translateY(${(-6 * tip.value).toFixed(1)}px)`;
+        if (tilt !== shownTilt) { shownTilt = tilt; sprite.style.transform = tilt; }
+        return;
+      }
       const mr = Math.round(m * 200) / 200;
       if (mr !== shown.m) {
         shown.m = mr;
@@ -481,7 +512,8 @@
       const st = Number(PARAMS.get("stage")) || 0;
       if (st) visit({ n: 1, stage: st, of: 4, house: null }, false);
       if (PARAMS.get("house")) reveal(PARAMS.get("house"));
-      draw(Math.max(0, Math.min(1, Number(PARAMS.get("mouth")) || 0)), performance.now());
+      stillMouth = Math.max(0, Math.min(1, Number(PARAMS.get("mouth")) || 0));
+      draw(stillMouth, performance.now());
     }
     const api = { speak, line, state, listening, listen, heard, thinking, reconcile, visit, turnEnded,
                   perk(ms) { perkUntil = performance.now() + ms; wake(); } };
