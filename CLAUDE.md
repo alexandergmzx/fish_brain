@@ -27,7 +27,7 @@ data when warranted.
 - When a question has a clean experimental answer, propose the experiment instead of
   guessing. Don't add scope beyond what the task asks.
 
-## Status (as of 2026-10-16)
+## Status (as of 2026-10-13)
 
 | Item | State |
 |---|---|
@@ -35,15 +35,15 @@ data when warranted.
 | `braintip`: software for the UNO Q | Runs on the board as `fish-brain.service` with linger since 2026-10-11: boots alone, welcome, real turns from the remote and from the page on a phone (`stt=openai llm=luna tts=loq`), about 4 s from release to voice on the home Wi-Fi (`rec=3.3s stt=0.6s tts=0.8s`, 2026-10-12). Not yet on the hotspot. Since 2026-10-11: no display, the phone page as the interface, HTTPS, the reading (ADR 0006, 0007 proposed). In echo mode (a unit drop-in) while the remote is being tuned |
 | Board: hub, USB speaker, the 2.4 GHz remote | Working on a power bank. The remote (XING WEI, Nordic) is trigger and microphone (`FISH_PTT_DEVICE=name:XING WEI`, `FISH_PTT_KEY=KEY_ENTER`, `FISH_MIC_SOURCE=…XING_WEI…`); the RedOctane is out, it draws more current than the board gives (2026-10-12) |
 | Board: Loquendo | Works; about 0.75 s per short sentence with the daemon warm |
-| Board: MCU firmware | Big_mouth `braintip` (`unoq/BigMouthQ`) flashed 2026-10-11, no drivers attached (the standby pin D9, `DRIVER_STBY`, is in the source since 2026-10-16, not yet flashed): protocol transcript 122 of 122, pulses within 1 ms, 9,999 of 9,999 lines in a soak. LED matrix mirrors the nine driver signals. PWM measured good on D3, D5, D6 |
+| Board: MCU firmware | Big_mouth `braintip` (`unoq/BigMouthQ`) flashed 2026-10-11, no drivers attached: protocol transcript 122 of 122, pulses within 1 ms, 9,999 of 9,999 lines in a soak. LED matrix mirrors the nine L298 signals. PWM measured good on D3, D5, D6 |
 | Board: bring-up script | `tools/unoq_bringup.sh`: all tests passed 2026-10-11 |
 | Board: local speech-to-text | **Canary for recordings up to 6 s, Groq turbo above, `small` on the window when offline** (`FISH_STT_BACKEND=canary`, `FISH_STT_LONG=groq`; his word 2026-10-13 for this week's tests, from 62 push-to-talk takes: `docs/results/2026-10-13-unoq-stt-his-takes.md`). Canary 2.3 s and 21 % word errors on short takes, Groq turbo under 1 s and 7 % on long ones, `gpt-transcribe` 0.6 to 1.5 s and 4 % (held for the fair; its routing is not decided). In real turns Canary took 1.8 to 3.0 s for recordings of 1 to 2 s (2026-10-13); the Groq route not yet in a real turn. `/debug` → Switches flips backend and model without a restart |
 | Board: while it thinks | **A burble at the release, short fillers, a 12 s limit** (ADR 0010, his word 2026-10-13: "I love this"). The burble (a synthesized bubble sound and one tail chain, never the mouth) starts 0.1 to 0.2 s after the recording ends; no burble = not heard. A filler of 1 to 2 s only when a stage is still running after 2.5 s of its own; at 12 s an apology and the turn is dropped. A short turn is burble, then the reply 2.3 to 2.8 s after release (`docs/results/2026-10-13-unoq-burble-and-fillers.md`). Not yet in a real turn: a filler since they were shortened, the apology, the reading, LLM mode. Open: whether the close pulse stays on a burble once drivers are wired |
 | Board: push-to-talk | Hold the remote's OK button, talk, release (up to 45 s; the LLM is told when a hold was cut); the page on the phone drives the same recording as the backup. Both record through the remote's microphone (results 2026-10-12). The browser's own microphone over HTTPS (`FISH_MIC_CAPTURE=browser`) works from the laptop's Chrome, off on the board. The display and its kiosk are parked |
 | Board: HDMI touch display | Unplugged since 2026-10-12 (ADR 0005 replaced by 0006): the browser cost 1.1 to 1.3 cores and 60 to 68 C; without it the board idles at 1 % and 41 to 44 C, a turn peaks at 30 % (results 2026-10-12). The LightDM session stays installed, it starts nothing |
 | The reading (la lectura) | Built (ADR 0007, proposed): badge photo on the phone → `gpt-6-luna` through the board (4.3 to 6.7 s, 1163 image tokens, surnames split, accents restored: `docs/results/2026-10-11-reading-badge.md`) → the fish asks "¿Tú eres X?" → the answer is a turn. Not yet tried with a real badge or on the phone |
-| Motors on the UNO Q (TB6612FNG), the hat's values | Not wired. One module in the hat's bell, channel A on the `MOUTH` pins, AIN2 tied to GND (a one-way cam), standby from D9, no pull-down resistors, VM from the hat's own pack: `docs/wiring-hat.md`. The mouth in gate mode (`FISH_MOUTH_MODE=gate`, `FISH_MOUTH_OPEN_PWM`), built 2026-10-16 at level 0 and 1 only |
-| Fair | **2026-10-17**. The Spin Master Sorting Hat replaces Billy Bass #2 (his word, 2026-10-16), on branch `sorting-hat`. Interface: the page on the operator's phone (ADR 0006). `FISH_PERSONA=hat` selects the hat's words (`PERSONAS` in `config.py`, 2026-10-16): the texts are his to write, speakable placeholders until then |
+| Motors on the UNO Q (L298N), Billy Bass #2 calibration | Not started. Before wiring: 10 k pull-downs on D6, D3, D5 and on D7, D8 (D8 is pulled high in reset) |
+| Fair | **2026-10-17**. Billy Bass #2 first; the Spin Master hat body only if it arrives. Interface: the page on the operator's phone (ADR 0006) |
 
 Ask before starting the next Braintip phase. Until the fair, prefer work that closes the fair
 path over polishing one module. The phase list lives in `docs/BRAINTIP.md`; keep this table
@@ -90,11 +90,11 @@ together.
 |---|---|---|
 | Push-to-talk | Keyboard key, the page's hold button, or a remote's button; a fresh press starts a recording, `FISH_PTT_MAX_S` ends a long one and the LLM is told the visitor was still talking. With `FISH_MIC_CAPTURE=browser` the page records with its own microphone and uploads a 16 kHz WAV (`POST /utterance`), taken by the loop through one inbox like a board recording; a remote's press is relayed to the page in browser mode | [`ptt.py`](fish_brain/ptt.py), [`evdev_button.py`](fish_brain/evdev_button.py), [`viz.py`](fish_brain/viz.py) |
 | Speech-to-text | `local` faster-whisper (optionally on an encoder window that follows the clip), `canary` (NVIDIA Canary through sherpa-onnx, for recordings up to 6 s; longer ones go to the services in `FISH_STT_LONG` while online, else to the local model), or the recording uploaded to `openai` / `groq`; the model loads in the background at start-up | [`stt.py`](fish_brain/stt.py) |
-| LLM | Profiles `groq` (GPT-OSS-20B) and `luna` (GPT-6 Luna); bounded history; fallback line on error; the persona's words by `FISH_PERSONA` (`PERSONAS` in `config.py`: the fish, or the hat). `reading.read_badge` turns a badge photo into a name (`luna` only: it takes images, `groq` does not) | [`llm.py`](fish_brain/llm.py), [`ab.py`](fish_brain/ab.py) |
+| LLM | Profiles `groq` (GPT-OSS-20B) and `luna` (GPT-6 Luna); bounded history; fallback line on error. `reading.read_badge` turns a badge photo into a name (`luna` only: it takes images, `groq` does not) | [`llm.py`](fish_brain/llm.py), [`ab.py`](fish_brain/ab.py) |
 | Cloud plumbing | One client per service, short timeouts, a background "is the internet there" flag, two error types | [`cloud.py`](fish_brain/cloud.py) |
 | Text-to-speech | `loq` (Loquendo "Jorge") or `openai`; always a WAV file, never played here | [`tts.py`](fish_brain/tts.py) |
 | Canned phrases | welcome, goodbye, no_signal, no_mic, reading_wait, reading_fail, and the fillers and apologies of a waiting turn (`filler_first_*`, `filler_more_*`, `timeout_stt_*`); cached by text and voice; an older rendering is used when a new one can't be made | [`canned.py`](fish_brain/canned.py) |
-| Mouth | WAV → openness (0..1) → timed pulses: through measured curves (a jaw), or run-while-loud in gate mode (the hat's cam) | [`envelope.py`](fish_brain/envelope.py) |
+| Mouth | WAV → openness (0..1) → timed pulses through measured curves | [`envelope.py`](fish_brain/envelope.py) |
 | Gestures | Head out on words, home on sentence ends; tail flaps | [`gestures.py`](fish_brain/gestures.py) |
 | Conductor | Plays the audio and sends each command at its time | [`conductor.py`](fish_brain/conductor.py), [`speak.py`](fish_brain/speak.py) |
 | Motor link | pyserial, or MessagePack-RPC through the UNO Q's router; a mock for `--dry-run`; a wrapper that keeps the fish talking without motors | [`serial_link.py`](fish_brain/serial_link.py), [`router_rpc.py`](fish_brain/router_rpc.py) |
@@ -107,7 +107,7 @@ Other repos. **They stay untouched; this repo only calls them.**
 
 | Repo | Role | Touched via |
 |---|---|---|
-| `~/Development/Big_mouth` | Firmware: executes motor commands. `main` = Uno R4 WiFi; branch `braintip` adds the UNO Q build (`unoq/BigMouthQ`), edited from here by his word of 2026-10-11 (the UNO Q port) and 2026-10-14 (`DRIVER_STBY` on D9 and its two doc lines), protocol unchanged. Pins: its `include/Config.h` | Serial, 115200 baud; flashed with `deploy/unoq_fw.sh` |
+| `~/Development/Big_mouth` | Firmware: executes motor commands. `main` = Uno R4 WiFi; branch `braintip` adds the UNO Q build (`unoq/BigMouthQ`), edited from here by his word of 2026-10-11, protocol unchanged. Pins: its `include/Config.h` | Serial, 115200 baud; flashed with `deploy/unoq_fw.sh` |
 | `~/Development/loquen_hack` (laptop), `loq_winer` (board) | `loq`, the Loquendo voice | `loq -o FILE.wav -- "texto"` |
 
 ## Targets and hosts (measured 2026-10-10)
@@ -121,8 +121,8 @@ Other repos. **They stay untouched; this repo only calls them.**
 | Voice | `loq` under Wine. **Wine does not work on this desktop (NVIDIA): never run `loq` or any `.exe` here** | Hangover Wine + Loquendo: works, 0.75 s warm. Running `loq` on the board is fine |
 | USB | — | Power bank into a hub, hub into the board. Speaker: Jieli "UACDemoV1.0". Microphone: RedOctane. PipeWire makes them the defaults |
 
-Bodies: Billy Bass #1 (laptop, calibrated June 2026), Billy Bass #2 (not calibrated; not the fair body since 2026-10-16),
-the Spin Master Sorting Hat (the fair body since 2026-10-16; "the reading" names the badge feature, never the hat). Full board notes:
+Bodies: Billy Bass #1 (laptop, calibrated June 2026), Billy Bass #2 (fair, not calibrated),
+the Spin Master Sorting Hat (maybe; "the reading" names the badge feature, never the hat). Full board notes:
 [`docs/results/2026-10-10-unoq-inspection.md`](docs/results/2026-10-10-unoq-inspection.md).
 
 ## Decisions
@@ -149,7 +149,7 @@ Changed only by a record in [`docs/adr/`](docs/adr/). Do not reopen without new 
 | LLM | Profiles; `groq` in code, `luna` on the board (ADR 0004) | 2026-10-10 |
 | `master` | Untouched. On `braintip` the laptop must still run with no environment set | 2026-10-10 |
 
-Not decided: the hat's pack under load (`docs/wiring-hat.md` step 6); which cloud speech-to-text; local STT when offline; whether the LightDM session
+Not decided: which cloud speech-to-text; local STT when offline; whether the LightDM session
 stays installed with no display (to be measured). Decided 2026-10-10: the board's voice is
 Loquendo (`FISH_TTS_BACKEND=loq`). Decided 2026-10-11: tamer welcome and goodbye for the fair.
 
@@ -181,7 +181,7 @@ check its replies against this table.
 | [`tests/`](tests/) | yes | Unit tests that need no hardware and no network |
 | [`tools/`](tools/) | yes | `sprite_clean.py` (clears a cut-out's leftovers from the on-screen sprites), `fw_check.py` (firmware checker: replies, timing, soak, one-line send), `stt_bench.py` (speech-to-text routes, local and online, timed and scored on a folder of clips; records clips from a terminal or from the remote), `uart_check.py` (link soak test), `unoq_checks.sh` (board checks), `unoq_bringup.sh` (board tests with PASS/FAIL), `sketches/` (MCU test sketches: two echo sketches and the pin probe; the fish firmware is in Big_mouth) |
 | [`deploy/`](deploy/) | yes | The unit, the board set-up script, the MCU flash helper (`unoq_fw.sh`), the kiosk session (`kiosk/`, parked since ADR 0006), the board's example environment. **The repo is the source of truth for the board: never hand-edit it without the same change here** |
-| [`docs/`](docs/) | yes | `BRAINTIP.md`, `UNOQ_BRIDGE_RPC_EXPLAINED.md`, `viz.md`, `wiring-hat.md`, `adr/`, `results/` |
+| [`docs/`](docs/) | yes | `BRAINTIP.md`, `UNOQ_BRIDGE_RPC_EXPLAINED.md`, `viz.md`, `adr/`, `results/` |
 | `gui/` | yes | June prototypes; parked |
 | `.claude/settings.json` | yes | Assistant deny rules |
 | `.env` | **never** | Keys and local overrides |
@@ -213,8 +213,7 @@ check its replies against this table.
   `FISH_MIC_CAPTURE` (`host` on the laptop), `FISH_READING_PROFILE` (empty = the LLM profile),
   `FISH_READING_LOOK`, `FISH_SAY_ADDRESS`. Since 2026-10-12: `FISH_STT_MODEL_DIR`,
   `FISH_STT_WINDOW_S`, `FISH_STT_BEAM`, `FISH_STT_LONG`. Since 2026-10-13: `FISH_FILLER`,
-  `FISH_FILLER_DELAY_S`, `FISH_FILLER_GAP_S`, `FISH_TURN_TIMEOUT_S`, `FISH_BURBLE`. Since
-  2026-10-16: `FISH_MOUTH_MODE`, `FISH_MOUTH_OPEN_PWM`, `FISH_PERSONA`.
+  `FISH_FILLER_DELAY_S`, `FISH_FILLER_GAP_S`, `FISH_TURN_TIMEOUT_S`, `FISH_BURBLE`.
 
 ### Every hardware boundary has a stand-in
 
@@ -281,7 +280,6 @@ paths, not attributions. Model names appear only as the things being run.
 | `master` | The laptop fish as of June 2026. Untouched |
 | `text-driven-gestures` | Base of `braintip` |
 | `braintip` | The UNO Q work |
-| `sorting-hat` | The hat for the fair, from `braintip` (2026-10-16): the one-motor wiring page, the gate mouth mode, the hat's values and persona. What is generic goes back to `braintip` after the fair |
 
 Small commits, subject `<scope>: <lowercase description>`. Pushing happens when Alexander
 asks. Never `--no-verify`, never `git push --force` or `git reset --hard` on these branches,
@@ -342,7 +340,7 @@ their own. The steps are in the README.
 | Symptom | Look at |
 |---|---|
 | Anything | **`http://<fish>:8723/debug` first**: its hints name most of the rows below, the pipeline shows where the last turn died, Inputs shows every key the remote sends |
-| Fish does not move | The board's LEDs first: LED4 green must blink (MCU alive), the matrix must move with speech (MCU got the commands: then look after the MCU, at drivers and power: first D9 and the module's STBY pin at 3.3 V with the meter, low = every output off whatever the matrix shows). The `[turn]` line's `link=` and any `[link] MCU silent`. With the service stopped: `--check-link` (says whether the MCU answers) and `tools/fw_check.py check --release-router`. These tools refuse while a fish holds the port |
+| Fish does not move | The board's LEDs first: LED4 green must blink (MCU alive), the matrix must move with speech (MCU got the commands: then look after the MCU, at drivers and power). The `[turn]` line's `link=` and any `[link] MCU silent`. With the service stopped: `--check-link` (says whether the MCU answers) and `tools/fw_check.py check --release-router`. These tools refuse while a fish holds the port |
 | Mouth out of sync | The `[turn]` line (`play_start`); `sync_offset_ms` |
 | "No te escuché bien" | The turn passed `FISH_TURN_TIMEOUT_S` while it was being transcribed: the `[turn] timeout: stt` line (in the LLM or the voice it is the lost-signal line and `timeout: llm` / `tts`); offline, a recording over about 10 s does. Or a filler was said and the transcript came back empty: `you> … (no te entendí…)`, outcome `not understood` |
 | No burble after releasing the button | The fish did not take the recording: a tap, a silent recording (the `silence` outcome on `/debug`), or the microphone did not open. `FISH_BURBLE`; the `[turn]` line's `burble=` is the time from release to the sound |
@@ -476,6 +474,7 @@ Nothing here is started or extended without his word.
 |---|---|
 | `gui/` | June prototypes, replaced by `fish_brain/web/` |
 | Bridge transport | Written and unit-tested; not the default until a Bridge build of the firmware exists |
+| Motors on the UNO Q | Braintip Phase 5 (the Phase 4 firmware is flashed since 2026-10-11) |
 | The page on the board's display (`kiosk.py`, `deploy/kiosk/`, `tests/test_kiosk.py`, `FISH_KIOSK_*`; `FISH_VIZ_TRUST_LOCAL` stays for the tunnel) | Works (ADR 0005, replaced by 0006); not taken to the fair; needs the plain-http listener |
 | Local STT fallback when offline | Idea only (the board's speech-to-text is local since 2026-10-12) |
 | Moonshine, Parakeet as speech-to-text | Measured 2026-10-12, not chosen: Moonshine's Spanish models print a non-commercial licence; Parakeet fails short answers |
@@ -484,7 +483,6 @@ Nothing here is started or extended without his word.
 ## Quick reference
 
 - **Before any `braintip` change:** [`docs/BRAINTIP.md`](docs/BRAINTIP.md)
-- **Before wiring the hat or touching the mouth model:** [`docs/wiring-hat.md`](docs/wiring-hat.md)
 - **Before touching the link or the router:** [`docs/UNOQ_BRIDGE_RPC_EXPLAINED.md`](docs/UNOQ_BRIDGE_RPC_EXPLAINED.md), [ADR 0001](docs/adr/0001-release-the-uart-through-the-router.md)
 - **Before touching the page, the phone or the reading:** [`docs/viz.md`](docs/viz.md), [ADR 0006](docs/adr/0006-the-phone-is-the-interface.md), [ADR 0007](docs/adr/0007-the-reading.md), [ADR 0008](docs/adr/0008-the-phone-is-the-fishs-face.md)
 - **Board set-up:** [`deploy/README.md`](deploy/README.md) · **Sketches:** [`tools/sketches/README.md`](tools/sketches/README.md)

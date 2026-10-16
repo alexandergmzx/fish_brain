@@ -343,7 +343,6 @@ heartbeat, blue per command).
 
 | # | Test | How | Pass |
 |---|---|---|---|
-| 1b | Motors on arrival | After LED4 blinks green, pack switch on; ARM on `/debug` (laptop) or `?debug=1` (phone), the mouth test (you) | The mouth runs for the test and stops, the mouth lane lights; if not: the pack switch, then the bundle at D9, D12, ~D6 ([`docs/wiring-hat.md`](../docs/wiring-hat.md)) |
 | 1 | Cold boot | Hotspot on, then power the board; touch nothing | The welcome plays; `[fish] link=serial /dev/ttyHS1 …` in the log; the phone opens the page and the pearl in the corner shell is green. Note the seconds from power to voice |
 | 2 | Remote turn | Hold the remote's OK button, talk into the remote, release | The sign on the phone page reads "Te escucho…" then "Déjame pensar…" then "¡Escúchame!", and what was heard and the reply appear as speech bubbles; a `[turn]` line with five timings and `link=ok`; the mouth lane of the matrix moves with the voice |
 | 2b | Phone turn, remote microphone | `?talk=1` on the page: hold the blue button, ask into the remote, release | Same as 2; no restart needed to fall back to this row from any other |

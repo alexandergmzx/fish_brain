@@ -421,11 +421,3 @@ the text above disagree, this section is right.
 | Push-to-talk (2026-10-11, ADR 0006) | The touch display (ADR 0005) | The page on the operator's phone; the display parked |
 | Mic (row above) | The board's PipeWire source | The remote's own microphone (2026-10-12): the RedOctane draws too much current and the phone's browser microphone is built but off |
 | Push-to-talk key (2026-10-12) | The remote's voice key | The remote's OK button held (`KEY_ENTER`): the voice key reports only a 0.12 s tap on every node |
-
-## Corrections (2026-10-16)
-
-| Topic | Above says | What is true |
-|---|---|---|
-| Fair body (goals, Phase 5) | Billy Bass #2 first, the hat only if it arrives | The Spin Master Sorting Hat (his word, 2026-10-16): one motor on a one-way cam, one TB6612FNG module in the bell, the UNO Q outside; wiring and bring-up in `docs/wiring-hat.md`; branch `sorting-hat` |
-| Motor driver (Corrections 2026-10-11) | L298N boards on the same pin numbers | TB6612FNG at 3.3 V as Phase 5 says; its standby from D9 (`DRIVER_STBY`, raised in `setup()`), not tied high; no pull-down resistors; the stall limit is the chip's 1.2 A absolute maximum per channel, not 3 A |
-| Mouth model (Phase 5, the README calibration) | Open and close curves | On the hat there is no jaw position: `FISH_MOUTH_MODE=gate` runs the motor while the level is above a gate (`envelope.gate_pulses`, 2026-10-16); the flap speed is `FISH_MOUTH_OPEN_PWM` |

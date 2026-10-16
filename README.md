@@ -119,9 +119,6 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_FILLER_DELAY_S`, `FISH_FILLER_GAP_S` | `2.5`, `2.0` | Silence before the first phrase, and between two phrases |
 | `FISH_BURBLE` | `true` | When the button is released on a recording the fish can use, it answers at once with a short bubble sound and one chain of the tail, a flap or two (never the mouth; no tail with the gestures off). No burble means it did not hear. The sounds are synthesized (`python -m fish_brain.burble --out DIR` writes them to listen to) |
 | `FISH_TURN_TIMEOUT_S` | `12` | From the end of the recording to the start of the reply's voice; past it the turn is dropped |
-| `FISH_MOUTH_MODE` | `position` | How loudness becomes mouth pulses. `position`: the jaw model, drive time from closed through the measured curves. `gate`: the motor runs while the level is above a gate and stops when it falls, for a one-way mechanism such as the Sorting Hat's cam (150 ms pulses re-sent every 100 ms, a 1 ms zero pulse at the fall, nothing held): [`docs/wiring-hat.md`](docs/wiring-hat.md) |
-| `FISH_MOUTH_OPEN_PWM` | `238` | The open drive (in gate mode, the flap speed) for a body without values of its own in `config.py` |
-| `FISH_PERSONA` | `fish` | Whose words: `fish` (Billy Bass) or `hat` (the Sorting Hat): the LLM's persona, its fallback line, the welcome and goodbye and the reading's rules, in `PERSONAS` in `config.py`; a persona lists only what differs from the fish. The hat's texts are placeholders to be written. A changed phrase is a new WAV: `--prerender-canned` on the machine that speaks |
 | `FISH_READING_PROFILE` | empty = `FISH_LLM_PROFILE` | LLM profile that reads a badge photo (the reading, ADR 0007). It needs image input: `luna` |
 | `FISH_READING_LOOK` | `false` | `true`: the console shows a per-visitor consent tick and the model may add one kind line on clothing, colours or accessories |
 | `FISH_CLOUD_TIMEOUT`, `FISH_CLOUD_CONNECT_TIMEOUT` | `10`, `3` | Seconds before a cloud call gives up |
@@ -261,20 +258,16 @@ a short turn is the burble, then the reply 2.3 to 2.8 s after release.
   runs and flashes blue for every line received. The matrix has one lane per motor (mouth
   nearest the USB-C connector, then neck, then tail): a lamp for `+`, a lamp for `-`, and a
   bar for the PWM. If the matrix moves with the voice and the fish does not, look after the
-  MCU: first the meter at the driver module, VM with the pack switch on and STBY at 3.3 V
-  while LED4 blinks (low = every output off whatever the matrix shows: the D9 wire, or a build
-  without `DRIVER_STBY`); then wiring and motor power.
+  MCU: drivers, wiring, motor power.
 - Check the firmware with the fish stopped: `tools/fw_check.py check --release-router`
   (motor-safe lines only), `tools/fw_check.py send "MOUTH 120 50" --release-router` for one
   line with its reply. These tools, `--check-link` and the flash helper refuse to run while
   a fish holds the port.
 - [`tools/sketches/`](tools/sketches/) has test sketches only: two echo sketches for the
   link and `pwm_probe`, which measures the motor pins with nothing wired.
-- **Before wiring a driver**: the firmware raises the TB6612FNG's standby (D9, `DRIVER_STBY`)
-  only after the motor pins are driven, so the driver is off while the MCU is in reset (the
-  whole Linux boot, a router restart, an upload) and no pull-down resistors are needed; the
-  motor pack goes through its own switch and a keyed plug, never to the board. The wiring,
-  the rules and the bring-up: [`docs/wiring-hat.md`](docs/wiring-hat.md).
+- **Before wiring L298N boards**: while the MCU is in reset (the whole Linux boot, a router
+  restart, an upload) its pins are not driven, and D8 is pulled high. Fit 10 k from each
+  enable (D6, D3, D5) and from D7 and D8 to ground, and a switch on the motor pack.
 
 ### The phone as the interface, or a screen
 
@@ -306,12 +299,7 @@ restarting forever. The fish itself runs the same with and without a display.
 
 All tunables live in `fish_brain/config.py`. The mouth is driven by **time, not held PWM**:
 loudness → openness fraction (0..1) → a motor *pulse duration* via measured attack-time
-curves. Calibrate by measuring those curves over a serial monitor (115200 baud). On the UNO Q,
-with the service stopped, each line is sent with `tools/fw_check.py send "MOUTH 238" --held
---release-router`: `--held` is required for a held `MOUTH <n>`, the tool sends no STOP and the
-firmware's 5 s limit ends it; timed pulses such as `MOUTH 238 14` need no `--held`. In gate
-mode (`FISH_MOUTH_MODE=gate`) the curves are not used: pick the flap speed
-(`FISH_MOUTH_OPEN_PWM`) with held lines, [`docs/wiring-hat.md`](docs/wiring-hat.md) step 7.
+curves. Calibrate by measuring those curves over a serial monitor (115200 baud).
 
 **1. Drive PWMs.** From closed, raise the PWM until more gives no extra travel — that is
 `open_pwm` (the firmware also caps there). Pick a close drive for `close_pwm`:
