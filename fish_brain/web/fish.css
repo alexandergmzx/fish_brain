@@ -1,5 +1,5 @@
-/* The fish's page: one sea from edge to edge. Three views share this file:
-     html.kiosk.console  the default: the fish's face on a phone, the operator's sheet behind the shell
+/* The hat's page: a wizard's study at night, edge to edge. Three views share this file:
+     html.kiosk.console  the default: the hat's face on a phone, the operator's sheet behind the candle
      html.kiosk          /?kiosk=1: the same scene on a touch display, the target always a button
      (neither)           /?debug=1: the developer page, every tool in sight
    Motion rule: only `transform` and `opacity` are ever animated or transitioned (a test holds
@@ -8,17 +8,20 @@
 [hidden] { display: none !important; }
 
 :root {
-    --agua-1: #8fe6f0; --agua-2: #3fc9e6; --agua-3: #1996cf;
-    --arena-1: #f7cf72; --arena-2: #e9b452;
+    --noche-1: #2a2550; --noche-2: #1b1a3a; --noche-3: #0f0e24;   /* the study's walls at night */
+    --cuero-1: #8a5630; --cuero-2: #5a3418; --cuero-3: #3b2010;   /* the hat's leather */
+    --madera-1: #6e4a2a; --madera-2: #4d3119;                     /* stool and floor */
+    --luz: rgba(255, 196, 120, 0.5);                              /* the candle's light */
+    --cielo: #8fb7ff;                                             /* cool accents (sliders, transcript) */
     --coral: #ff6f7d; --rosa: #ff9ecb; --ambar: #ffb22e; --lila: #c3a6ff; --menta: #7dffb5;
-    --tinta: #23231c;                   /* the sprite's own outline colour: every outline, all child-facing text */
+    --tinta: #23231c;                   /* the drawing's outline colour: every outline, all child-facing text */
     --blanco: #fffdf2; --eco: #eafcff;
-    --letrero: #ffd94a; --letrero-2: #e9b23a;
+    --letrero: #ecd9a8; --letrero-2: #c9a46a;   /* the sign: old parchment */
     --alerta: #d92c45;
     /* the operator's sheet and the developer page: plain and dark, clearly not for children */
     --hoja: #14181d; --hoja-campo: #0c0f13; --hoja-linea: #3a4552; --hoja-texto: #e8edf2;
     --hoja-tenue: #9aa7b4; --hoja-bien: #7ee2a8; --hoja-mal: #ff8a8a; --hoja-aviso: #ffd166;
-    --accion: #2563eb; --accion-2: #173fa0;
+    --accion: #6d4fe0; --accion-2: #45309e;
     --font-title: "Pez Titulo", ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif;
     --font-text: "Pez Texto", ui-rounded, system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -45,7 +48,7 @@ body {
     min-height: 100vh;
     font-family: var(--font-ui);
     color: var(--hoja-texto);
-    background: linear-gradient(180deg, var(--agua-1) 0%, var(--agua-2) 46%, var(--agua-3) 100%) fixed;
+    background: linear-gradient(180deg, var(--noche-1) 0%, var(--noche-2) 55%, var(--noche-3) 100%) fixed;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -72,13 +75,13 @@ h1 {
     color: var(--letrero);
 }
 .stage-wrap { position: relative; }
-#stage {
+#stage, #hat {
     display: block;
     width: 100%;
     height: auto;
     border: 4px solid var(--tinta);
     border-radius: 16px;
-    background: linear-gradient(180deg, var(--agua-1), var(--agua-2));   /* the aquarium window */
+    background: radial-gradient(ellipse 60% 55% at 50% 62%, var(--luz), transparent 75%), linear-gradient(180deg, var(--noche-1), var(--noche-2));   /* the hat in candlelight */
 }
 /* visually-hidden status text kept for screen readers */
 .status { position: absolute; left: -9999px; }
@@ -148,7 +151,7 @@ h1 {
 }
 .controls label { font-size: 13px; color: var(--hoja-tenue); }
 .slider-container { display: flex; flex-direction: column; gap: 4px; }
-input[type="range"] { width: 100%; accent-color: var(--agua-2); }
+input[type="range"] { width: 100%; accent-color: var(--accion); }
 .toggles { grid-column: 1 / -1; display: flex; gap: 18px; flex-wrap: wrap; }
 .toggles label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .mic-row, .speak-row { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; }
@@ -174,7 +177,7 @@ input[type="range"] { width: 100%; accent-color: var(--agua-2); }
     min-height: 2.6em;
 }
 .transcript p { margin: 2px 0; }
-.transcript .t-fish { color: var(--agua-1); }
+.transcript .t-fish { color: var(--letrero); }
 .transcript .updated { animation: tFlash 0.6s ease-out; }
 @keyframes tFlash { from { opacity: 0.35; } to { opacity: 1; } }
 .speak-row button, .file-row label, .c-read button, #sheetClose {
@@ -223,50 +226,37 @@ html.kiosk .scene {
     overflow: hidden;
     pointer-events: none;
 }
-/* light from above: painted once, never moved */
+/* moonlight from the window: painted once, never moved */
 html.kiosk .scene::before {
     content: "";
     position: absolute;
     top: 0; left: -10%; right: -10%;
     height: 62%;
-    background: repeating-linear-gradient(112deg, transparent 0 9%, rgba(255, 255, 255, 0.13) 9% 15%, transparent 15% 27%);
+    background: repeating-linear-gradient(118deg, transparent 0 14%, rgba(200, 210, 255, 0.05) 14% 19%, transparent 19% 33%);
     -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
     mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
 }
 .scene svg { position: absolute; overflow: visible; }
-.flor { opacity: 0.4; }
-.flor.f1 { width: 120px; height: 120px; top: 2%; left: -34px; transform: rotate(-12deg); }
-.flor.f2 { width: 150px; height: 150px; top: 13%; right: -52px; transform: rotate(20deg); }
-.flor.f3 { width: 64px; height: 64px; top: 31%; left: 5%; transform: rotate(8deg); }
-.flor.f4 { width: 86px; height: 86px; top: 47%; right: 3%; transform: rotate(-25deg); }
-.flor.f5 { width: 110px; height: 110px; top: 58%; left: -40px; transform: rotate(14deg); }
-/* three bubbles on their way up, each at its own pace */
-.burbuja { bottom: -40px; animation: sube 11s linear infinite; }
-.burbuja.b1 { width: 14px; height: 14px; left: 12%; }
-.burbuja.b2 { width: 24px; height: 24px; left: 80%; animation-duration: 14s; animation-delay: -5s; }
-.burbuja.b3 { width: 10px; height: 10px; left: 57%; animation-duration: 18s; animation-delay: -11s; }
-@keyframes sube {
-    0%   { transform: translate(0, 0) scale(0.8, 0.9); }
-    25%  { transform: translate(7px, -28vh) scale(1.05, 0.95); }
-    50%  { transform: translate(-5px, -56vh) scale(0.95, 1.05); }
-    75%  { transform: translate(6px, -84vh) scale(1.05, 0.95); }
-    100% { transform: translate(0, -112vh) scale(1, 1); }
+.ventana { width: 74px; height: 98px; top: 17%; left: 3%; }
+/* the stars in the window drift and glimmer, slowly */
+#stars { animation: deriva 40s var(--sine) infinite alternate; }
+@keyframes deriva {
+    from { transform: translate(0, 0); opacity: 0.75; }
+    to   { transform: translate(-6px, 3px); opacity: 1; }
 }
-.duna { left: 0; bottom: 0; width: 100%; height: var(--floor); }
-.duna.d2 { height: calc(var(--floor) + 22px); }
-.alga { width: 40px; height: 112px; transform-origin: 50% 100%; animation: mece 4.6s var(--sine) infinite alternate; }
-.alga.a1 { left: 1%; bottom: calc(var(--floor) * 0.42); }
-.alga.a2 { left: 10%; bottom: calc(var(--floor) * 0.5); width: 30px; height: 84px; animation-duration: 5.2s; animation-delay: -1.3s; }
-.alga.a3 { right: 2%; bottom: calc(var(--floor) * 0.36); animation-duration: 6.1s; animation-delay: -2.2s; }
-@keyframes mece {
-    from { transform: rotate(-5deg) skewX(4deg); }
-    to   { transform: rotate(6deg) skewX(-4deg); }
+.piso { left: 0; bottom: 0; width: 100%; height: var(--floor); }
+.prop.libros { width: 74px; height: 58px; left: 4%; bottom: calc(var(--floor) * 0.62); }
+.prop.vela { width: 46px; height: 92px; right: 6%; bottom: calc(var(--floor) * 0.6); }
+/* the candle's flame flickers: the room's slow pulse */
+.vela .llama { transform-box: fill-box; transform-origin: 50% 100%; animation: titila 0.9s var(--sine) infinite; }
+.vela .halo { animation: titila 0.9s var(--sine) infinite; transform-box: fill-box; transform-origin: 50% 70%; }
+@keyframes titila {
+    0%   { transform: scale(1, 1) skewX(0deg); opacity: 1; }
+    23%  { transform: scale(0.94, 1.06) skewX(-3deg); opacity: 0.92; }
+    41%  { transform: scale(1.03, 0.95) skewX(2deg); opacity: 1; }
+    67%  { transform: scale(0.97, 1.04) skewX(-1deg); opacity: 0.88; }
+    100% { transform: scale(1, 1) skewX(0deg); opacity: 1; }
 }
-.prop.coral { width: 50px; height: 64px; right: 13%; bottom: calc(var(--floor) * 0.5); }
-.prop.concha { width: 34px; height: 28px; }
-.prop.concha.c1 { left: 7%; bottom: 12px; color: var(--rosa); transform: rotate(-14deg); }
-.prop.concha.c2 { right: 27%; bottom: 6px; color: var(--lila); transform: rotate(10deg); }
-.prop.estrella { width: 44px; height: 41px; right: 5%; bottom: 16px; transform: rotate(14deg); }
 
 html.kiosk .container {
     position: absolute;
@@ -282,7 +272,7 @@ html.kiosk .container {
     grid-template-rows: auto auto minmax(0, 1fr) var(--floor);
     justify-items: center;
 }
-/* The sign: a driftwood plank on two ropes. The plaque hangs from its lower edge. */
+/* The sign: an old parchment board on two ropes, above the hat. */
 html.kiosk h1 {
     position: relative;
     z-index: 2;
@@ -317,35 +307,51 @@ html.kiosk .stage-wrap {
     width: min(86vw, calc(var(--vh) * 46), 420px);
     margin-top: -4px;
 }
-/* a pool of light behind the plaque, so the fish reads first */
+/* the candle's pool of light behind the hat, so the hat reads first */
 html.kiosk .stage-wrap::after {
     content: "";
     position: absolute;
-    top: 4%; right: -12%; bottom: -8%; left: -12%;
-    background: radial-gradient(ellipse 50% 50% at 50% 55%, rgba(217, 251, 246, 0.8) 0%, rgba(217, 251, 246, 0.45) 45%, rgba(217, 251, 246, 0) 100%);
+    top: 4%; right: -14%; bottom: -14%; left: -14%;
+    background: radial-gradient(ellipse 50% 50% at 50% 60%, var(--luz) 0%, rgba(255, 196, 120, 0.18) 50%, rgba(255, 196, 120, 0) 100%);
 }
-/* the nail: the pivot of the swing, drawn over the sprite's own */
-html.kiosk .stage-wrap::before {
-    content: "";
+/* the stool under the brim: in the console and the kiosk only */
+.banco { display: none; }
+html.kiosk .banco {
+    display: block;
     position: absolute;
-    z-index: 2;
-    left: 50.3%;
-    top: 2.3%;
-    width: 18px;
-    height: 18px;
-    margin: -9px 0 0 -9px;
-    border: 3px solid var(--tinta);
-    border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, #fff 0 18%, #b8c2c7 19% 100%);
+    z-index: 1;
+    left: 21%;
+    top: 86%;
+    width: 58%;
+    height: auto;
 }
-html.kiosk #stage { border: 0; border-radius: 0; background: none; }
-.hang, .hang-kick { position: relative; z-index: 1; transform-origin: 50.3% 2.3%; }
-html.kiosk .hang { animation: sway 3.8s var(--sine) infinite alternate; }
-@keyframes sway { from { transform: rotate(-1.3deg); } to { transform: rotate(1.3deg); } }
+html.kiosk #stage, html.kiosk #hat { border: 0; border-radius: 0; background: none; }
+#hat { overflow: visible; }
+.perch, .perch-kick { position: relative; z-index: 2; transform-origin: 50% 90%; }
+/* the hat breathes, slowly, all the time */
+html.kiosk .perch { animation: respira 4.2s var(--sine) infinite alternate; }
+@keyframes respira {
+    from { transform: translateY(0) scale(1, 1); }
+    to   { transform: translateY(-2px) scale(1.012, 1.018); }
+}
+/* the tip drifts on its own; the turn's gestures bend it further (fish.js, #tip-bend) */
+#tip { transform-box: fill-box; transform-origin: 100% 100%; }
+html.kiosk #tip { animation: cabecea 5.2s var(--sine) infinite alternate; }
+@keyframes cabecea {
+    from { transform: rotate(-2.5deg); }
+    to   { transform: rotate(2deg); }
+}
+/* a slow blink now and then */
+#eyes { transform-box: fill-box; transform-origin: 50% 60%; }
+html.kiosk #eyes { animation: parpadea 7s linear infinite; }
+@keyframes parpadea {
+    0%, 93%, 100% { transform: scaleY(1); }
+    95.5%         { transform: scaleY(0.12); }
+}
 /* It leans in to listen and gets a jolt when it starts to speak. */
-html.kiosk .hang-kick { transition: transform 0.5s var(--spring); }
-html.kiosk.k-listening .hang-kick { transform: rotate(-2deg); }
-html.kiosk.k-speaking .hang-kick { animation: kick 1.5s var(--sine) 1; }
+html.kiosk .perch-kick { transition: transform 0.5s var(--spring); }
+html.kiosk.k-listening .perch-kick { transform: rotate(-3deg) scale(1.02); }
+html.kiosk.k-speaking .perch-kick { animation: kick 1.5s var(--sine) 1; }
 @keyframes kick {
     0%   { transform: rotate(0deg) scale(1, 1); }
     12%  { transform: rotate(3.2deg) scale(1.03, 0.97); }
@@ -613,21 +619,34 @@ html.kiosk #consoleGear {
     touch-action: none;
 }
 html.console #consoleGear { pointer-events: auto; cursor: pointer; }
-html.kiosk #consoleGear svg { display: block; position: absolute; top: 2px; left: 2px; width: 56px; height: 56px; }
-/* the upper valve is hinged on the left: ajar at rest, it opens while the shell is held */
-html.kiosk .valva-arriba {
-    transform-origin: 11% 54%;
-    transform: rotate(-17deg);
+html.kiosk #consoleGear svg { display: block; position: absolute; left: 10px; top: 20px; width: 40px; height: 44px; }
+/* the flame is the connection; held, it bends away; let go early, the candle wobbles */
+.llama-mano { display: block; }
+html.kiosk .llama-mano {
+    position: absolute;
+    left: 23px;
+    top: 2px;
+    width: 14px;
+    height: 22px;
+    transform-origin: 50% 100%;
     transition: transform 0.42s var(--spring);
 }
-html.kiosk #consoleGear.holding .valva-arriba { transform: rotate(-58deg); transition: transform 0.8s ease-in; }
+html.kiosk #consoleGear.holding .llama-mano { transform: rotate(-35deg) scale(0.9, 1.3); transition: transform 0.8s ease-in; }
 html.kiosk #consoleGear.wobble { animation: tiembla 0.45s var(--sine) 1; }
 @keyframes tiembla {
     20% { transform: rotate(-9deg) scale(1.06); }
     50% { transform: rotate(7deg); }
     80% { transform: rotate(-3deg); }
 }
-html.kiosk #conn-dot { position: absolute; left: 31px; top: 23px; width: 15px; height: 15px; }
+html.kiosk #conn-dot {
+    position: absolute;
+    left: 0; top: 0;
+    width: 14px;
+    height: 22px;
+    border-width: 2px;
+    border-radius: 50% 50% 45% 45% / 65% 65% 35% 35%;
+    transform-origin: 50% 100%;
+}
 html.ops-warn .warn {
     display: flex;
     position: absolute;
@@ -733,7 +752,7 @@ html.console .controls .c-hide { display: none; }
         grid-template-rows: auto minmax(0, 1fr) var(--floor);
     }
     html.kiosk h1 { grid-column: 1; width: min(46vw, 430px); }
-    html.kiosk .stage-wrap { grid-column: 1; width: min(42vw, calc(var(--vh) * 56), 540px); }
+    html.kiosk .stage-wrap { grid-column: 1; align-self: start; width: min(42vw, calc(var(--vh) * 56), 540px); }
     html.kiosk .say { grid-column: 2; grid-row: 1 / 3; align-self: center; width: min(44vw, 520px); }
     html.kiosk .talk { grid-column: 1 / -1; grid-row: 3; }
     html.kiosk .corner { right: 6px; }
@@ -749,7 +768,7 @@ html.console .controls .c-hide { display: none; }
 }
 
 /* /?lite=1: every loop stops (the switch if the phone runs hot); states and pops stay. */
-html.lite .hang, html.lite .alga, html.lite .burbuja, html.lite .talk-loop,
+html.lite .perch, html.lite #tip, html.lite #eyes, html.lite .vela .llama, html.lite .vela .halo, html.lite #stars, html.lite .talk-loop,
 html.lite #conn-dot, html.lite #micGate, html.lite .i-thinking { animation: none !important; }
 
 

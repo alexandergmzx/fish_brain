@@ -29,7 +29,6 @@
   const dot = document.getElementById("conn-dot");
   const sens = document.getElementById("sensitivity");
   const sensVal = document.getElementById("sensitivityValue");
-  const toggleBubbles = document.getElementById("toggleBubbles");
   const toggleAudio = document.getElementById("toggleAudio");
   const fileInput = document.getElementById("audioFile");
   const micSelect = document.getElementById("micSelect");
@@ -273,7 +272,9 @@
   }
 
   // ---- sprite state machine (edit to match your PNGs) --------------------
-  // Whole-fish composites named by the (neck, mouth, tail) state. Drop the PNGs in web/img/.
+  // Whole-body composites named by the (neck, mouth, tail) state; on the hat neck = tip and
+  // tail = brim (img/README.md). Until the four base poses neckRest_mouth{0..3}_tailRest load,
+  // the page draws the hat in SVG (svg#hat) instead.
   const MOUTH_LEVELS = 4;                 // mouth openness steps 0..3
   const NECK = ["Rest", "Out"];           // index 0 = rest/closed, 1 = head-out
   const TAIL = ["Rest", "Flap"];          // index 0 = rest, 1 = flapped
@@ -282,6 +283,8 @@
   // ---- image preloading --------------------------------------------------
   const images = new Map();            // name -> HTMLImageElement (only if it loaded)
   let anyLoaded = false;
+  let spritesReady = false;            // the four base poses are here: the canvas takes over
+  const hatSvg = document.getElementById("hat");
   let baseW = 0, baseH = 0;            // natural size of the first loaded image (for "contain")
 
   function load(name) {
@@ -291,6 +294,11 @@
       images.set(name, img);
       anyLoaded = true;
       if (!baseW) { baseW = img.naturalWidth; baseH = img.naturalHeight; }
+      if (!spritesReady && [0, 1, 2, 3].every((m) => images.has(stateName(0, m, 0)))) {
+        spritesReady = true;              // attributes: an <svg> has no .hidden property
+        hatSvg.setAttribute("hidden", "");
+        canvas.removeAttribute("hidden");
+      }
       wakeDraw();                         // a dozing console must show the new pose
     };
     img.onerror = () => { /* missing PNG: skip silently */ };
@@ -368,6 +376,7 @@
     // its length, instead of following the audio as the manual WAV test does.
     const quiet = Array.isArray(ev.mouth) && ev.mouth.length === 0;
     startMouthTrack(quiet ? [[0, 0], [ev.duration_ms || 0, 0]] : (ev.mouth || null), age);   // drives the mouth even with sound off
+    if (quiet && age < (ev.duration_ms || 0)) hat.perk((ev.duration_ms || 0) - age);   // "mmm?": the tip perks up
     wakeDraw();
     if (age > (ev.duration_ms || 0)) return;  // an old reply: nothing left to hear
     if (!toggleAudio.checked || CONSOLE) return;  // sound off, or the console (always muted)
@@ -440,27 +449,63 @@
     return out || gestureActive("NECK", now);   // baseline hold OR a transient out chain
   }
 
-  // ---- bubbles -----------------------------------------------------------
-  const bubbles = [];
-  function updateBubbles(dt) {
-    if (toggleBubbles.checked && Math.random() < dt * 3.0) {
-      bubbles.push({ x: W * (0.25 + Math.random() * 0.5), y: H - 8,
-                     r: 2 + Math.random() * 6, v: 25 + Math.random() * 40 });
+  // ---- the drawn hat (svg#hat) ------------------------------------------
+  // The mouth is the spring's value (0..1) as a fold that opens downward; NECK holds bend the
+  // tip up, TAIL windows wag the brim, the burble perks the tip. Its idle life (breathing,
+  // the tip's drift, a blink) is CSS, so a still hat costs no frame here.
+  const hat = (() => {
+    const mouthEl = document.getElementById("mouth");
+    const lipLower = document.getElementById("lip-lower");
+    const brows = document.getElementById("brows");
+    const tipBend = document.getElementById("tip-bend");
+    const brimParts = [document.getElementById("brim"), document.getElementById("brim-front"),
+                       document.getElementById("brim-fold")];
+    const tip = { value: 0, vel: 0, k: 40, d: 7 };       // under-damped: the tip rings a little
+    const brim = { value: 0, vel: 0, k: 90, d: 19 };
+    let perkUntil = 0, lastAt = 0;
+    const shown = { m: -1, tip: -1, brim: -1 };
+    function stepFree(sp, target, dt) {
+      sp.vel += (-sp.k * (sp.value - target) - sp.d * sp.vel) * dt;
+      sp.value += sp.vel * dt;
     }
-    for (const b of bubbles) { b.y -= b.v * dt; b.x += Math.sin(b.y * 0.05) * 0.3; }
-    for (let i = bubbles.length - 1; i >= 0; i--) if (bubbles[i].y < -10) bubbles.splice(i, 1);
-  }
-  function drawBubbles() {
-    ctx.save();
-    ctx.strokeStyle = "rgba(255,255,255,0.5)";
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
-    for (const b of bubbles) {
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-      ctx.fill(); ctx.stroke();
+    function mouthPath(v) {
+      return `M214,338 Q302,${(328 - 4 * v).toFixed(1)} 396,336 Q302,${(346 + 64 * v).toFixed(1)} 214,338 Z`;
     }
-    ctx.restore();
-  }
+    function pose(m, neck, tail, now) {
+      const dt = lastAt ? Math.min(0.05, (now - lastAt) / 1000) : 0.016;
+      lastAt = now;
+      stepFree(tip, neck ? 1 : now < perkUntil ? 0.6 : 0, dt);
+      stepFree(brim, tail ? 1 : 0, dt);
+      const mr = Math.round(m * 200) / 200;
+      if (mr !== shown.m) {
+        shown.m = mr;
+        mouthEl.setAttribute("d", mouthPath(mr));
+        lipLower.setAttribute("d", `M224,346 Q302,${(354 + 66 * mr).toFixed(1)} 386,344`);
+        brows.setAttribute("transform", `translate(0 ${(-7 * mr).toFixed(2)})`);
+      }
+      const tr = Math.round(tip.value * 400) / 400;
+      if (tr !== shown.tip) {
+        shown.tip = tr;
+        tipBend.setAttribute("transform", `rotate(${(24 * tr).toFixed(2)} 316 150)`);
+      }
+      const a = Math.round(3.5 * brim.value * Math.sin(now * 0.018) * 50) / 50;
+      if (a !== shown.brim) {
+        shown.brim = a;
+        for (const el of brimParts) el.setAttribute("transform", `rotate(${a} 300 415)`);
+      }
+    }
+    function perk(ms) { perkUntil = performance.now() + ms; wakeDraw(); }
+    function moving(now) {
+      return now < perkUntil || Math.abs(tip.value) > 0.005 || Math.abs(tip.vel) > 0.01 ||
+             Math.abs(brim.value) > 0.005 || Math.abs(brim.vel) > 0.01;
+    }
+    return { pose, perk, moving, set(m, t, b) { tip.value = t; tip.vel = 0; brim.value = b; brim.vel = 0; shown.m = -1; pose(m, t > 0.5, b > 0.5, performance.now()); } };
+  })();
+
+  // ?pose=<state>&mouth=0..1&tip=1&brim=1: a still, for screenshots and for checking sprites.
+  const POSE = PARAMS.get("pose");
+  const POSE_MOUTH = Math.max(0, Math.min(1, Number(PARAMS.get("mouth")) || 0));
+  const POSE_TIP = PARAMS.get("tip") === "1", POSE_BRIM = PARAMS.get("brim") === "1";
 
   // ---- compositing -------------------------------------------------------
   function containRect(iw, ih) {
@@ -472,8 +517,8 @@
   // keep mouth openness as long as possible, then shed neck/tail nuance. Final fallback is
   // neckRest_mouth0_tailRest, so the four base poses alone already animate the mouth.
   function currentSprite(now) {
-    const neck = neckOut(now) ? 1 : 0;
-    const tail = gestureActive("TAIL", now) ? 1 : 0;
+    const neck = (POSE ? POSE_TIP : neckOut(now)) ? 1 : 0;
+    const tail = (POSE ? POSE_BRIM : gestureActive("TAIL", now)) ? 1 : 0;
     const mouth0 = Math.max(0, Math.min(MOUTH_LEVELS - 1, Math.round(mouth.value * (MOUTH_LEVELS - 1))));
     for (let m = mouth0; m >= 0; m--) {
       for (const [n, t] of [[neck, tail], [neck, 0], [0, tail], [0, 0]]) {
@@ -484,22 +529,17 @@
     return null;
   }
   function draw(now) {
-    ctx.clearRect(0, 0, W, H);                // transparent: the page's sea is the background
-
-    if (!anyLoaded) {
-      if (KIOSK) return;                      // a slow first sprite: water, not a developer hint
-      ctx.fillStyle = "rgba(20,50,55,0.7)";
-      ctx.font = "16px 'Segoe UI', sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("Coloca PNGs en web/img/ (ver README)", W / 2, H / 2);
-    } else {
-      const img = currentSprite(now);
-      if (img) {
-        const rect = containRect(baseW, baseH);
-        ctx.drawImage(img, rect[0], rect[1], rect[2], rect[3]);
-      }
+    if (!spritesReady) {                      // the drawn hat until the sprites are here
+      if (POSE) return;                       // a still: set once at start
+      hat.pose(mouth.value, neckOut(now), gestureActive("TAIL", now), now);
+      return;
     }
-    drawBubbles();
+    ctx.clearRect(0, 0, W, H);                // transparent: the page's study is the background
+    const img = currentSprite(now);
+    if (img) {
+      const rect = containRect(baseW, baseH);
+      ctx.drawImage(img, rect[0], rect[1], rect[2], rect[3]);
+    }
   }
 
   // ---- main loop ---------------------------------------------------------
@@ -511,7 +551,8 @@
   const FRAME_MIN_MS = KIOSK ? 1000 / (Number(PARAMS.get("fps")) || (CONSOLE ? 20 : 24)) - 3 : 0;
   let dozing = false, dozeTimer = null, stillDrawn = false;
   function nothingMoves(now) {
-    if (mouthTrackData || playing || mouth.value >= 0.01 || bubbles.length) return false;
+    if (mouthTrackData || playing || mouth.value >= 0.01) return false;
+    if (!spritesReady && hat.moving(now)) return false;
     if (activeGestures.length) return false;
     for (const e of neckBaseline) if (e.start > now) return false;   // a neck move is due
     return true;
@@ -542,10 +583,10 @@
     dozing = false;
     stillDrawn = false;
 
-    mouthTarget = sampleMouth(now);
+    mouthTarget = POSE ? POSE_MOUTH : sampleMouth(now);
     step(mouth, mouthTarget, dt);
+    if (POSE) mouth.value = POSE_MOUTH;
     if (activeGestures.length) activeGestures = activeGestures.filter((g) => now < g.end + 50);
-    updateBubbles(dt);
 
     try {
       draw(now);
@@ -554,6 +595,7 @@
     } catch (e) { console.error("draw frame error:", e); }
     requestAnimationFrame(frame);
   }
+  if (POSE) { mouth.value = POSE_MOUTH; hat.set(POSE_MOUTH, POSE_TIP ? 1 : 0, POSE_BRIM ? 1 : 0); }
   requestAnimationFrame(frame);
 
   // ---- visitor view (kiosk) ------------------------------------------------
@@ -621,6 +663,7 @@
     let online = false, state = "", pressedAt = 0, lastLevel = 0, speakUntil = 0;
     let thinkTimer = null;
     function show(next, text) {
+      if (POSE && HINT[POSE]) next = POSE;
       if (next !== state) {
         const prev = state;
         state = next;
@@ -706,7 +749,7 @@
       link: document.getElementById("cLink"), net: document.getElementById("cNet"),
       mic: document.getElementById("cMic"), ear: document.getElementById("cListen"),
     };
-    const LINK_WORD = { ok: "pez conectado", silent: "pez callado", off: "sin pez" };
+    const LINK_WORD = { ok: "sombrero conectado", silent: "sombrero callado", off: "sin sombrero" };
 
     // The reading (console only): a badge photo, downscaled here to a 1024 px JPEG and
     // posted to /badge, or a typed name posted to /reading. The host says the rest.
@@ -778,15 +821,15 @@
           const r = await fetch("/badge", { method: "POST", headers: h, body: blob });
           let out = {};
           try { out = await r.json(); } catch (_) {}
-          if (r.status === 409) { say("El pez está ocupado", "bad"); settle(); }
+          if (r.status === 409) { say("El sombrero está ocupado", "bad"); settle(); }
           else if (r.status === 503 && out.error === "offline") { say("Sin internet para leer el gafete", "bad"); settle(); }
-          else if (r.status === 503 && out.error === "no reader") { say("El pez no tiene lector de gafetes", "bad"); settle(); }
+          else if (r.status === 503 && out.error === "no reader") { say("El sombrero no tiene lector de gafetes", "bad"); settle(); }
           else if (r.status === 503) { say("El lector no está configurado", "bad"); settle(); }
           else if (!r.ok) { say("No se pudo leer: escribe el nombre", "bad"); settle(); }
           else if (out.found) {
             name.value = out.name || "";
             const conf = { high: "segura", medium: "más o menos", low: "dudosa" }[out.confidence] || out.confidence;
-            say(`Lectura ${conf} · el pez pregunta`, out.confidence || "medium");
+            say(`Lectura ${conf} · el sombrero pregunta`, out.confidence || "medium");
             ok = true;
           } else { say("No se pudo leer: escribe el nombre", "bad"); settle(); name.focus(); }
         } catch (e) {
@@ -808,10 +851,10 @@
         try {
           const r = await fetch("/reading", { method: "POST", headers: headers({ "Content-Type": "application/json" }),
                                                body: JSON.stringify({ name: n }) });
-          if (r.status === 409) say("El pez está ocupado", "bad");
+          if (r.status === 409) say("El sombrero está ocupado", "bad");
           else if (r.status === 400) say("Escribe un nombre", "bad");
           else if (!r.ok) say("No se pudo mandar el nombre", "bad");
-          else { say("El pez lee el futuro…", "busy"); show("thinking"); name.value = ""; ok = true; }
+          else { say("El sombrero lee el futuro…", "busy"); show("thinking"); name.value = ""; ok = true; }
         } catch (_) {
           say("No se pudo mandar el nombre", "bad");
         } finally {
@@ -894,7 +937,7 @@
         if (mic) mic.status(st);
         paintStrip(st);
       } catch (_) {
-        opsStatus.textContent = "sin respuesta del pez (fish-brain)";
+        opsStatus.textContent = "sin respuesta del sombrero (fish-brain)";
         paintStrip(null);
       }
     }
@@ -930,13 +973,12 @@
       if (el) el.addEventListener("click", (e) => { e.preventDefault(); ops(false); });
     }
     if (CONSOLE) {
-      // Muted and without bubbles: the phone shows, the fish speaks.
+      // Muted: the phone shows, the hat speaks.
       toggleAudio.checked = false;
-      toggleBubbles.checked = false;
       refreshStatus();
       setInterval(refreshStatus, 3000);
-      // The shell: a child holds the phone, so the sheet opens on a hold, not a tap. The
-      // shell opens while it is held (that is the progress); a tap only makes it wobble.
+      // The candle: a child holds the phone, so the sheet opens on a hold, not a tap. The
+      // flame bends while it is held (that is the progress); a tap only makes it wobble.
       const gear = document.getElementById("consoleGear");
       const HOLD_MS = 800;
       let holdTimer = null, holdX = 0, holdY = 0;
@@ -1004,7 +1046,7 @@
         if (r === "sent") return;
         clearTimeout(thinkTimer);
         if (r === "offline") {
-          show("offline", "Sin conexión con el pez…");
+          show("offline", "Sin conexión con el sombrero…");
           setTimeout(() => { if (!pttDown) settle(); }, 2500);
           return;
         }
@@ -1075,7 +1117,7 @@
   // (/rec.js) hands Float32 chunks over, a 300 ms ring keeps the first syllable, and a
   // hold collects, downsamples to 16 kHz, wraps a WAV and POSTs /utterance. Without a
   // secure context, with the microphone denied or with ?mic=host the gate reads
-  // "micrófono del pez" and every hold takes the /ptt path as before. ?mic=browser forces
+  // "micrófono del sombrero" and every hold takes the /ptt path as before. ?mic=browser forces
   // the gate even when /status says host (the laptop on localhost is a secure context).
   mic = (() => {
     const MIC_PARAM = PARAMS.get("mic");
@@ -1212,7 +1254,7 @@
         keepAlive();
       } catch (e) {
         release();
-        gate("micrófono del pez" + (e && e.name === "NotAllowedError" ? " (permiso negado)" : ""), "off");
+        gate("micrófono del sombrero" + (e && e.name === "NotAllowedError" ? " (permiso negado)" : ""), "off");
       }
     }
     function release() {
@@ -1319,11 +1361,11 @@
       try {
         const r = await fetch("/utterance", { method: "POST", headers: h, body: blob });   // not a beacon: 64 KiB cap
         if (r.ok) { kiosk.micResult("sent"); return; }
-        if (r.status === 409) { setTranscript("user", "… (el pez está ocupado)"); kiosk.micResult("busy"); return; }
+        if (r.status === 409) { setTranscript("user", "… (el sombrero está ocupado)"); kiosk.micResult("busy"); return; }
         setTranscript("user", "… (grabación rechazada " + r.status + ")");
         kiosk.micResult("busy");
       } catch (_) {
-        setTranscript("user", "… (sin conexión con el pez)");
+        setTranscript("user", "… (sin conexión con el sombrero)");
         kiosk.micResult("offline");
       }
     }

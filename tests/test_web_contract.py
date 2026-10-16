@@ -65,3 +65,11 @@ def test_debug_css_animates_only_transform_and_opacity():
     for value in re.findall(r"transition\s*:\s*([^;}]+)", css):
         for part in value.split(","):
             assert part.split()[0] in allowed | {"none"}, value
+
+
+def test_the_page_speaks_of_the_hat_not_the_fish():
+
+    for name in ("index.html", "fish.js", "wait.html"):
+        text = (WEB_DIR / name).read_text(encoding="utf-8")
+        assert not re.search(r"\bpez\b", text, re.I), name
+    assert "Coloca PNGs" not in (WEB_DIR / "fish.js").read_text(encoding="utf-8")
