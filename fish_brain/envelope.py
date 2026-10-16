@@ -113,11 +113,17 @@ def mouth_pulses(level_track: list[tuple[int, float]],
                  cfg: MouthConfig) -> list[tuple[int, int, int]]:
     """Convert an openness `level_track` into (t_ms, pwm, ms) timed motor pulses.
 
-    Treats the open attack-time curve as a position-in-time axis: moving the jaw between two
-    openness levels costs the difference of their drive-ms. Opens at +open_pwm, closes at
-    close_pwm (its own faster curve). Pulses rounding to <1 ms are skipped, and the skipped
-    delta accumulates (o_cur only advances when a pulse is actually emitted).
+    `cfg.mode == "gate"` hands over to `gate_pulses` (a one-way mechanism). Otherwise the
+    position model: treats the open attack-time curve as a position-in-time axis: moving the
+    jaw between two openness levels costs the difference of their drive-ms. Opens at
+    +open_pwm, closes at close_pwm (its own faster curve). Pulses rounding to <1 ms are
+    skipped, and the skipped delta accumulates (o_cur only advances when a pulse is actually
+    emitted).
     """
+    if cfg.mode == "gate":
+        return gate_pulses(level_track, cfg)
+    if cfg.mode != "position":
+        raise ValueError(f"FISH_MOUTH_MODE={cfg.mode!r}; choose position or gate")
     pulses: list[tuple[int, int, int]] = []
     o_cur = 0.0
     for t_ms, level in level_track:
@@ -132,4 +138,39 @@ def mouth_pulses(level_track: list[tuple[int, float]],
         if ms >= 1:
             pulses.append((t_ms, pwm, int(ms)))
             o_cur = level
+    return pulses
+
+
+def gate_pulses(level_track: list[tuple[int, float]],
+                cfg: MouthConfig) -> list[tuple[int, int, int]]:
+    """Run the motor while the level is above `cfg.gate_level`, stop it when the level falls.
+
+    For a mechanism with no position (the Sorting Hat: one motor turns a cam that moves the
+    mouth and the tip), where a pulse is motion rather than a place. While the level holds
+    above the gate a pulse of gate_pulse_ms at +open_pwm is sent, and sent again every
+    gate_refresh_ms before the running one ends (the MCU replaces a running pulse with the
+    next line), so the motor runs without a gap and never more than gate_pulse_ms past the
+    last line the host managed to send. When the level falls below the gate a 1 ms zero
+    pulse stops it at once. Every line is a timed pulse: the firmware's limit still applies
+    and nothing is ever held.
+    """
+    pulses: list[tuple[int, int, int]] = []
+    refresh = max(10, int(cfg.gate_refresh_ms))
+    pulse_ms = max(refresh + 1, int(cfg.gate_pulse_ms))
+    until = -1                     # when the last commanded pulse ends (ms); -1 = stopped
+    n = len(level_track)
+    for i, (t, level) in enumerate(level_track):
+        t_next = level_track[i + 1][0] if i + 1 < n else t
+        if level > cfg.gate_level:
+            tt = t
+            while True:
+                if until - tt < refresh:       # the running pulse ends before the next refresh
+                    pulses.append((tt, cfg.open_pwm, pulse_ms))
+                    until = tt + pulse_ms
+                tt += refresh
+                if tt >= t_next:
+                    break
+        elif until > t:
+            pulses.append((t, 0, 1))
+            until = -1
     return pulses

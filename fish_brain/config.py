@@ -86,8 +86,22 @@ class MouthConfig:
     """
     # Drive magnitudes. open_pwm = the PWM that reaches full mechanical travel (255 gives
     # no more and is no faster). close_pwm = the close-stroke drive the close_curve was timed at.
-    open_pwm: int = 238
+    # FISH_MOUTH_OPEN_PWM overrides open_pwm for a body with no calibration of its own yet
+    # (the hat: the flap speed that reads as talking).
+    open_pwm: int = field(default_factory=lambda: _env_int("FISH_MOUTH_OPEN_PWM", 238))
     close_pwm: int = -200
+    # How the openness track becomes pulses (FISH_MOUTH_MODE):
+    #   position  the jaw's position is drive time from closed: a rise costs the difference of
+    #             the open curve, a fall the close curve (Billy Bass: a spring-loaded jaw).
+    #   gate      the motor runs while the level is above gate_level and stops when it falls
+    #             (the Sorting Hat: one motor turns a cam, a pulse is motion, not a position).
+    #             Pulses of gate_pulse_ms, re-sent every gate_refresh_ms while the level holds
+    #             (a new pulse replaces the running one on the MCU), so the motor never runs
+    #             more than gate_pulse_ms past the last line; a fall sends a 1 ms zero pulse.
+    mode: str = field(default_factory=lambda: _env("FISH_MOUTH_MODE", "position"))
+    gate_level: float = 0.08
+    gate_pulse_ms: int = 150
+    gate_refresh_ms: int = 100
     # Below the loudness threshold the jaw returns to rest (fully closed).
     rest_pwm: int = 0
     # Attack-time calibration: (openness_fraction, ms) anchors, ascending by openness.
