@@ -79,10 +79,29 @@ def _key_missing(env_name: str | None) -> str:
     return "" if not env_name or os.environ.get(env_name, "").strip() else f"{env_name} is not set"
 
 
+def _end_visit(a) -> None:
+    """The hat's open visit ends; the next utterance starts a new one with the rules."""
+    v = getattr(a.convo, "visit", None)
+    if v is not None:
+        v.end()
+        push = getattr(a.convo, "_push_visit", None)
+        if push is not None:
+            push()
+
+
 def _fresh_llm(a) -> None:
     a.convo._llm = None                          # the next turn builds a client for cfg.llm
+    _end_visit(a)                                # that client has no history and no rules
     from . import debug
     debug.new_visitor()
+
+
+def _set_visit(a, value: bool) -> str:
+    if getattr(a.convo, "visit", None) is None:
+        return "no visit texts for this persona"
+    a.cfg.visit.enabled = bool(value)
+    _end_visit(a)
+    return ""
 
 
 def _set_mode(a, value: str) -> str:
@@ -192,6 +211,8 @@ SWITCHES: dict = {
     "voice_quit": ("Voice quit word", "bool", (), lambda a: bool(_quit[0](a)), _quit[1]),
     "burble": ("Burble on release", "bool", (), lambda a: bool(_burble[0](a)), _burble[1]),
     "filler": ("Fillers while it thinks", "bool", (), lambda a: bool(_fill[0](a)), _fill[1]),
+    "visit": ("The hat's visit (cold reading)", "bool", (),
+              lambda a: bool(a.cfg.visit.enabled), _set_visit),
     "filler_delay_s": ("First filler after (s)", "number", (0.5, 6.0),
                        lambda a: float(_fill_delay[0](a)), _fill_delay[1]),
     "max_record_s": ("Recording limit (s)", "number", (3.0, 60.0),
@@ -232,6 +253,12 @@ def _switch_note(a, name: str, value) -> str:
                 else "silent while it waits, and no limit on a turn")
     if name == "llm_profile":
         return a.cfg.llm.model or ""
+    if name == "visit":
+        if getattr(a.convo, "visit", None) is None:
+            return "this persona has no visit"
+        return ("four turns per visitor, the stage and the cues on each, the house line taken "
+                "out; needs the model (mode llm)" if value
+                else "the hat answers turn by turn, as before")
     return ""
 
 

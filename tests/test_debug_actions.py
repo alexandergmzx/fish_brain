@@ -295,8 +295,8 @@ def _values(rig):
 def test_switches_list_their_value_their_start_and_what_changed(rig):
     sw = _values(rig)
     assert set(sw) == {"mode", "llm_profile", "stt", "stt_model", "tts", "gestures", "reading_look",
-                       "voice_quit", "burble", "filler", "filler_delay_s", "max_record_s",
-                       "mic", "motors"}
+                       "voice_quit", "burble", "filler", "visit", "filler_delay_s",
+                       "max_record_s", "mic", "motors"}
     assert sw["mode"]["value"] == "llm" and not any(w["changed"] for w in sw.values())
     assert rig.act.set("gestures", False) == (200, {"ok": True, "value": False})
     assert rig.cfg.gesture.enabled is False
@@ -372,3 +372,20 @@ def test_motors_can_be_muted_only_when_armed_and_stop_still_passes(rig, monkeypa
     assert rig.act.set("motors", "on")[0] == 200 and not rig.link.muted
     rig.link.mouth_pulse(238, 104)
     assert rig.sent()[-1] == "MOUTH 238 104"
+
+
+def test_the_visit_switch_needs_a_visit_and_ends_the_open_one(rig):
+    from fish_brain.visit import Visit
+    assert rig.act.set("visit", True)[1] == {"ok": False,
+                                             "error": "no visit texts for this persona"}
+    v = Visit()
+    v.start("Ana")
+    rig.convo.visit = v
+    rig.cfg.visit.enabled = True
+    status, out = rig.act.set("visit", False)
+    assert status == 200 and out["value"] is False and not v.open
+    v.start("Leo")
+    rig.convo._llm = object()                      # a mode or profile switch drops the model
+    from fish_brain.debug_actions import _fresh_llm
+    _fresh_llm(rig.act)
+    assert not v.open and rig.convo._llm is None
