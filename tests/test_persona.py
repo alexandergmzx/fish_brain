@@ -20,7 +20,7 @@ def test_hat_overrides_only_its_own_words(monkeypatch):
     assert set(fish) <= set(hat)                       # nothing lost
     assert set(hat) - set(fish) == VISIT_PHRASES       # and only the visit's greeting added
     assert "pez" not in hat["welcome"] and "Sombrero" in hat["welcome"]
-    assert hat["filler_first_1"] == fish["filler_first_1"]
+    assert hat["filler_first_1"] != fish["filler_first_1"]       # the hat waits in its own words
     assert hat["no_mic"] == fish["no_mic"]
     assert "burbujas" not in hat["timeout_stt_2"]
     assert "Sombrero" in LLMConfig().system_prompt

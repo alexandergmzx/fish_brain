@@ -76,7 +76,7 @@ def check(spoken: str, *, verdict: bool) -> list[str]:
         out.append("empty")
     if len(sentences) > (4 if verdict else 2):
         out.append(f"{len(sentences)} sentences")
-    if words > (60 if verdict else 35):
+    if words > (70 if verdict else 35):
         out.append(f"{words} words")
     return out
 

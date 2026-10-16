@@ -73,3 +73,9 @@ gafete: Carlos
 No, me llamo Andrés.
 Estar solo.
 Un amigo.
+
+# 13 soft answers (Akinator's "probably")
+pistas: edad=niño; compania=familia; impresion=sonriente
+Me llamo Emilio.
+Creo que sí, más o menos.
+No sé, a veces.
