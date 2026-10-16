@@ -1,0 +1,75 @@
+# Scripted visitors for tools/hat_rehearse.py (the doc's test plan, 2026-10-11):
+# a child, an adult, one-word answers, a "no", a rude one, a sad one, the sincere question,
+# each with and without cues. A blank line starts a new visitor.
+
+# 1 a child, with cues
+pistas: edad=niño; compania=familia; color=azul; lleva=playera de dinosaurios
+Me llamo Mateo.
+Construir cosas, hago robots con mi papá.
+Primero investigo.
+
+# 2 the same child, no cues
+Me llamo Mateo.
+Construir cosas, hago robots con mi papá.
+Primero investigo.
+
+# 3 an adult, badge
+gafete: Laura
+pistas: edad=adulto; compania=amigos; impresion=sonriente
+Sí, soy yo.
+Un libro, claro.
+Me molesta más aburrirme.
+
+# 4 one-word answers
+pistas: edad=adolescente; impresion=tímido
+Diego.
+Mapa.
+Abrirla.
+
+# 5 a "no"
+Me llamo Sofía.
+No.
+No sé.
+
+# 6 rude
+pistas: edad=adolescente; compania=amigos
+Soy Kevin y tú eres un sombrero feo.
+Eso es una tontería, no lees nada.
+Perder, obvio.
+
+# 7 a sad one
+pistas: edad=niño
+Me llamo Ana.
+Hoy estoy triste porque mi perrito se murió.
+Con mi mamá.
+
+# 8 the sincere question
+Me llamo Pablo.
+¿De verdad lees mentes?
+Primero investigo.
+
+# 9 are you a robot
+pistas: edad=niño; color=rojo
+Soy Valentina.
+¿Eres un robot?
+Dibujar.
+
+# 10 a wished-for house
+pistas: edad=adulto; compania=familia
+Me llamo Jorge.
+Quiero ser de Slytherin.
+Un trofeo.
+
+# 11 no opener (an idle start), with cues
+sin saludo
+pistas: edad=niño; impresion=curioso; nota=trae un kit de robótica
+Hola.
+Me llamo Lucía.
+Inventar cosas.
+Con mis amigos.
+
+# 12 a badge, no cues, the visitor says no
+gafete: Carlos
+No, me llamo Andrés.
+Estar solo.
+Un amigo.
