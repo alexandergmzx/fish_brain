@@ -303,3 +303,7 @@ Every id `fish.js` looks up must exist in `index.html`, and `fish.js` replaces t
 `class` of `#conn-dot`, `#micGate`, `#readMsg` and the four status spans and empties
 `#pttButton`: style those by id and put the target's drawings in the `talkParts` template.
 
+
+## The hat's face (branch `sorting-hat`, 2026-10-16)
+
+On `sorting-hat` the page is the Sorting Hat's, "El Sombrero Adivino", in a study at night: a window with the moon, books, a candle, a stool under the hat. The hat is drawn in `index.html` (`svg#hat`: `#brim`, `#crown`, `#brows`, `#eyes`, `#mouth`, `#lip-lower`, `#tip-bend`/`#tip`); `fish.js`'s `hat` block writes the mouth from the spring, bends the tip on NECK holds and the burble, and wags the brim on TAIL chains, only when a value changes. Its idle life is CSS (`respira`, `cabecea`, `parpadea`, the candle's `titila`, the stars' `deriva`): 7 loops in the console view, counted, not measured. The corner's candle is the old shell: its flame is the connection, a 0.8 s hold opens the sheet. Sprites take over when the four base poses load (`web/img/README.md`); `/?pose=<state>&mouth=0..1&tip=1&brim=1` shows a still. The fish's sprites are parked in `web/img/fish/`; the `/debug` page's small fish is blank on this branch.
