@@ -175,6 +175,9 @@ PERSONAS: dict[str, dict] = {
             "mexicano, entonación exagerada, ritmo ágil y con energía."
         ),
         "burble_sound": "hum",
+        # Loquendo spells out a hum with no vowel ("Mmm" = "eme eme eme"): Jorge's recorded
+        # thinking hum instead (say_as.py; FISH_LOQ_HUM overrides it).
+        "loq_hum": "\\item=Hmh",
         "reading_rules": (
             "Cuando sepas el nombre de un visitante por su gafete, confírmalo con una pregunta "
             "corta; cuando lo confirme o te diga su nombre, salúdalo por su nombre de pila y "
