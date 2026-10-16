@@ -116,8 +116,10 @@ class Conversation:
         return {"seconds": round(time.monotonic() - t0, 2), "model": self.cfg.model,
                 "reply": (resp.choices[0].message.content or "").strip()[:40]}
 
-    def reply(self, user_text: str) -> str:
-        """Send a user turn, return the assistant reply, and update history."""
+    def reply(self, user_text: str, *, remember: bool = True) -> str:
+        """Send a user turn, return the assistant reply, and update history. With
+        `remember=False` the caller remembers the pair itself once the answer was delivered
+        (the hat's visit: a late or unspoken answer never reaches the history)."""
         from openai import APIError, BadRequestError  # APIError: connection/timeout/status
         self.last_error, self.last_usage = None, None
         t0 = time.monotonic()
@@ -157,5 +159,6 @@ class Conversation:
         print(f"[llm] {self.cfg.profile} {self.cfg.model} {self.last_latency_s:.2f}s",
               file=sys.stderr)
         answer = (resp.choices[0].message.content or "").strip()
-        self.remember(user_text, answer)
+        if remember:
+            self.remember(user_text, answer)
         return answer

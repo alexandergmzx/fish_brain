@@ -43,3 +43,20 @@ def test_reset_clears_rules_and_history(convo):
     convo.reset()
     assert convo.extra_rules == "" and convo._history == []
     assert [m["role"] for m in convo._messages("hola")] == ["system", "user"]
+
+
+def _stub_reply(convo, monkeypatch, text="Hola."):
+    from types import SimpleNamespace
+    from fish_brain import cloud
+    monkeypatch.setattr(cloud, "is_online", lambda: True)
+    resp = SimpleNamespace(usage=None, choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
+    monkeypatch.setattr(convo, "_create", lambda user_text: resp)
+
+
+def test_a_reply_the_caller_remembers_leaves_the_history(convo, monkeypatch):
+    _stub_reply(convo, monkeypatch)
+    assert convo.reply("[ETAPA 1/4] hola", remember=False) == "Hola."
+    assert convo._history == []
+    assert convo.reply("hola") == "Hola."              # the default remembers, as before
+    assert convo._history == [{"role": "user", "content": "hola"},
+                              {"role": "assistant", "content": "Hola."}]
