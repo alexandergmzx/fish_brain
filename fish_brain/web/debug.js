@@ -897,6 +897,19 @@
       ["last playback", perf.result ? perf.result + (perf.error ? " (" + perf.error.type + ": " + perf.error.text + ")" : "") : "", perf.result && perf.result !== "ok" ? "bad-text" : ""],
     ]);
     if (document.activeElement !== $("waitTick")) $("waitTick").checked = !!(st.mode || {}).wait;
+    const pron = Array.isArray(st.pron) ? st.pron : [];
+    if ($("pronRows").childElementCount !== pron.length) {
+      fill($("pronRows"), pron.map((label, i) => {
+        const b = el("button", "", "▶ " + label);
+        b.title = "renders it with loq and plays it through the hat's speaker";
+        b.addEventListener("click", async () => {
+          msg(null, "saying: " + label + "…");
+          const out = await post("/debug/pron", { i });
+          msg(null, out.ok ? "said: " + label : "refused: " + (out.error || out.status), 6000);
+        });
+        return b;
+      }));
+    }
     fill($("cannedRows"), (Array.isArray(st.canned) ? st.canned : []).map((c) => {
       const b = el("button", "", (c.rendered ? "▶ " : "○ ") + c.name);
       b.disabled = !c.rendered;

@@ -299,6 +299,12 @@ def _page(hub) -> dict:
             "tls_port": cfg.viz.tls_port if tls is not None else None}
 
 
+def _pron(cfg) -> list[str]:
+    """The pronunciation candidates the Voice tab can play (loq only)."""
+    from .say_as import CANDIDATES
+    return [label for label, _ in CANDIDATES] if cfg.tts.backend == "loq" else []
+
+
 def build(hub) -> dict:
     cfg = hub.cfg
     st = {"ok": True, "boot": hub.boot, "now": round(time.time(), 3),
@@ -308,6 +314,7 @@ def build(hub) -> dict:
     st["version"] = _section(lambda: {**version(), "changed_since_start": hub.code_changed()})
     st["mode"] = _section(lambda: _mode(hub))
     st["page"] = _section(lambda: _page(hub))
+    st["pron"] = _section(lambda: _pron(cfg))
     st["remote"] = _section(lambda: _remote(hub))
     st["link"] = _section(lambda: _link(hub))
     st["backends"] = _section(lambda: _backends(hub))

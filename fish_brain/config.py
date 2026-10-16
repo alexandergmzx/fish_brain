@@ -364,6 +364,13 @@ class ConductorConfig:
 class TTSConfig:
     backend: str = field(default_factory=lambda: _env("FISH_TTS_BACKEND", "loq"))  # loq | openai
     loq_bin: str = field(default_factory=lambda: _env("FISH_LOQ_BIN", "loq"))
+    # What Loquendo is given instead of the shown text (say_as.py): a prefix in front of every
+    # phrase (`\\language=SpanishMx ` = Mexican reading rules on Jorge), what a hum with no
+    # vowel becomes ("Mmm" is spelled out otherwise), and whole words to respell (the
+    # persona's `say_as`). Empty = the text as it is.
+    loq_prefix: str = field(default_factory=lambda: os.environ.get("FISH_LOQ_PREFIX", _persona().get("loq_prefix", "")))
+    loq_hum: str = field(default_factory=lambda: os.environ.get("FISH_LOQ_HUM", _persona().get("loq_hum", "")))
+    say_as: dict = field(default_factory=lambda: dict(_persona().get("say_as", {})))
     sample_rate: int = 22050        # passed to loq -r; envelope reads the actual WAV rate
     warm_on_start: bool = True      # `loq --start` to warm the daemon at boot (loq only)
     # OpenAI speech (backend "openai"). Rendered as raw PCM and wrapped into a WAV here.

@@ -469,6 +469,44 @@ class DebugActions:
                       result="played" if out.get("ok") else out.get("error", ""))
         return status, out
 
+    def pron(self, i) -> tuple[int, dict]:
+        """One pronunciation candidate (say_as.CANDIDATES), rendered with loq exactly as
+        written and played as audio only: nothing goes to the motors. Never text from the
+        request: only an index into the fixed list."""
+        from .say_as import CANDIDATES
+        try:
+            label, text = CANDIDATES[int(i)]
+        except (TypeError, ValueError, IndexError):
+            return 400, {"ok": False, "error": "unknown candidate"}
+        if self.cfg.tts.backend != "loq":
+            return 409, {"ok": False, "error": "the voice is not loq"}
+
+        def run(convo) -> dict:
+            import tempfile
+            from . import tts
+            lock = convo.speaker._lock
+            if not lock.acquire(blocking=False):
+                return {"ok": False, "error": "speaking"}
+            fd, name = tempfile.mkstemp(suffix=".wav", prefix="pron_")
+            os.close(fd)
+            wav = Path(name)
+            try:
+                wav.unlink(missing_ok=True)             # loq writes it
+                tts._synthesize_loq(text, self.cfg.tts, wav)
+                convo.player.play(wav)
+                convo.player.wait()
+            except Exception as e:
+                return {"ok": False, "error": f"{type(e).__name__}: {e}"[:120]}
+            finally:
+                lock.release()
+                wav.unlink(missing_ok=True)
+            return {"ok": True, "label": label}
+
+        status, out = self._offer(run, 25.0)
+        self.hub.emit("action", what=f"pronunciation {label}",
+                      result="played" if out.get("ok") else out.get("error", ""))
+        return status, out
+
     # ---- from the request's own thread ------------------------------------------------------
 
     def stop(self) -> tuple[int, dict]:
@@ -758,6 +796,8 @@ class DebugActions:
             return self.voice()
         if path == "/debug/cloud":
             return self.cloud()
+        if path == "/debug/pron":
+            return self.pron(body.get("i"))
         if path == "/debug/say":
             return self.say(body.get("name"))
         if path == "/debug/motor":

@@ -35,7 +35,9 @@ def warm(cfg: TTSConfig) -> None:
 def fingerprint(cfg: TTSConfig) -> str:
     """What makes two renderings of the same text differ (used in the canned cache key)."""
     if cfg.backend == "loq":
-        return str(cfg.sample_rate)
+        from .say_as import rules_hash
+        rules = rules_hash(cfg.loq_prefix, cfg.loq_hum, cfg.say_as)
+        return str(cfg.sample_rate) + (f"|{rules}" if rules else "")
     how = hashlib.sha1(cfg.openai_instructions.encode("utf-8")).hexdigest()[:8]
     return f"{cfg.backend}|{cfg.openai_model}|{cfg.openai_voice}|{how}"
 
@@ -110,7 +112,11 @@ def synthesize(text: str, cfg: TTSConfig, out_path: str | Path | None = None) ->
     t0 = time.monotonic()
     try:
         if cfg.backend == "loq":
-            _synthesize_loq(text, cfg, out_path)
+            from .say_as import voice_text
+            spoken = voice_text(text, cfg.loq_prefix, cfg.loq_hum, cfg.say_as)
+            if spoken != text:
+                sent["voice_text"] = spoken            # what Jorge was really given
+            _synthesize_loq(spoken, cfg, out_path)
         elif cfg.backend == "openai":
             _synthesize_openai(text, cfg, out_path)
         else:

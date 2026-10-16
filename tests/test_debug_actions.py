@@ -396,3 +396,9 @@ def test_the_visit_switch_needs_a_visit_and_ends_the_open_one(rig):
     from fish_brain.debug_actions import _fresh_llm
     _fresh_llm(rig.act)
     assert not v.open and rig.convo._llm is None
+
+
+def test_a_pronunciation_candidate_is_only_an_index(rig):
+    assert rig.act.pron("nope")[0] == 400 and rig.act.pron(999)[0] == 400
+    rig.cfg.tts.backend = "openai"
+    assert rig.act.pron(0) == (409, {"ok": False, "error": "the voice is not loq"})
