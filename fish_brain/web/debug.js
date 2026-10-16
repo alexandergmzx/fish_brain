@@ -1478,8 +1478,173 @@
     };
   }, { status() {}, view() {}, flush() {}, on: () => false });
 
-  // ---- the phone's microphone: off unless he turns it on (see the Voice tab) ----------------------
-  let phoneMic = { status() {}, ready: () => false, holding: () => false, begin() {}, end() {}, abort() {}, hidden() {} };
+  // ---- the phone's microphone: off unless he turns it on (the Voice tab) --------------------------
+  // On: the permission prompt (inside the tap), then the board is told to take recordings from
+  // phones (switch mic=browser) and this page announces itself (/micstate) while its stream is
+  // live, so a remote's press is relayed here only when this page can hear it. A hold then
+  // records here: a 600 ms ring keeps the first syllable, the AudioWorklet (/rec.js) hands the
+  // chunks over, and the clip goes up as a 16 kHz WAV (POST /utterance). Off, or the screen
+  // sleeping, gives the board its microphone back.
+  const phoneMic = guard("phone mic", () => {
+    const tick = $("phoneMic"), note = $("phoneMicMsg");
+    const CAN = window.isSecureContext && !!navigator.mediaDevices && !!navigator.mediaDevices.getUserMedia;
+    const TARGET_RATE = 16000, RING_MS = 600, TAIL_MS = 250, MIN_HOLD_MS = 350, QUIET_RMS = 0.003, KEEPALIVE_MS = 20000;
+    let maxRecordS = 15, stream = null, actx = null, node = null, source = null, sink = null;
+    let ring = [], ringLen = 0, clip = null, clipLen = 0, holdAt = 0, holdTimer = null, tailTimer = null;
+    let holding = false, peak = 0, lastEmit = 0, announced = false, keepTimer = null, busy = false;
+    function say(text, cls) { note.textContent = text || ""; note.className = "note " + (cls || ""); }
+    function micState(ready, beacon) {
+      announced = ready;
+      const body = JSON.stringify({ ready, page: PAGE });
+      if (beacon && navigator.sendBeacon) {
+        const url = "/micstate" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : "");
+        if (navigator.sendBeacon(url, new Blob([body], { type: "application/json" }))) return Promise.resolve();
+      }
+      return fetch("/micstate", { method: "POST", headers: headers(true), body, keepalive: true }).catch(() => {});
+    }
+    const streamLive = () => S.connected && performance.now() - lastMsgAt < 25000;
+    function keepAlive() {
+      clearInterval(keepTimer);
+      keepTimer = setInterval(() => {
+        if (actx && trackAlive() && streamLive()) micState(true);
+        else if (announced) micState(false);     // a deaf page must not be relayed presses
+      }, KEEPALIVE_MS);
+    }
+    function trackAlive() {
+      const t = stream && stream.getAudioTracks()[0];
+      return !!t && t.readyState === "live" && !t.muted;
+    }
+    function onChunk(data) {
+      if (!data || !data.length) return;
+      if (holding) {
+        clip.push(data); clipLen += data.length;
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+        const rms = Math.sqrt(sum / data.length);
+        if (rms > peak) peak = rms;
+        const now = performance.now();
+        if (now - lastEmit >= 40) { lastEmit = now; S.levels.push(rms); if (S.levels.length > 200) S.levels.shift(); wakeLevel(); }
+      } else {
+        ring.push(data); ringLen += data.length;
+        const keep = (actx ? actx.sampleRate : 48000) * RING_MS / 1000;
+        while (ring.length > 1 && ringLen - ring[0].length > keep) ringLen -= ring.shift().length;
+      }
+    }
+    async function arm() {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === "suspended") { try { await actx.resume(); } catch (_) {} }
+      source = actx.createMediaStreamSource(stream);
+      sink = actx.createGain(); sink.gain.value = 0; sink.connect(actx.destination);
+      try {
+        await actx.audioWorklet.addModule("/rec.js");
+        node = new AudioWorkletNode(actx, "fish-rec", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+        node.port.onmessage = (e) => onChunk(e.data);
+      } catch (_) {
+        node = actx.createScriptProcessor(4096, 1, 1);
+        node.onaudioprocess = (e) => onChunk(new Float32Array(e.inputBuffer.getChannelData(0)));
+      }
+      source.connect(node).connect(sink);
+      stream.getAudioTracks()[0].addEventListener("ended", () => off("the microphone was lost: turn it on again"));
+      ring = []; ringLen = 0;
+    }
+    function release(beacon) {
+      clearInterval(keepTimer); keepTimer = null;
+      const done = announced ? micState(false, beacon) : Promise.resolve();
+      if (stream) for (const t of stream.getTracks()) { try { t.stop(); } catch (_) {} }
+      if (actx) { try { actx.close(); } catch (_) {} }
+      stream = actx = node = source = sink = null;
+      ring = []; ringLen = 0; holding = false;
+      return done;
+    }
+    async function on() {
+      if (!CAN) { tick.checked = false; say("needs the https address (see the band's 'secure' chip)", "bad-text"); return; }
+      busy = true; say("asking for the microphone…");
+      try { await arm(); }
+      catch (e) { await release(); tick.checked = false; busy = false;
+                  say(e && e.name === "NotAllowedError" ? "permission denied: Chrome's site settings → Microphone" : "no microphone: " + (e && e.name), "bad-text"); return; }
+      const out = await post("/debug/set", { name: "mic", value: "browser" });
+      if (!out.ok) { await release(); tick.checked = false; busy = false; say("refused: " + (out.error || out.status), "bad-text"); return; }
+      await micState(true); keepAlive(); busy = false;
+      say("on: the hold button and the remote record with this phone");
+      refresh();
+    }
+    async function off(why) {
+      busy = true;
+      await release();
+      await post("/debug/set", { name: "mic", value: "host" });
+      tick.checked = false; busy = false;
+      say(why || "off: the board records", why ? "warn-text" : "");
+      refresh();
+    }
+    tick.addEventListener("change", () => { if (busy) return; tick.checked ? on() : off(); });
+    function finish() {
+      if (!holding) return;
+      clearTimeout(holdTimer);
+      const heldMs = Math.round(performance.now() - holdAt);
+      tailTimer = setTimeout(() => {           // the last word is still in the pipeline
+        holding = false;
+        const chunks = clip || [], total = clipLen;
+        clip = null; clipLen = 0;
+        if (heldMs < MIN_HOLD_MS) { msg(null, "phone mic: too short", 3000); return; }
+        if (peak < QUIET_RMS) { msg(null, "phone mic: silence (is it the right microphone?)", 5000); return; }
+        upload(toWav(chunks, total, actx ? actx.sampleRate : 48000), heldMs);
+        fish.thinking("hearing");
+      }, TAIL_MS);
+    }
+    // Float32 chunks at the context's rate → one Int16 WAV at 16 kHz (linear interpolation).
+    function toWav(chunks, total, rate) {
+      const all = new Float32Array(total);
+      let o = 0;
+      for (const c of chunks) { all.set(c, o); o += c.length; }
+      const ratio = rate / TARGET_RATE, n = Math.max(1, Math.floor(total / ratio)), pcm = new Int16Array(n);
+      for (let i = 0; i < n; i++) {
+        const pos = i * ratio, j = Math.floor(pos), frac = pos - j;
+        const a = all[j] || 0, b = all[j + 1 < total ? j + 1 : j] || 0;
+        let v = a + (b - a) * frac;
+        v = Math.max(-1, Math.min(1, v));
+        pcm[i] = v < 0 ? v * 32768 : v * 32767;
+      }
+      const bytes = pcm.length * 2, buf = new ArrayBuffer(44 + bytes), dv = new DataView(buf);
+      const str = (at, t) => { for (let i = 0; i < t.length; i++) dv.setUint8(at + i, t.charCodeAt(i)); };
+      str(0, "RIFF"); dv.setUint32(4, 36 + bytes, true); str(8, "WAVE");
+      str(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+      dv.setUint32(24, TARGET_RATE, true); dv.setUint32(28, TARGET_RATE * 2, true);
+      dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+      str(36, "data"); dv.setUint32(40, bytes, true);
+      new Int16Array(buf, 44).set(pcm);
+      return new Blob([buf], { type: "audio/wav" });
+    }
+    async function upload(blob, heldMs) {
+      const h = headers(false);
+      h["Content-Type"] = "audio/wav"; h["X-Fish-Hold-Ms"] = String(heldMs);
+      try {
+        const r = await fetch("/utterance", { method: "POST", headers: h, body: blob });
+        if (!r.ok) msg(null, r.status === 409 ? "phone mic: the hat is busy" : "phone mic: refused " + r.status, 5000);
+      } catch (_) { msg(null, "phone mic: no connection", 5000); }
+    }
+    return {
+      status(page) {
+        if (page.max_record_s) maxRecordS = Number(page.max_record_s) || maxRecordS;
+        if (!busy && !actx && page.capture === "browser" && !note.textContent) say("the board takes phone recordings, but this phone's microphone is off");
+      },
+      ready: () => !!actx && trackAlive(),
+      holding: () => holding,
+      begin() {
+        if (!actx) return;
+        if (actx.state === "suspended") actx.resume().catch(() => {});
+        clearTimeout(tailTimer);
+        clip = ring.slice(); clipLen = ringLen; ring = []; ringLen = 0;   // the ring first: the first syllable
+        peak = 0; holding = true; holdAt = performance.now(); lastEmit = 0;
+        fish.listening();
+        holdTimer = setTimeout(() => { if (holding) { ptt.event({ held: false }); finish(); } }, maxRecordS * 1000);
+      },
+      end: finish,
+      abort() { clearTimeout(holdTimer); clearTimeout(tailTimer); holding = false; clip = null; clipLen = 0; },
+      hidden() { if (actx) { release(true); tick.checked = false; say("released when the screen slept: turn it on again", "warn-text"); } },
+    };
+  }, { status() {}, ready: () => false, holding: () => false, begin() {}, end() {}, abort() {}, hidden() {} });
 
   // ---- coming back: the phone slept, the tab was hidden, the network returned ---------------------
   function onHidden() {
