@@ -2,14 +2,17 @@
 <html lang="en" translate="no">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>fish · debug</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#14181d">
+    <title>Sombrero</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/debug.css">
 </head>
 <body>
-    <!-- The desktop debug view (docs/debug.md). Everything here is filled by debug.js from
-         GET /debug/state and the stream GET /debug/events; the phone page is another file. -->
+    <!-- The operator's page (docs/debug.md, ADR 0011): the debug view, on a desktop or on his
+         phone, with the drawn hat showing what the fish is doing. Everything here is filled by
+         debug.js from GET /debug/state and the stream GET /debug/events. -->
     <header id="bar">
         <div class="who">
             <strong id="hHost">fish</strong>
@@ -19,6 +22,10 @@
         <div class="chips" id="hChips"></div>
         <div class="right">
             <span id="hStream" class="chip unknown">stream …</span>
+            <span id="hAgo" class="chip unknown"></span>
+            <span id="bandVisit" class="chip unknown" hidden></span>
+            <a id="chipSecure" class="chip unknown" hidden></a>
+            <span id="chipScreen" class="chip unknown" hidden></span>
             <button id="armBtn" type="button" class="arm">ARM locked</button>
             <button id="stopBtn" type="button" class="stop" title="Esc">STOP</button>
         </div>
@@ -33,6 +40,8 @@
     <!-- Hints: one line (how many, the worst one); a click folds them all out. -->
     <div id="hintBar" hidden><span id="hintLine"></span><button id="hintToggle" type="button">open</button></div>
     <ul id="hints" hidden></ul>
+    <!-- On a phone the hat, the pipeline and the tabs are moved up here (debug.js place()). -->
+    <div id="phoneTop"></div>
 
     <section id="pipe">
         <div class="stages" id="stages"></div>
@@ -42,18 +51,90 @@
 
     <main>
         <section class="col" id="colTurns">
-            <!-- The fish: its sprite follows the reply being spoken, the lamps every line the
-                 link really sent to the motors (as the board's LED matrix does). -->
+            <!-- The hat: it moves with the reply being spoken, takes a pose for what the fish is
+                 doing (waiting, listening, thinking, speaking, offline), grows surer through a
+                 visit and shakes when a turn dies. The lamps light for every line the link
+                 really sent to the motors (as the board's LED matrix does). -->
             <div id="fishBox">
-                <canvas id="fish" width="289" height="244"></canvas>
+                <div id="hatBox" class="st-waiting">
+                    <div class="perch"><div class="perch-kick"><div class="perch-fx">
+                    <svg id="hat" viewBox="0 0 600 500" aria-hidden="true">
+                    <defs>
+                    <linearGradient id="g-cuero" x1="0" y1="0" x2="1" y2="0.2">
+                    <stop offset="0" stop-color="#4f2c13"/><stop offset="0.55" stop-color="#8a5630"/><stop offset="1" stop-color="#6a3d1d"/>
+                    </linearGradient>
+                    <linearGradient id="g-punta" x1="1" y1="1" x2="0" y2="0">
+                    <stop offset="0" stop-color="#7d4a26"/><stop offset="1" stop-color="#4a2a12"/>
+                    </linearGradient>
+                    <linearGradient id="g-ala" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#7a4a28"/><stop offset="1" stop-color="#4a2a12"/>
+                    </linearGradient>
+                    </defs>
+                    <!-- the brim, back part: the crown sits on it -->
+                    <path class="brim-part" id="brim" d="M557,412 Q557,415 554,418 Q552,420 553,423 Q554,426 548,428 Q542,430 540,433 Q538,436 532,438 Q526,440 518,442 Q510,444 504,447 Q499,449 489,451 Q478,452 470,454 Q463,457 451,458 Q440,459 430,460 Q419,462 409,463 Q398,465 387,466 Q376,467 363,467 Q349,467 337,467 Q325,468 312,469 Q300,469 287,470 Q274,470 262,470 Q250,470 238,469 Q226,469 213,469 Q199,469 190,467 Q181,465 168,465 Q155,465 146,463 Q138,461 130,460 Q121,458 113,456 Q104,455 96,453 Q88,451 79,450 Q70,448 68,445 Q66,443 59,441 Q53,438 49,436 Q46,433 46,431 Q45,428 44,426 Q42,423 44,418 Q46,414 48,411 Q50,408 52,406 Q55,403 58,401 Q61,398 67,396 Q73,393 80,391 Q86,388 93,386 Q100,384 109,382 Q118,380 127,378 Q137,376 146,374 Q156,372 167,371 Q178,369 190,368 Q202,367 213,366 Q225,364 237,364 Q250,363 262,362 Q274,361 287,361 Q300,361 313,361 Q325,362 338,361 Q351,361 363,363 Q374,364 386,365 Q399,365 410,366 Q422,367 432,369 Q442,370 453,372 Q464,373 472,375 Q480,377 490,379 Q500,381 508,383 Q516,385 522,387 Q528,389 534,392 Q541,394 543,397 Q546,399 550,402 Q554,404 556,407 Q557,410 557,412 Z"
+                    fill="url(#g-ala)" stroke="#23231c" stroke-width="3.5" stroke-linejoin="round"/>
+                    <!-- the crown: a tall, crooked cone of worn leather -->
+                    <g id="crown">
+                    <path d="M150,410 C168,338 206,262 246,206 C262,184 278,164 288,150 L344,146 C352,178 368,226 390,282 C410,334 436,378 452,408 Q300,452 150,410 Z"
+                    fill="url(#g-cuero)" stroke="#23231c" stroke-width="3.5" stroke-linejoin="round"/>
+                    <!-- creases where the leather has folded for years -->
+                    <g fill="none" stroke="#2e1708" stroke-linecap="round" opacity="0.55">
+                    <path d="M262,196 C280,206 300,204 322,196" stroke-width="3"/>
+                    <path d="M236,228 C266,242 312,240 352,222" stroke-width="3"/>
+                    <path d="M190,318 C178,352 176,380 182,404" stroke-width="2.5"/>
+                    <path d="M414,318 C420,350 428,378 436,398" stroke-width="2.5"/>
+                    <path d="M330,150 C336,170 340,186 352,206" stroke-width="2"/>
+                    </g>
+                    <!-- a band of darker leather with its stitches -->
+                    <path d="M162,384 Q300,424 442,382 L450,404 Q300,446 152,406 Z" fill="#3e2210" stroke="#23231c" stroke-width="3" stroke-linejoin="round"/>
+                    <path d="M164,394 Q300,434 444,392" fill="none" stroke="#d2ad75" stroke-width="2.2" stroke-dasharray="7 6" stroke-linecap="round"/>
+                    <g id="face">
+                    <g id="browsPose"><g id="brows" fill="#4a2a12" stroke="#23231c" stroke-width="3" stroke-linejoin="round">
+                    <path d="M224,262 C238,240 268,234 296,246 C284,252 262,252 240,266 Z"/>
+                    <path d="M312,244 C340,230 372,236 388,258 C370,250 344,250 322,256 Z"/>
+                    </g></g>
+                    <g id="eyesPose"><g id="eyes">
+                    <path d="M236,284 C252,266 282,266 296,280 C282,276 254,276 236,284 Z" fill="#5d3519" stroke="#23231c" stroke-width="2.5" stroke-linejoin="round"/>
+                    <path d="M240,286 C256,276 280,276 292,282 C278,294 254,296 240,286 Z" fill="#1a0c04"/>
+                    <circle cx="276" cy="284" r="2.6" fill="#f3e2c0"/>
+                    <path d="M318,278 C334,264 364,264 380,280 C364,274 336,274 318,278 Z" fill="#5d3519" stroke="#23231c" stroke-width="2.5" stroke-linejoin="round"/>
+                    <path d="M322,281 C336,274 360,274 376,282 C362,292 336,294 322,281 Z" fill="#1a0c04"/>
+                    <circle cx="356" cy="281" r="2.6" fill="#f3e2c0"/>
+                    </g></g>
+                    <path id="lip-upper" d="M206,330 Q300,312 404,328" fill="none" stroke="#2e1708" stroke-width="4" stroke-linecap="round"/>
+                    <path id="mouth" d="M214,338 Q302,328 396,336 Q302,346 214,338 Z" fill="#1a0c04" stroke="#23231c" stroke-width="3" stroke-linejoin="round"/>
+                    <path id="lip-lower" d="M224,346 Q302,354 386,344" fill="none" stroke="#2e1708" stroke-width="4" stroke-linecap="round"/>
+                    </g>
+                    </g>
+                    <!-- the brim, front part: over the crown's base -->
+                    <path class="brim-part" id="brim-front" d="M557,415 Q552,420 553,423 Q554,426 548,428 Q542,430 540,433 Q538,436 532,438 Q526,440 518,442 Q510,444 504,447 Q499,449 489,451 Q478,452 470,454 Q463,457 451,458 Q440,459 430,460 Q419,462 409,463 Q398,465 387,466 Q376,467 363,467 Q349,467 337,467 Q325,468 312,469 Q300,469 287,470 Q274,470 262,470 Q250,470 238,469 Q226,469 213,469 Q199,469 190,467 Q181,465 168,465 Q155,465 146,463 Q138,461 130,460 Q121,458 113,456 Q104,455 96,453 Q88,451 79,450 Q70,448 68,445 Q66,443 59,441 Q53,438 49,436 Q46,433 46,431 Q45,428 44,426 L42,423 L150,410 Q300,452 452,408 Z"
+                    fill="#6a3d1d" stroke="#23231c" stroke-width="3.5" stroke-linejoin="round"/>
+                    <path class="brim-part" id="brim-fold" d="M84,440 Q300,476 516,438" fill="none" stroke="#2e1708" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/>
+                    <!-- the tip: a floppy end that droops to the left, pivoting where it leaves the crown -->
+                    <g id="tipPose"><g id="tip-bend">
+                    <g id="tip">
+                    <path d="M344,148 C350,96 318,50 266,44 C232,40 204,58 202,84 C200,104 220,112 232,100 C240,92 236,80 248,78 C270,76 286,104 288,152 Z"
+                    fill="url(#g-punta)" stroke="#23231c" stroke-width="3.5" stroke-linejoin="round"/>
+                    <path d="M300,108 C306,90 302,74 288,64" fill="none" stroke="#2e1708" stroke-width="2.5" stroke-linecap="round" opacity="0.55"/>
+                    </g>
+                    </g></g>
+                    </svg>
+                    </div></div></div>
+                    <div id="hatHouse" hidden></div>
+                </div>
                 <div class="fishside">
                     <div id="fishState">…</div>
+                    <div id="budget"><i id="budgetBar"></i></div>
+                    <div id="hatErr" hidden></div>
                     <div class="lamps">
                         <span class="lamp" id="lampMouth">MOUTH</span>
                         <span class="lamp" id="lampNeck">NECK</span>
                         <span class="lamp" id="lampTail">TAIL</span>
+                        <span id="motorNote" class="note"></span>
                     </div>
                     <div id="lastLine" class="note">no line sent yet</div>
+                    <div id="heardLine" class="said"></div>
+                    <div id="saidLine" class="said"></div>
                 </div>
             </div>
             <h2>Turns <small id="turnCount"></small></h2>
@@ -67,14 +148,43 @@
 
         <section class="col" id="colPanels">
             <nav id="tabs">
+                <button data-tab="visit" data-panels="visit">Visit</button>
+                <button data-tab="turns" data-col="colTurns" class="phone">Turns</button>
                 <button data-tab="checks" data-panels="checks" class="on">Checks</button>
                 <button data-tab="live" data-panels="inputs motors">Live</button>
                 <button data-tab="model" data-panels="model cloud">Model</button>
                 <button data-tab="voice" data-panels="voice">Voice</button>
                 <button data-tab="switches" data-panels="switches">Switches</button>
                 <button data-tab="system" data-panels="board config clients">System</button>
+                <button data-tab="log" data-col="colLog" class="phone">Log</button>
             </nav>
             <div class="scroll" id="panels">
+                <div class="panel" id="p-visit" hidden>
+                    <h3>Visit <small id="visitState">no visitor</small></h3>
+                    <!-- The hat's visit (visit.py): the cues the hat turns into "visions". A lit chip
+                         is one the hat has not used yet; the row draws what the server holds. -->
+                    <div class="c-visit" id="cVisit" hidden>
+                        <div class="cue-group" role="group" aria-label="Edad"><span>Edad</span><button type="button" class="cue" data-cue="edad" data-val="niño" aria-pressed="false">Niño</button><button type="button" class="cue" data-cue="edad" data-val="adolescente" aria-pressed="false">Adolescente</button><button type="button" class="cue" data-cue="edad" data-val="adulto" aria-pressed="false">Adulto</button></div>
+                        <div class="cue-group" role="group" aria-label="Viene con"><span>Viene con</span><button type="button" class="cue" data-cue="compania" data-val="solo" aria-pressed="false">Solo</button><button type="button" class="cue" data-cue="compania" data-val="amigos" aria-pressed="false">Amigos</button><button type="button" class="cue" data-cue="compania" data-val="familia" aria-pressed="false">Familia</button></div>
+                        <div class="cue-group" role="group" aria-label="Color"><span>Color</span><button type="button" class="cue" data-cue="color" data-val="rojo" aria-pressed="false">Rojo</button><button type="button" class="cue" data-cue="color" data-val="azul" aria-pressed="false">Azul</button><button type="button" class="cue" data-cue="color" data-val="verde" aria-pressed="false">Verde</button><button type="button" class="cue" data-cue="color" data-val="amarillo" aria-pressed="false">Amarillo</button><button type="button" class="cue" data-cue="color" data-val="negro" aria-pressed="false">Negro</button><button type="button" class="cue" data-cue="color" data-val="blanco" aria-pressed="false">Blanco</button><button type="button" class="cue" data-cue="color" data-val="rosa" aria-pressed="false">Rosa</button><button type="button" class="cue" data-cue="color" data-val="morado" aria-pressed="false">Morado</button></div>
+                        <div class="cue-group" role="group" aria-label="Impresión"><span>Impresión</span><button type="button" class="cue" data-cue="impresion" data-val="tímido" aria-pressed="false">Tímido</button><button type="button" class="cue" data-cue="impresion" data-val="sonriente" aria-pressed="false">Sonriente</button><button type="button" class="cue" data-cue="impresion" data-val="curioso" aria-pressed="false">Curioso</button></div>
+                        <input type="text" id="cueLleva" data-cue="lleva" maxlength="60" placeholder="Lleva… (playera de dinosaurios)" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+                        <input type="text" id="cueNota" data-cue="nota" maxlength="60" placeholder="Nota (trae un kit de robótica)" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+                        <span id="visitSent" class="note"></span>
+                        <span id="visitMsg" class="note"></span>
+                    </div>
+                    <h3>Badge or name <small>the hat asks "¿Tú eres…?"</small></h3>
+                    <div class="c-read" id="cRead">
+                        <button id="badgeBtn" type="button">📷 Badge photo</button>
+                        <button id="galleryBtn" type="button">🖼️ Gallery</button>
+                        <label id="lookWrap" hidden><input type="checkbox" id="lookTick"> Describe the look (with consent)</label>
+                        <input type="text" id="readName" placeholder="Name" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="go">
+                        <button id="readBtn" type="button">Read</button>
+                        <span id="readMsg" class="note" role="status" aria-live="polite"></span>
+                        <input type="file" id="badgeCam" accept="image/jpeg,image/*" capture="environment" hidden>
+                        <input type="file" id="badgeFile" accept="image/jpeg,image/*" hidden>
+                    </div>
+                </div>
                 <div class="panel" id="p-checks">
                     <h3>Bring-up checks <small id="checkCount"></small></h3>
                     <table class="feed checks"><tbody id="checkRows"></tbody></table>
@@ -135,6 +245,9 @@
                     <div class="row"><textarea id="sayText" rows="2" placeholder="Text for the fish to say (a whole performance: voice and motors)"></textarea>
                         <button id="sayBtn" type="button">Speak</button></div>
                     <label class="row"><input type="checkbox" id="waitTick"> Wait to speak (replies stay in the box)</label>
+                    <h3>Phone microphone <small>off by default; asks for permission; needs the https address</small></h3>
+                    <label class="row"><input type="checkbox" id="phoneMic"> Record with this phone's microphone (the hold button and the remote)</label>
+                    <span id="phoneMicMsg" class="note"></span>
                     <h3>Canned phrases <small>speaker test: audio only, already rendered, no motors</small></h3>
                     <div id="cannedRows" class="btns"></div>
                     <span id="voiceMsg" class="msg"></span>
@@ -167,7 +280,8 @@
                     <div class="kv" id="usbFacts"></div>
                     <h3>Service</h3>
                     <div class="kv" id="svcFacts"></div>
-                    <div class="row"><button id="restartBtn" type="button" class="danger">Restart fish-brain</button>
+                    <div class="row"><button id="armBtn2" type="button" class="arm">ARM</button>
+                        <button id="restartBtn" type="button" class="danger">Restart fish-brain</button>
                         <span id="restartMsg" class="msg"></span></div>
                     <div id="restartAsk" hidden>
                         <p>Restart the fish? It says goodbye, stops the motors and comes back in a few
@@ -183,6 +297,12 @@
                     <table class="feed"><tbody id="cfgRows"></tbody></table>
                 </div>
                 <div class="panel" id="p-clients" hidden>
+                    <h3>This phone</h3>
+                    <div class="kv" id="phoneFacts"></div>
+                    <div class="row">
+                        <label><input type="checkbox" id="buzzTick" checked> Vibrate on listen, speak, verdict, error</label>
+                        <label><input type="checkbox" id="stillTick"> No idle animation</label>
+                    </div>
                     <h3>Pages</h3>
                     <div class="kv" id="clientFacts"></div>
                     <h3>Actions and refused requests</h3>
@@ -207,6 +327,11 @@
                through Python: they are in the journal only.</p>
         </section>
     </main>
+    <!-- Within the thumb's reach: a new visitor, and the backup for the remote's button. -->
+    <nav id="thumbBar">
+        <button id="visitNew" type="button" hidden>✨ Nuevo visitante</button>
+        <button id="pttButton" type="button">🎙 Hold to talk</button>
+    </nav>
     <div id="toast" role="status" aria-live="polite" hidden></div>
     <script src="/debug.js"></script>
 </body>

@@ -106,3 +106,46 @@ def test_every_path_the_page_posts_to_is_routed():
     assert {"/visit", "/cues"} <= paths
     for path in paths:
         assert f'"{path}"' in viz, path
+
+
+# --- the operator's page (debug.html/debug.js, ADR 0011) ---
+
+def test_every_id_the_operator_page_looks_up_any_way_exists():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    html = (WEB_DIR / "debug.html").read_text(encoding="utf-8")
+    wanted = set(re.findall(r'(?:\$|getElementById)\(\s*"([\w-]+)"\s*\)', js))
+    wanted |= set(re.findall(r'querySelector\(\s*"#([\w-]+)"', js))
+    have = set(re.findall(r'\bid="([\w-]+)"', html))
+    assert {"hatBox", "pttButton", "visitNew", "cVisit", "badgeCam"} <= wanted
+    assert sorted(wanted - have) == []
+    for tab in re.findall(r'data-col="([\w-]+)"', html):
+        assert f'id="{tab}"' in html, tab
+
+
+def test_every_path_the_operator_page_calls_is_routed():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    viz = (WEB_DIR.parent / "viz.py").read_text(encoding="utf-8")
+    actions = (WEB_DIR.parent / "debug_actions.py").read_text(encoding="utf-8")
+    paths = set(re.findall(r'(?:post|api|fetch|sendBeacon|addModule|EventSource)\(\s*"(/[\w./]+)"', js))
+    assert {"/visit", "/cues", "/ptt", "/badge", "/reading", "/speak", "/wait", "/debug/state"} <= paths
+    for path in paths:
+        assert f'"{path}"' in viz or f'"{path}"' in actions, path
+
+
+def test_the_visit_cues_on_the_operator_page_are_the_ones_the_host_takes():
+    from fish_brain.visit import CUE_CHOICES, CUE_TEXT, CUE_TEXT_MAX
+    html = (WEB_DIR / "debug.html").read_text(encoding="utf-8")
+    panel = html[html.index('id="p-visit"'):html.index('id="cRead"')]
+    pairs = {(re.search(r'data-cue="([^"]+)"', t).group(1), re.search(r'data-val="([^"]+)"', t).group(1))
+             for t in re.findall(r'<button[^>]*\bclass="cue"[^>]*>', panel)}
+    assert pairs == {(k, v) for k, vals in CUE_CHOICES.items() for v in vals}
+    inputs = re.findall(r'<input[^>]*\bdata-cue="([^"]+)"[^>]*>', panel)
+    assert sorted(inputs) == sorted(CUE_TEXT)
+    for tag in re.findall(r"<input[^>]*\bdata-cue=[^>]*>", panel):
+        assert int(re.search(r'maxlength="(\d+)"', tag).group(1)) <= CUE_TEXT_MAX
+    assert re.search(r'<div[^>]*id="cVisit"[^>]*\bhidden', panel)
+
+
+def test_the_operator_page_never_transitions_a_property_list():
+    css = re.sub(r"/\*.*?\*/", "", (WEB_DIR / "debug.css").read_text(encoding="utf-8"), flags=re.S)
+    assert not re.findall(r"transition-property\s*:", css)

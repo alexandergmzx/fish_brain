@@ -1,11 +1,15 @@
-/* The desktop debug view (docs/debug.md).
+/* The operator's page (docs/debug.md, ADR 0011): the debug view on a desktop or on his phone,
+ * with the drawn hat showing what the fish is doing.
  *
  * One store, one stream, one render pass per animation frame for the parts that changed.
- *   GET /debug/state        the slow state, every 5 s and after an action
+ *   GET /debug/state        the slow state, every 5 s while the page is shown and after an action
  *   GET /debug/events       every record the fish keeps (log lines, keys, turns, lines sent,
- *                           the page's own events), replayed from the start on connect
- *   POST /debug/...         the tests, the arm, STOP
- * Text from the fish only ever enters the page through textContent.
+ *                           the page's own events); a first load gets only the last ones
+ *   POST /debug/...         the tests, the arm, STOP;  /visit /cues /badge /reading /ptt /speak
+ *                           /wait /micstate /utterance: the operator's tools
+ * Text from the fish only ever enters the page through textContent. Records replayed on
+ * connect only set state (the visit, the last lines); what moves the hat, buzzes the phone or
+ * starts a recording runs only for records that arrive live (S.caughtUp).
  */
 (() => {
   "use strict";
@@ -83,17 +87,74 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { t.hidden = true; }, ms || 6000);
   }
+  // A block that fails to start (a missing element, a browser without a feature) leaves a
+  // stub: the page, STOP above all, keeps working.
+  function guard(name, make, stub) {
+    try { return make(); } catch (e) { console.error("[page] " + name + " is off:", e); return stub; }
+  }
+  const PHONE = matchMedia("(max-width: 700px)");
+
+  // ---- ARM and STOP: wired first, so nothing below can take them down ------------------------
+  let armTick = null;
+  function setArmed(seconds) {
+    const was = performance.now() < S.armedUntil;
+    S.armedUntil = seconds > 0 ? performance.now() + seconds * 1000 : 0;
+    const on = seconds > 0;
+    if (on !== was || !on) {
+      document.body.classList.toggle("armed", on);
+      $("armBar").style.animationDuration = on ? seconds + "s" : "";
+    }
+    clearInterval(armTick);
+    const paint = () => {
+      const left = Math.max(0, Math.round((S.armedUntil - performance.now()) / 1000));
+      $("armBtn").textContent = left ? "ARMED 0:" + String(left).padStart(2, "0") : "ARM locked";
+      $("armBtn2").textContent = left ? "ARMED 0:" + String(left).padStart(2, "0") : "ARM";
+      document.title = (left ? "ARMED · " : "") + "Sombrero";
+      if (!left) { clearInterval(armTick); document.body.classList.remove("armed"); mark("panels"); }
+    };
+    paint();
+    if (on) armTick = setInterval(paint, 500);
+    mark("panels");
+  }
+  async function toggleArm() {
+    const out = await post("/debug/arm", { on: !(performance.now() < S.armedUntil) });
+    if (out.ok) setArmed(out.armed_s || 0);
+  }
+  $("armBtn").addEventListener("click", toggleArm);
+  $("armBtn2").addEventListener("click", toggleArm);
+  async function stop() {
+    const b = $("stopBtn");
+    b.textContent = "STOP…";
+    const out = await post("/debug/stop", {});
+    setArmed(0);
+    b.textContent = out.status === 200 && out.ok ? "STOP sent " + new Date().toLocaleTimeString("en-GB")
+                                                  : "NOT DELIVERED" + (out.error ? " (" + out.error + ")" : "");
+    if (out.speaking) msg($("motorMsg"), "STOP sent; the fish is speaking: its next pulse moves the mouth again until the phrase ends", 10000);
+    setTimeout(() => { b.textContent = "STOP"; }, 4000);
+    refresh();
+  }
+  $("stopBtn").addEventListener("click", stop);
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("restartAsk").hidden = true; stop(); } });
+
+
+
   // Which tab explains a part of the fish (hints and chips name the old panel).
   const TAB_OF = { checks: "checks", inputs: "live", motors: "live", model: "model", cloud: "model",
                    voice: "voice", switches: "switches", board: "system", config: "system", clients: "system" };
 
   // ---- the stream ------------------------------------------------------------------------------
+  // One id per load: a reconnect replaces this page's own stream on the board instead of
+  // waiting for its dead socket to free one of the four places.
+  const PAGE = Math.random().toString(36).slice(2, 10);
   let es = null, lastMsgAt = 0;
   function connect() {
     if (es) { try { es.close(); } catch (_) {} }
+    if (document.hidden) { es = null; return; }   // resume() opens it again
     const q = new URLSearchParams();
     if (TOKEN) q.set("token", TOKEN);
+    q.set("page", PAGE);
     if (S.boot && S.lastSeq) q.set("since", S.boot + "-" + S.lastSeq);
+    else q.set("tail", "1500");                   // a first load: the last records, not every ring
     es = new EventSource("/debug/events" + (q.toString() ? "?" + q : ""));
     es.onopen = () => { S.connected = true; lastMsgAt = performance.now(); mark("bar"); };
     es.onerror = () => { S.connected = false; mark("bar"); checkToken(); };
@@ -105,8 +166,23 @@
     };
   }
   setInterval(() => {                           // a stream that went quiet (sleep, network): reopen
+    if (document.hidden) return;
     if (!es || es.readyState === EventSource.CLOSED || performance.now() - lastMsgAt > 25000) connect();
   }, 5000);
+  // The server's clock against this one, from records that arrive live: each sample is at most
+  // the true offset (a record is never received before it is made), so the largest is close.
+  const offs = [];
+  function sampleClock(r) {
+    if (!r.t) return;
+    offs.push(r.t - Date.now() / 1000);
+    if (offs.length > 64) offs.shift();
+    S.off = Math.max(...offs);
+  }
+  // How long ago the fish made a record, in ms (0..400): a reply's mouth starts in step.
+  function ageOf(r) {
+    if (!r.t || S.off === undefined) return 0;
+    return Math.max(0, Math.min(400, (Date.now() / 1000 + S.off - r.t) * 1000));
+  }
 
   function take(r) {
     if (r.kind === "hb") return;
@@ -128,18 +204,20 @@
     }
     if (r.seq) {
       if (r.seq <= S.lastSeq) return;            // already have it (a replay after a reconnect)
-      if (S.lastSeq && r.seq > S.lastSeq + 1 && r.seq - S.lastSeq < 100000) S.missed += r.seq - S.lastSeq - 1;
+      if (S.caughtUp && S.lastSeq && r.seq > S.lastSeq + 1 && r.seq - S.lastSeq < 100000) S.missed += r.seq - S.lastSeq - 1;
       S.lastSeq = Math.max(S.lastSeq, r.seq);
     }
+    const live = S.caughtUp;
+    if (live) sampleClock(r);
     switch (r.kind) {
       case "log": push(S.log, r, CAP.log); mark("log"); break;
       case "key": push(S.keys, r, CAP.key); mark("keys"); break;
       case "press": S.presses[r.dev + "|" + r.key] = r; mark("keys"); break;
-      case "turn": push(S.turns, r, CAP.turn); S.live = ""; mark("turns", "pipe"); soon(); break;
+      case "turn": push(S.turns, r, CAP.turn); mark("turns", "pipe"); soon(); if (live) fish.turnEnded(r); break;
       case "perf": S.perf = r; mark("motors"); break;
-      case "tx": push(S.tx, r, CAP.tx); if (S.caughtUp) fish.line(r); mark("tx"); break;
+      case "tx": push(S.tx, r, CAP.tx); if (live) fish.line(r); mark("tx"); break;
       case "level": S.levels.push(r.rms); if (S.levels.length > 200) S.levels.shift();
-                    S.live = "recording"; mark("pipe"); wakeLevel(); break;
+                    if (live) fish.listening(); mark("pipe"); wakeLevel(); break;
       case "action": case "http": push(S.acts, r, CAP.act); mark("clients"); break;
       case "llm": case "stt": case "tts": case "vision": push(S[r.kind], r, 50); mark("model"); break;
       case "visitor":                              // a reading started: the earlier visitor's records go
@@ -147,34 +225,133 @@
         mark("model"); break;
       case "page": {
         const ev = r.ev || {};
-        if (ev.type === "listen") S.live = ev.ready ? "waiting" : (S.live === "recording" ? "thinking" : S.live);
-        else if (ev.type === "stt" && ev.role === "user") S.live = "thinking";
-        else if (ev.type === "speak" && ev.filler) { if (S.caughtUp) fish.speak(ev); }   // the turn still waits
-        else if (ev.type === "speak") { if (S.caughtUp) fish.speak(ev); S.live = "speaking"; setTimeout(() => { if (S.live === "speaking") { S.live = "waiting"; mark("pipe"); } }, (ev.duration_ms || 0) + 300); }
+        switch (ev.type) {
+          case "listen": hostListening = ev.ready !== false; if (live) fish.listen(!!ev.ready); break;
+          case "stt":
+            if (ev.role === "user") { $("heardLine").textContent = ev.text ? "heard: " + ev.text : ""; if (live) fish.heard(ev.text || ""); }
+            else $("saidLine").textContent = ev.text ? "said: " + ev.text : "";
+            break;
+          case "speak": if (live) fish.speak(ev, ageOf(r), r.t); break;
+          case "visit": S.visit = ev; fish.visit(ev, live); visitRow.view(ev); mark("bar"); break;
+          case "draft": if (live) voiceDraft(ev.text || ""); break;
+          case "reading": if (live) fish.thinking("model"); break;
+          case "ptt": if (live) ptt.event(ev); break;
+        }
         mark("pipe");
         break;
       }
     }
   }
 
-  // ---- the fish: the sprite follows the reply, the lamps the lines really sent ----------------
-  // The same rules as the phone page (fish.js): one whole-fish PNG per (neck, mouth, tail);
-  // the mouth is the reply's loudness track through a critically damped spring; a NECK line
-  // with one direction holds or returns the head, a chain is a passing window; TAIL flaps.
-  const fish = (() => {
-    const cv = $("fish"), ctx = cv.getContext("2d");
-    const imgs = new Map();
-    const name = (n, m, t) => "neck" + (n ? "Out" : "Rest") + "_mouth" + m + "_tail" + (t ? "Flap" : "Rest") + ".png";
-    for (let n = 0; n < 2; n++) for (let m = 0; m < 4; m++) for (let t = 0; t < 2; t++) {
-      const im = new Image();
-      im.onload = () => { imgs.set(name(n, m, t), im); wake(); };
-      im.src = "/img/" + name(n, m, t);
-    }
+  // ---- the hat: what the fish is doing, at a glance -------------------------------------------
+  // The drawing is the old face's (svg#hat): the mouth follows the reply's loudness track through
+  // a critically damped spring and lifts the brows; a NECK stroke in one direction holds or
+  // returns the tip, a chain is a passing window; TAIL wags the brim; the burble (a sound with an
+  // empty track) perks the tip. Around it: a pose and a colour for what the fish is doing, the
+  // visit's stage, a shake when a turn dies, and lamps for every line the link really sent.
+  let hostListening = true;
+  const HOUSE = { Gryffindor: "gryffindor", Hufflepuff: "hufflepuff", Ravenclaw: "ravenclaw", Slytherin: "slytherin" };
+  const DIED_IN = ["the trigger", "the microphone", "speech-to-text", "the model", "the voice", "the speaker", "the motors"];
+  const fish = guard("hat", () => {
+    const box = $("hatBox"), mouthEl = $("mouth"), lipLower = $("lip-lower"), brows = $("brows"),
+          tipBend = $("tip-bend"), brimParts = [$("brim"), $("brim-front"), $("brim-fold")];
     const mouth = { value: 0, vel: 0 };
-    let track = null, clock0 = 0, trackEnd = 0, windows = [], neck = [], running = false, last = 0;
-    function speak(ev) {
-      const age = Math.max(0, Number(ev.age_ms) || 0), now = performance.now();
-      if (Array.isArray(ev.mouth) && ev.mouth.length && age <= ev.mouth[ev.mouth.length - 1][0]) {
+    const tip = { value: 0, vel: 0, k: 40, d: 7 }, brim = { value: 0, vel: 0, k: 90, d: 19 };
+    const shown = { m: -1, tip: -1, brim: -1 };
+    let track = null, clock0 = 0, trackEnd = 0, windows = [], neck = [], perkUntil = 0;
+    let running = false, last = 0, lastDraw = 0;
+    // What the fish is doing: waiting | listening | thinking | speaking (offline is an overlay).
+    const ST = { state: "waiting", since: performance.now(), sub: "", speakUntil: 0 };
+    let tick = null, errTimer = null, houseTimer = null, stillMode = false;
+
+    function stepFree(sp, target, dt) {
+      sp.vel += (-sp.k * (sp.value - target) - sp.d * sp.vel) * dt;
+      sp.value += sp.vel * dt;
+    }
+    function draw(m, now) {
+      const mr = Math.round(m * 200) / 200;
+      if (mr !== shown.m) {
+        shown.m = mr;
+        mouthEl.setAttribute("d", `M214,338 Q302,${(328 - 4 * mr).toFixed(1)} 396,336 Q302,${(346 + 64 * mr).toFixed(1)} 214,338 Z`);
+        lipLower.setAttribute("d", `M224,346 Q302,${(354 + 66 * mr).toFixed(1)} 386,344`);
+        brows.setAttribute("transform", `translate(0 ${(-7 * mr).toFixed(2)})`);
+      }
+      const tr = Math.round(tip.value * 400) / 400;
+      if (tr !== shown.tip) { shown.tip = tr; tipBend.setAttribute("transform", `rotate(${(24 * tr).toFixed(2)} 316 150)`); }
+      const a = Math.round(3.5 * brim.value * Math.sin(now * 0.018) * 50) / 50;
+      if (a !== shown.brim) { shown.brim = a; for (const part of brimParts) part.setAttribute("transform", `rotate(${a} 300 415)`); }
+    }
+    function level(now) {
+      if (!track) return 0;
+      const t = now - clock0;
+      if (t > trackEnd + 150) { track = null; return 0; }
+      let v = 0;
+      for (const [at, lv] of track) { if (at <= t) v = lv; else break; }
+      return Math.min(1, v * 2.5);
+    }
+    const active = (ch, now) => windows.some((w) => w.ch === ch && now >= w.start && now < w.end);
+    function neckOut(now) { let out = false; for (const e of neck) { if (e.start <= now) out = e.out; else break; } return out || active("NECK", now); }
+    const moving = (now) => now < perkUntil || Math.abs(tip.value) > 0.005 || Math.abs(tip.vel) > 0.01 ||
+                            Math.abs(brim.value) > 0.005 || Math.abs(brim.vel) > 0.01;
+    function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      const f = -104 * (mouth.value - level(now)) - 20 * mouth.vel;
+      mouth.vel += f * dt; mouth.value = Math.max(0, Math.min(1, mouth.value + mouth.vel * dt));
+      stepFree(tip, neckOut(now) ? 1 : now < perkUntil ? 0.6 : 0, dt);
+      stepFree(brim, active("TAIL", now) ? 1 : 0, dt);
+      windows = windows.filter((w) => now < w.end + 50);
+      if (now - lastDraw >= 30) { lastDraw = now; draw(mouth.value, now); }   // ~30 fps is plenty, even at 120 Hz
+      const busy = track || mouth.value > 0.01 || windows.length || neck.some((e) => e.start > now) || moving(now);
+      if (busy) requestAnimationFrame(frame); else { draw(0, now); running = false; }   // asleep when nothing moves
+    }
+    function wake() { if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); } }
+
+    // ---- what it is doing -----------------------------------------------------------------------
+    function buzz(pattern) {
+      try { if ($("buzzTick").checked && navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(pattern); } catch (_) {}
+    }
+    function budgetS() {
+      const rows = Array.isArray((S.state || {}).config) ? S.state.config : [];
+      const on = rows.find((r) => r.section === "filler" && r.field === "enabled");
+      const t = rows.find((r) => r.section === "filler" && r.field === "turn_timeout_s");
+      return on && on.value === false ? 0 : (t ? Number(t.value) : 12);
+    }
+    function set(state, sub) {
+      const was = ST.state;
+      if (state === was && (sub === undefined || sub === ST.sub)) return;
+      if (state !== was) ST.since = performance.now();
+      ST.state = state;
+      if (sub !== undefined) ST.sub = sub;
+      S.live = state === "listening" ? "recording" : state === "waiting" ? "waiting" : state;
+      for (const c of ["waiting", "listening", "thinking", "speaking"]) box.classList.toggle("st-" + c, c === state);
+      if (state !== was) {
+        const bar = $("budgetBar"), b = budgetS();
+        bar.classList.remove("run");
+        if (state === "thinking" && b) { void bar.offsetWidth; bar.style.animationDuration = b + "s"; bar.classList.add("run"); }
+        if (state === "listening") buzz(25);
+        if (state === "speaking") buzz([25, 60, 25]);
+        if (state === "speaking") { box.classList.remove("kick"); void box.offsetWidth; box.classList.add("kick"); }
+      }
+      clearInterval(tick);
+      if (state === "thinking") tick = setInterval(() => paint(), 200);
+      paint();
+      mark("pipe");
+    }
+    function listening() { set("listening", ""); }
+    function listen(ready) {
+      if (ready) { if (ST.state !== "speaking") set("waiting", ""); }
+      else if (ST.state !== "speaking") set("thinking", "hearing");
+    }
+    function heard(text) {
+      if (text.startsWith("…")) set("waiting", "");      // nothing usable was heard
+      else set("thinking", "model");
+    }
+    function thinking(sub) { set("thinking", sub); }
+    function speak(ev, age, t) {
+      const now = performance.now(), dur = ev.duration_ms || 0;
+      const quiet = Array.isArray(ev.mouth) && ev.mouth.length === 0;     // the burble: a sound, no speech
+      if (quiet) perkUntil = now - age + dur;
+      else if (Array.isArray(ev.mouth) && ev.mouth.length && age <= ev.mouth[ev.mouth.length - 1][0]) {
         track = ev.mouth; clock0 = now - age; trackEnd = track[track.length - 1][0];
       }
       for (const [tMs, ch, body] of ev.gestures || []) {
@@ -187,31 +364,89 @@
       }
       neck.sort((a, b) => a.start - b.start);
       wake();
+      if (!ev.filler && !quiet) {                       // the reply itself (fillers: still thinking)
+        set("speaking", "");
+        ST.speakUntil = now - age + dur;
+        setTimeout(() => { if (ST.state === "speaking" && performance.now() >= ST.speakUntil) set(hostListening ? "waiting" : "thinking", ""); }, Math.max(0, dur - age) + 300);
+      }
+      if (!quiet && Array.isArray(ev.mouth) && ev.mouth.length) checkMotor(t, dur);
     }
-    function level(now) {
-      if (!track) return 0;
-      const t = now - clock0;
-      if (t > trackEnd + 150) { track = null; return 0; }
-      let v = 0;
-      for (const [at, lv] of track) { if (at <= t) v = lv; else break; }
-      return Math.min(1, v * 2.5);
+    // After a phrase with a mouth track: did the link send MOUTH lines in its window?
+    function checkMotor(t, dur) {
+      if (!t) return;
+      setTimeout(() => {
+        const from = t - 0.2, to = t + dur / 1000 + 0.5;
+        const lines = S.tx.filter((r) => r.t >= from && r.t <= to && /^MOUTH\b/i.test(String(r.line)));
+        const note = $("motorNote");
+        if (!lines.length) { note.textContent = "motor: no lines"; note.className = "note bad-text"; }
+        else if (lines.every((r) => r.flag)) { note.textContent = "motor: " + lines[0].flag; note.className = "note warn-text"; }
+        else { note.textContent = "motor: " + lines.length + " lines"; note.className = "note"; }
+      }, dur + 800);
     }
-    const active = (ch, now) => windows.some((w) => w.ch === ch && now >= w.start && now < w.end);
-    function neckOut(now) { let out = false; for (const e of neck) { if (e.start <= now) out = e.out; else break; } return out || active("NECK", now); }
-    function frame(now) {
-      const dt = Math.min(0.05, (now - last) / 1000); last = now;
-      const f = -104 * (mouth.value - level(now)) - 20 * mouth.vel;
-      mouth.vel += f * dt; mouth.value = Math.max(0, Math.min(1, mouth.value + mouth.vel * dt));
-      windows = windows.filter((w) => now < w.end + 50);
-      const m = Math.round(mouth.value * 3), n = neckOut(now) ? 1 : 0, t = active("TAIL", now) ? 1 : 0;
-      const im = imgs.get(name(n, m, t)) || imgs.get(name(0, m, 0)) || imgs.get(name(0, 0, 0));
-      ctx.clearRect(0, 0, cv.width, cv.height);
-      if (im) ctx.drawImage(im, 0, 0, cv.width, cv.height);
-      const busy = track || mouth.value > 0.01 || windows.length || neck.some((e) => e.start > now);
-      if (busy) requestAnimationFrame(frame); else running = false;   // asleep when nothing moves
+    function reconcile(mode) {                          // the slow state agrees, or puts it right
+      if (!mode) return;
+      const held = performance.now() - ST.since;
+      if (mode.recording && ST.state !== "listening") set("listening", "");
+      else if (mode.listening && !mode.recording && !mode.speaking && ST.state === "thinking" && held > 2000) set("waiting", "");
+      else if (mode.listening && !mode.recording && !mode.speaking && ST.state === "speaking" && performance.now() > ST.speakUntil + 1000) set("waiting", "");
+      else if (mode.listening && !mode.recording && !mode.speaking && ST.state === "listening" && held > 2000) set("waiting", "");
     }
-    function wake() { if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); } }
-
+    // The visit: the stage shows on the band and in the face; a house that appears live is
+    // revealed (the house's colour and name for 10 s).
+    let lastVisit = null;
+    function visit(v, live) {
+      for (let n = 1; n <= 4; n++) box.classList.toggle("s" + n, v.stage === n);
+      box.classList.toggle("sdone", v.stage > v.of);
+      const prev = lastVisit; lastVisit = v;
+      if (live && v.house && prev && prev.n === v.n && !prev.house) reveal(v.house);
+    }
+    function reveal(house) {
+      const key = HOUSE[house] || "";
+      for (const k of Object.values(HOUSE)) box.classList.toggle("h-" + k, k === key);
+      box.classList.remove("reveal"); void box.offsetWidth; box.classList.add("reveal");
+      $("hatHouse").textContent = "¡" + house + "!";
+      $("hatHouse").hidden = false;
+      buzz([40, 40, 40, 40, 40, 40, 120]);
+      clearTimeout(houseTimer);
+      houseTimer = setTimeout(() => { $("hatHouse").hidden = true; box.classList.remove("reveal"); for (const k of Object.values(HOUSE)) box.classList.remove("h-" + k); }, 10000);
+    }
+    // A turn that died: a shake and where it died; a turn that heard nothing: amber, no shake.
+    function turnEnded(t) {
+      const o = t.outcome || "";
+      const hard = /^timeout:/.test(o) || ["offline", "misconfigured", "error", "mic error", "read: no signal"].includes(o) || /playback failed/.test(o);
+      const soft = ["not understood", "silence", "too short", "empty reply", "dropped: speaking"].includes(o);
+      if (!hard && !soft) return;
+      let where = o;
+      if (hard) {
+        const dead = stagesOf(t).findIndex((x) => x.cls === "dead");
+        where = dead >= 0 ? "died in " + DIED_IN[dead] + " (" + o + ")" : o;
+        box.classList.remove("err"); void box.offsetWidth; box.classList.add("err");
+        buzz(300);
+      }
+      const e = $("hatErr");
+      e.textContent = hard ? where : "not understood: " + o;
+      e.className = hard ? "bad-text" : "warn-text";
+      e.hidden = false;
+      clearTimeout(errTimer);
+      errTimer = setTimeout(() => { e.hidden = true; box.classList.remove("err"); }, 8000);
+    }
+    function paint() {
+      const st = S.state || {}, be = st.backends || {};
+      const quiet = performance.now() - lastMsgAt > 15000;
+      const off = STILL === "offline" || (!STILL && (!S.connected || (quiet && !document.hidden && lastMsgAt > 0)));
+      box.classList.toggle("st-offline", off);
+      box.classList.toggle("no-net", be.online === false);
+      const w = $("fishState");
+      let word;
+      if (off) word = "NO STREAM";
+      else if (ST.state === "thinking") {
+        const s = (performance.now() - ST.since) / 1000, b = budgetS();
+        word = "THINKING " + s.toFixed(1) + " s" + (ST.sub ? " · " + ST.sub : "") + (b && s > b ? " · over budget" : "");
+      } else word = { waiting: (st.mode || {}).listening === false ? "BUSY" : "WAITING for a press", listening: "LISTENING", speaking: "SPEAKING" }[ST.state];
+      if (be.online === false) word += " · NO INTERNET";
+      w.textContent = word;
+      w.className = off ? "offline" : ST.state;
+    }
     // The lamps: lit for as long as the line it was sent drives the motor.
     const lamps = { MOUTH: $("lampMouth"), NECK: $("lampNeck"), TAIL: $("lampTail") }, timers = {};
     function line(r) {
@@ -227,17 +462,33 @@
       clearTimeout(timers[ch]);
       timers[ch] = setTimeout(() => lamp.classList.remove("lit", "hollow"), Math.max(160, ms));
     }
-    function state() {
-      const st = S.state || {}, mode = st.mode || {};
-      const word = !S.connected ? "offline" : track ? "speaking" : S.live || (mode.speaking ? "speaking" : mode.recording ? "recording" : mode.listening ? "waiting" : "busy");
-      const box = $("fishState");
-      box.textContent = word + (word === "waiting" ? " for a press" : "…");
-      box.className = word;
-      $("lampMouth").parentElement.classList.toggle("muted", !!(st.link || {}).muted);
-      if ((st.link || {}).muted) $("lastLine").textContent = "MOTORS MUTED: lines are dropped";
+    function state() {                                     // called on every render of the bar
+      const st = S.state || {}, link = st.link || {};
+      paint();
+      $("lampMouth").parentElement.classList.toggle("muted", !!link.muted);
+      if (link.muted) $("lastLine").textContent = "MOTORS MUTED: lines are dropped";
+      else if (link.health && link.health !== "ok" && !$("lastLine").textContent.includes("link")) {
+        $("lastLine").textContent = "link " + link.health + (link.mock ? " (mock)" : "") + " · " + $("lastLine").textContent;
+      }
     }
-    return { speak, line, state };
-  })();
+    // ?hat=<waiting|listening|thinking|speaking|offline>&mouth=0..1&house=<House>&stage=1..5: a
+    // still, for screenshots; the live state machine then stays out of the way.
+    const STILL = PARAMS.get("hat");
+    if (STILL) {
+      stillMode = true;
+      set(STILL === "offline" ? "waiting" : STILL, STILL === "thinking" ? "model" : "");
+      if (STILL === "offline") box.classList.add("st-offline");
+      const st = Number(PARAMS.get("stage")) || 0;
+      if (st) visit({ n: 1, stage: st, of: 4, house: null }, false);
+      if (PARAMS.get("house")) reveal(PARAMS.get("house"));
+      draw(Math.max(0, Math.min(1, Number(PARAMS.get("mouth")) || 0)), performance.now());
+    }
+    const api = { speak, line, state, listening, listen, heard, thinking, reconcile, visit, turnEnded,
+                  perk(ms) { perkUntil = performance.now() + ms; wake(); } };
+    if (stillMode) for (const k of ["listening", "listen", "heard", "thinking", "reconcile"]) api[k] = () => {};
+    return api;
+  }, { speak() {}, line() {}, state() {}, listening() {}, listen() {}, heard() {}, thinking() {},
+       reconcile() {}, visit() {}, turnEnded() {}, perk() {} });
 
   // ---- the slow state --------------------------------------------------------------------------
   let stateTimer = null;
@@ -248,14 +499,22 @@
       if (!r.ok) throw new Error(r.status);
       S.state = await r.json();
       S.stateAt = performance.now();
+      if (S.off === undefined && S.state.now) S.off = S.state.now - Date.now() / 1000;   // until live records refine it
       $("tokenGate").hidden = true;
       const armed = (S.state.mode || {}).armed_s || 0;
       setArmed(armed);
+      const page = S.state.page && !S.state.page.error ? S.state.page : {};
+      visitRow.status(page);
+      reader.status(page);
+      phoneMic.status(page);
+      if (page.visit && !S.visit) { S.visit = page.visit; fish.visit(page.visit, false); visitRow.view(page.visit); }
+      fish.reconcile(S.state.mode);
     } catch (_) { S.state = S.state || null; S.stateAt = 0; }
     mark("bar", "hints", "panels");
   }
   function soon() { clearTimeout(stateTimer); stateTimer = setTimeout(refresh, 400); }
-  setInterval(refresh, 5000);
+  let hiddenTicks = 0;
+  setInterval(() => { if (!document.hidden || ++hiddenTicks % 4 === 0) refresh(); }, 5000);   // 20 s when hidden
   async function checkToken() {
     try { if ((await api("/debug/state")).status === 403) $("tokenGate").hidden = false; } catch (_) {}
   }
@@ -272,16 +531,19 @@
     const all = now.has("all");
     const d = (n) => all || now.has(n);
     const run = (fn) => { try { fn(); } catch (e) { console.error(fn.name, e); } };   // one panel never stops the others
-    if (d("bar")) run(renderBar);
+    // On a phone only what is on screen is drawn; showTab() asks for everything again.
+    const col = (c) => !PHONE.matches || document.body.dataset.col === c;
+    const shown = (id) => !PHONE.matches || (col("colPanels") && !$("p-" + id).hidden);
+    if (d("bar")) { run(renderBar); run(renderBand); }
     if (d("bar") || d("pipe") || d("panels")) run(fish.state);
     if (d("hints")) run(renderHints);
-    if (d("pipe") || d("turns")) run(renderPipe);
-    if (d("turns")) run(renderTurns);
-    if (d("log")) run(renderLog);
-    if (d("panels") || d("keys")) run(renderInputs);
-    if (d("panels") || d("motors") || d("tx")) run(renderMotors);
+    if ((d("pipe") || d("turns")) && col("colTurns")) run(renderPipe);
+    if (d("turns") && col("colTurns")) run(renderTurns);
+    if (d("log") && col("colLog")) run(renderLog);
+    if ((d("panels") || d("keys")) && shown("inputs")) run(renderInputs);
+    if ((d("panels") || d("motors") || d("tx")) && shown("motors")) run(renderMotors);
     if (d("panels")) { run(renderVoice); run(renderCloud); run(renderBoard); run(renderConfig); run(renderChecks); run(renderSwitches); }
-    if (d("panels") || d("model")) run(renderModel);
+    if ((d("panels") || d("model")) && shown("model")) run(renderModel);
     if (d("panels") || d("clients")) run(renderClients);
   }
 
@@ -738,6 +1000,7 @@
   }
   $("cfgFilter").addEventListener("input", () => { renderConfig(); });
   function renderClients() {
+    kv($("phoneFacts"), phoneFacts());
     const c = (S.state || {}).clients || {};
     kv($("clientFacts"), [
       ["phone pages connected", (c.pages ?? "?") + " of " + (c.max ?? 8)],
@@ -912,60 +1175,381 @@
   }
   $("modelClear").addEventListener("click", () => { S.modelOnly = null; mark("model"); });
 
-  // ---- tabs, arm, STOP ---------------------------------------------------------------------------
-  function showTab(name) {
-    let panels = null;
-    for (const b of $("tabs").children) {
-      const on = b.dataset.tab === name;
-      b.classList.toggle("on", on);
-      if (on) panels = b.dataset.panels.split(" ");
+  // ---- the band: what he needs without scrolling -----------------------------------------------
+  function renderBand() {
+    const ago = lastMsgAt ? Math.round((performance.now() - lastMsgAt) / 1000) : null;
+    const a = $("hAgo");
+    a.textContent = ago === null ? "" : ago < 2 ? "now" : ago + " s ago";
+    a.className = "chip " + (ago === null ? "unknown" : ago > 15 ? "bad" : ago > 8 ? "warn" : "ok");
+    const v = S.visit, b = $("bandVisit");
+    b.hidden = !v || !v.stage;
+    if (v && v.stage) {
+      b.textContent = v.stage > v.of ? "Verdict: " + (v.house || "—") + (v.first ? " · " + v.first : "")
+                                     : "Stage " + v.stage + "/" + v.of + (v.first ? " · " + v.first : "");
+      b.className = "chip " + (v.stage > v.of ? "ok" : "warn");
     }
-    if (!panels) return showTab("checks");
-    for (const p of $("panels").children) p.hidden = !panels.includes(p.id.slice(2));
-    $("panels").scrollTop = 0;
-    try { localStorage.setItem("fishDebugTab", name); } catch (_) {}
+    const page = (S.state || {}).page || {};
+    const sec = $("chipSecure");
+    sec.hidden = !PHONE.matches && window.isSecureContext;
+    sec.textContent = window.isSecureContext ? "secure" : "http: no screen lock";
+    sec.className = "chip " + (window.isSecureContext ? "ok" : "warn");
+    if (!window.isSecureContext && page.tls_port) {
+      const u = new URL(location.href);
+      u.protocol = "https:"; u.port = String(page.tls_port); u.pathname = "/"; u.search = "";
+      sec.href = u.href;
+    }
+    else sec.removeAttribute("href");
+    wake.paint();
   }
-  $("tabs").addEventListener("click", (e) => { if (e.target.dataset && e.target.dataset.tab) showTab(e.target.dataset.tab); });
-  try { showTab(localStorage.getItem("fishDebugTab") || "checks"); } catch (_) { showTab("checks"); }
+  setInterval(() => { if (!document.hidden) renderBand(); }, 1000);
 
-  let armTick = null;
-  function setArmed(seconds) {
-    const was = performance.now() < S.armedUntil;
-    S.armedUntil = seconds > 0 ? performance.now() + seconds * 1000 : 0;
-    const on = seconds > 0;
-    if (on !== was || !on) {
-      document.body.classList.toggle("armed", on);
-      $("armBar").style.animationDuration = on ? seconds + "s" : "";
+  // ---- wait-to-speak: a draft lands in the Voice tab's box --------------------------------------
+  function voiceDraft(text) {
+    const box = $("sayText");
+    if (document.activeElement === box) return;          // never under the operator's fingers
+    box.value = text;
+    msg(null, "draft ready: Voice tab → Speak", 6000);
+    for (const b of $("tabs").children) if (b.dataset.tab === "voice") b.classList.add("flag");
+  }
+
+  // ---- the screen stays on (Screen Wake Lock: https only) ----------------------------------------
+  const wake = guard("wake", () => {
+    let lock = null, wanted = false;
+    async function ask() {
+      wanted = true;
+      if (!("wakeLock" in navigator) || document.hidden || lock) { paint(); return; }
+      try {
+        lock = await navigator.wakeLock.request("screen");
+        lock.addEventListener("release", () => { lock = null; paint(); });
+      } catch (_) { lock = null; }
+      paint();
     }
-    clearInterval(armTick);
-    const paint = () => {
-      const left = Math.max(0, Math.round((S.armedUntil - performance.now()) / 1000));
-      $("armBtn").textContent = left ? "ARMED 0:" + String(left).padStart(2, "0") : "ARM locked";
-      document.title = (left ? "ARMED · " : "") + "fish · debug";
-      if (!left) { clearInterval(armTick); document.body.classList.remove("armed"); mark("panels"); }
+    function paint() {
+      const c = $("chipScreen");
+      c.hidden = !PHONE.matches && !lock;
+      if (!("wakeLock" in navigator)) { c.textContent = "screen may sleep (http)"; c.className = "chip warn"; return; }
+      c.textContent = lock ? "screen on" : wanted ? "screen may sleep" : "tap: keep screen on";
+      c.className = "chip " + (lock ? "ok" : "warn");
+    }
+    window.addEventListener("pointerdown", () => { if (!lock) ask(); }, { passive: true });
+    return { ask, paint, held: () => !!lock };
+  }, { ask() {}, paint() {}, held: () => false });
+
+  // ---- hold to talk: the backup for the remote's button (POST /ptt; the board records) ----------
+  const ptt = guard("ptt", () => {
+    const btn = $("pttButton");
+    let down = false, needRelease = false, remoteHold = false, pointer = null;
+    function send(on) {
+      if (phoneMic.ready() && (on || phoneMic.holding())) { on ? phoneMic.begin() : phoneMic.end(); return; }
+      api("/ptt", { down: on }).catch(() => {});
+    }
+    function setPtt(on) {
+      if (!on) needRelease = false;
+      else if (needRelease) return;
+      if (on === down) return;
+      down = on;
+      btn.classList.toggle("held", on);
+      send(on);
+    }
+    // Leaving the page while holding must still release: a beacon is not cancelled as the
+    // page hides, a fetch can be.
+    function releaseNow() {
+      needRelease = false;
+      if (!down) return;
+      down = false;
+      btn.classList.remove("held");
+      if (phoneMic.holding()) { phoneMic.abort(); return; }
+      const url = "/ptt" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : "");
+      const body = new Blob([JSON.stringify({ down: false })], { type: "application/json" });
+      if (!(navigator.sendBeacon && navigator.sendBeacon(url, body))) api("/ptt", { down: false }).catch(() => {});
+    }
+    // One finger, captured: a drift, a scroll or a long press cannot cancel the hold silently.
+    btn.addEventListener("pointerdown", (e) => {
+      if (pointer !== null) return;
+      e.preventDefault();
+      pointer = e.pointerId;
+      try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+      setPtt(true);
+    });
+    for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) {
+      btn.addEventListener(t, (e) => { if (e.pointerId !== pointer) return; pointer = null; setPtt(false); });
+    }
+    btn.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
+    btn.addEventListener("contextmenu", (e) => e.preventDefault());
+    // The host's own word: it ended the press (the recording limit), or a remote's press is
+    // relayed to this page because the phone is the microphone.
+    function event(ev) {
+      if (ev.source) {
+        if (!phoneMic.ready()) { remoteHold = false; return; }
+        if (ev.held && !down) { remoteHold = true; setPtt(false); setPtt(true); }
+        else if (!ev.held && remoteHold) { remoteHold = false; setPtt(false); }
+      } else if (!ev.held) {
+        if (down) needRelease = true;
+        down = false;
+        btn.classList.remove("held");
+      }
+    }
+    return { event, releaseNow };
+  }, { event() {}, releaseNow() {} });
+
+  // ---- the badge photo and the typed name (ADR 0007): "¿Tú eres X?" -----------------------------
+  const reader = guard("reader", () => {
+    const cam = $("badgeCam"), file = $("badgeFile"), lookWrap = $("lookWrap"), lookTick = $("lookTick"),
+          name = $("readName"), note = $("readMsg"), badgeBtn = $("badgeBtn"), galleryBtn = $("galleryBtn"), readBtn = $("readBtn");
+    const LONG_EDGE = 1024;
+    let busy = false;
+    function say(text, cls) { note.textContent = text || ""; note.className = "note " + (cls || ""); }
+    function setBusy(on) { busy = on; for (const b of [badgeBtn, galleryBtn, readBtn]) b.disabled = on; }
+    // One decode: createImageBitmap honours the EXIF orientation and resizes; an older browser
+    // gets an Image and a canvas.
+    async function toJpeg(f) {
+      let w, h, source, bitmap = null, resized = null;
+      try {
+        bitmap = await createImageBitmap(f, { imageOrientation: "from-image" });
+        const sc = Math.min(1, LONG_EDGE / Math.max(bitmap.width, bitmap.height));
+        w = Math.max(1, Math.round(bitmap.width * sc)); h = Math.max(1, Math.round(bitmap.height * sc));
+        resized = sc < 1 ? await createImageBitmap(bitmap, { resizeWidth: w, resizeHeight: h, resizeQuality: "high" }) : bitmap;
+        source = resized;
+      } catch (_) {
+        source = await new Promise((ok, no) => {
+          const img = new Image();
+          img.onload = () => ok(img);
+          img.onerror = () => no(new Error("decode"));
+          img.src = URL.createObjectURL(f);
+        });
+        const sc = Math.min(1, LONG_EDGE / Math.max(source.naturalWidth, source.naturalHeight));
+        w = Math.max(1, Math.round(source.naturalWidth * sc)); h = Math.max(1, Math.round(source.naturalHeight * sc));
+      }
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      const g = c.getContext("2d");
+      g.imageSmoothingQuality = "high";
+      g.drawImage(source, 0, 0, w, h);
+      if (resized && resized !== bitmap) resized.close();
+      if (bitmap) bitmap.close();
+      if (source instanceof HTMLImageElement) URL.revokeObjectURL(source.src);
+      return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error("jpeg"))), "image/jpeg", 0.8));
+    }
+    async function sendBadge(f) {
+      if (!f || busy) return;
+      setBusy(true);
+      say("Reading the badge…", "busy");
+      fish.thinking("badge");
+      try {
+        const blob = await toJpeg(f);
+        const h = headers(false);
+        h["Content-Type"] = "image/jpeg";
+        if (lookTick.checked && !lookWrap.hidden) h["X-Fish-Look"] = "1";
+        const r = await fetch("/badge", { method: "POST", headers: h, body: blob });
+        let out = {};
+        try { out = await r.json(); } catch (_) {}
+        if (r.status === 409) say("The hat is busy", "bad-text");
+        else if (r.status === 503 && out.error === "offline") say("No internet to read the badge", "bad-text");
+        else if (r.status === 503) say("No badge reader: type the name", "bad-text");
+        else if (!r.ok) say("Could not read it: type the name", "bad-text");
+        else if (out.found) {
+          name.value = "";
+          const conf = { high: "sure", medium: "fairly sure", low: "unsure" }[out.confidence] || out.confidence;
+          say((out.first_name || out.name) + " · " + conf + " · the hat asks", out.confidence === "high" ? "" : "warn-text");
+        } else { say("Could not read it: type the name", "bad-text"); name.focus(); }
+      } catch (_) {
+        say("Could not send the photo", "bad-text");
+      } finally {
+        lookTick.checked = false;               // consent is per visitor
+        cam.value = ""; file.value = "";
+        setBusy(false);
+      }
+    }
+    async function sendName() {
+      const n = name.value.trim();
+      if (!n || busy) { name.focus(); return; }
+      setBusy(true);
+      say("Sending the name…", "busy");
+      const out = await post("/reading", { name: n });
+      if (out.status === 409) say("The hat is busy", "bad-text");
+      else if (out.status === 400) say("Type a name", "bad-text");
+      else if (!out.ok) say(out.status === 0 ? "No connection" : "Could not send the name", "bad-text");
+      else { say("Sent: the hat greets " + n, ""); name.value = ""; name.blur(); }
+      setBusy(false);
+    }
+    badgeBtn.addEventListener("click", () => cam.click());
+    galleryBtn.addEventListener("click", () => file.click());
+    cam.addEventListener("change", () => sendBadge(cam.files[0]));
+    file.addEventListener("change", () => sendBadge(file.files[0]));
+    readBtn.addEventListener("click", sendName);
+    name.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sendName(); } });
+    return {
+      status(page) {
+        lookWrap.hidden = !page.reading_look;
+        const off = page.reading === false;
+        badgeBtn.disabled = galleryBtn.disabled = off || busy;
+        badgeBtn.title = off ? "no badge reader" : "";
+      },
+      busy: () => busy,
     };
-    paint();
-    if (on) armTick = setInterval(paint, 500);
-    mark("panels");
-  }
-  $("armBtn").addEventListener("click", async () => {
-    const out = await post("/debug/arm", { on: !(performance.now() < S.armedUntil) });
-    if (out.ok) setArmed(out.armed_s || 0);
-  });
-  async function stop() {
-    const b = $("stopBtn");
-    b.textContent = "STOP…";
-    const out = await post("/debug/stop", {});
-    setArmed(0);
-    b.textContent = out.status === 200 && out.ok ? "STOP sent " + new Date().toLocaleTimeString("en-GB")
-                                                  : "NOT DELIVERED" + (out.error ? " (" + out.error + ")" : "");
-    if (out.speaking) msg($("motorMsg"), "STOP sent; the fish is speaking: its next pulse moves the mouth again until the phrase ends", 10000);
-    setTimeout(() => { b.textContent = "STOP"; }, 4000);
-    refresh();
-  }
-  $("stopBtn").addEventListener("click", stop);
-  window.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("restartAsk").hidden = true; stop(); } });
+  }, { status() {}, busy: () => false });
 
-  refresh();
-  connect();
+  // ---- the hat's visit: "Nuevo visitante" and the cues (visit.py) --------------------------------
+  // The server owns the cues: a lit chip is one the hat has not used yet, and the row draws the
+  // server's view (the POST /cues answer, the `visit` record) unless an edit of its own is on its way.
+  const visitRow = guard("visit", () => {
+    const row = $("cVisit"), btn = $("visitNew"), note = $("visitMsg"), used = $("visitSent");
+    const texts = [$("cueLleva"), $("cueNota")];
+    const chips = Array.from(row.querySelectorAll(".cue"));
+    let on = false, rev = 0, postedRev = 0, inflight = false, timer = 0;
+    let latest = null, lastN = -1, wantN = null, btnTimer = 0;
+    function say(text, cls) { note.textContent = text || ""; note.className = "note " + (cls || ""); }
+    function current() {
+      const out = {};
+      for (const c of chips) if (c.getAttribute("aria-pressed") === "true") out[c.dataset.cue] = c.dataset.val;
+      for (const t of texts) { const v = t.value.trim(); if (v) out[t.dataset.cue] = v; }
+      return out;
+    }
+    function view(v) {
+      if (!v) return;
+      if (v.n !== lastN) {
+        lastN = v.n;
+        if (wantN !== null && v.n >= wantN) { wantN = null; clearTimeout(btnTimer); btn.disabled = false; }
+      }
+      const who = v.first ? " · " + v.first : "";
+      $("visitState").textContent = !v.stage ? "no visitor"
+        : v.stage > v.of ? "verdict: " + (v.house || "—") + who : "stage " + v.stage + " of " + v.of + who;
+      const s = Object.values(v.sent || {});
+      used.textContent = s.length ? "used: " + s.join(" · ") : "";
+      if (rev !== postedRev || inflight || timer) { latest = v; return; }
+      latest = null;
+      const cues = v.cues || {};
+      for (const c of chips) c.setAttribute("aria-pressed", cues[c.dataset.cue] === c.dataset.val ? "true" : "false");
+      for (const t of texts) if (document.activeElement !== t) t.value = cues[t.dataset.cue] || "";
+    }
+    function edit(ms) { rev++; clearTimeout(timer); timer = setTimeout(() => { timer = 0; flush(); }, ms); }
+    async function flush() {
+      clearTimeout(timer); timer = 0;
+      if (inflight || rev === postedRev) return;
+      const at = rev;
+      inflight = true;
+      const out = await post("/cues", { cues: current() });
+      if (out.status === 0) {                       // no connection: try again shortly
+        say("No connection: the cue did not arrive", "bad-text");
+        timer = setTimeout(() => { timer = 0; flush(); }, 3000);
+      } else {
+        postedRev = at;                             // a refusal is not retried
+        if (out.ok) { say(""); latest = out.visit || latest; }
+        else if (out.status === 400) say("Cue refused", "bad-text");
+        else if (out.status === 403) say("No permission (token)", "bad-text");
+        else say("The visit is off", "bad-text");
+      }
+      inflight = false;
+      if (rev !== postedRev && !timer) flush();
+      else if (latest && !timer) view(latest);
+    }
+    for (const c of chips) {
+      c.addEventListener("click", () => {
+        const was = c.getAttribute("aria-pressed") === "true";
+        for (const o of chips) if (o.dataset.cue === c.dataset.cue) o.setAttribute("aria-pressed", "false");
+        c.setAttribute("aria-pressed", was ? "false" : "true");
+        edit(250);
+      });
+    }
+    for (const t of texts) {
+      t.addEventListener("input", () => { rev++; });          // sent when the field is left
+      t.addEventListener("change", () => { if (rev === postedRev) rev++; flush(); });
+      t.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); t.blur(); } });
+    }
+    btn.addEventListener("click", async () => {
+      if (btn.disabled || reader.busy()) return;
+      flush();
+      btn.disabled = true;
+      msg(null, "calling the hat…", 3000);
+      const out = await post("/visit", {});
+      if (out.ok) {
+        $("heardLine").textContent = ""; $("saidLine").textContent = "";
+        wantN = lastN + 1;                          // enabled again by the new visit's view
+        btnTimer = setTimeout(() => { wantN = null; btn.disabled = false; }, 3000);
+        return;
+      }
+      msg(null, out.status === 409 ? "refused: the hat is busy · wait until it finishes"
+              : out.status === 503 ? "refused: the visit is off" : out.status === 0 ? "no connection" : "refused: " + (out.error || out.status), 6000);
+      btn.disabled = false;
+    });
+    return {
+      status(page) { on = !!page.visit_enabled; row.hidden = !on; btn.hidden = !on; },
+      view, flush, on: () => on,
+    };
+  }, { status() {}, view() {}, flush() {}, on: () => false });
+
+  // ---- the phone's microphone: off unless he turns it on (see the Voice tab) ----------------------
+  let phoneMic = { status() {}, ready: () => false, holding: () => false, begin() {}, end() {}, abort() {}, hidden() {} };
+
+  // ---- coming back: the phone slept, the tab was hidden, the network returned ---------------------
+  function onHidden() {
+    ptt.releaseNow();
+    visitRow.flush();
+    phoneMic.hidden();
+    if (es) { try { es.close(); } catch (_) {} es = null; }   // frees the board's place at once
+    S.connected = false;
+  }
+  function resume() {
+    if (document.hidden) return;
+    refresh();
+    wake.ask();
+    if (!es || es.readyState === EventSource.CLOSED || performance.now() - lastMsgAt > 12000) connect();
+  }
+  document.addEventListener("visibilitychange", () => (document.hidden ? onHidden() : resume()));
+  window.addEventListener("pageshow", resume);
+  window.addEventListener("online", resume);
+  window.addEventListener("pagehide", () => ptt.releaseNow());
+
+  // ---- this phone's own facts, and two of its preferences ---------------------------------------
+  function phoneFacts() {
+    const st = getComputedStyle(document.documentElement);
+    return [
+      ["screen", innerWidth + " × " + innerHeight + " CSS px · DPR " + (devicePixelRatio || 1).toFixed(2)],
+      ["secure context", window.isSecureContext ? "yes" : "NO: use https for the screen lock and the microphone", window.isSecureContext ? "" : "bad-text"],
+      ["screen lock", wake.held() ? "held" : "not held"],
+      ["stream", (S.connected ? "live" : "down") + (lastMsgAt ? " · last record " + Math.round((performance.now() - lastMsgAt) / 1000) + " s ago" : "")],
+      ["page id", PAGE],
+    ];
+  }
+  for (const [id, key, cls] of [["buzzTick", "fishBuzz", null], ["stillTick", "fishStill", "still"]]) {
+    try { const v = localStorage.getItem(key); if (v !== null) $(id).checked = v === "1"; } catch (_) {}
+    const apply = () => { if (cls) document.body.classList.toggle(cls, $(id).checked); try { localStorage.setItem(key, $(id).checked ? "1" : "0"); } catch (_) {} };
+    $(id).addEventListener("change", apply);
+    apply();
+  }
+
+  // ---- tabs, arm, STOP ---------------------------------------------------------------------------
+  // A tab names panels (data-panels) or, on a phone only, a whole column (data-col: turns, log).
+  function showTab(name) {
+    let target = null;
+    for (const b of $("tabs").children) if (b.dataset.tab === name && (PHONE.matches || !b.dataset.col)) target = b;
+    if (!target) return showTab(PHONE.matches ? "visit" : "checks");
+    for (const b of $("tabs").children) b.classList.toggle("on", b === target);
+    document.body.dataset.col = target.dataset.col || "colPanels";
+    if (target.dataset.panels) {
+      const panels = target.dataset.panels.split(" ");
+      for (const p of $("panels").children) p.hidden = !panels.includes(p.id.slice(2));
+      $("panels").scrollTop = 0;
+    }
+    try { localStorage.setItem("fishDebugTab", name); } catch (_) {}
+    mark("all");
+  }
+  $("tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (b) showTab(b.dataset.tab); });
+  // On a phone the hat and the tabs sit above the columns (only one column shows at a time) and
+  // the pipeline goes to the top of the turns; on a desktop everything is where it was.
+  function place() {
+    if (PHONE.matches) {
+      $("phoneTop").append($("fishBox"), $("tabs"));
+      $("colTurns").prepend($("pipe"));
+    } else {
+      $("colTurns").prepend($("fishBox"));
+      $("colPanels").prepend($("tabs"));
+      document.querySelector("main").before($("pipe"));
+    }
+  }
+  place();
+  PHONE.addEventListener("change", () => { place(); showTab(localStorage.getItem("fishDebugTab") || "visit"); });
+  try { showTab(localStorage.getItem("fishDebugTab") || (PHONE.matches ? "visit" : "checks")); } catch (_) { showTab("checks"); }
+
+  refresh().then(() => connect());
 })();

@@ -1,6 +1,6 @@
-/* The desktop debug view. The dark colours are the operator sheet's (fish.css); values are
-   monospace; a status is always a word and a shape as well as a colour. Motion rule as on the
-   phone page: only `transform` and `opacity` are animated or transitioned (a test holds it). */
+/* The operator's page: the debug view on a desktop or on his phone, with the drawn hat. Values
+   are monospace; a status is always a word and a shape as well as a colour. Motion rule: only
+   `transform` and `opacity` are animated or transitioned (a test holds it). */
 :root {
     --hoja: #14181d; --hoja-campo: #0c0f13; --hoja-linea: #3a4552; --hoja-texto: #e8edf2;
     --hoja-tenue: #9aa7b4; --hoja-bien: #7ee2a8; --hoja-mal: #ff8a8a; --hoja-aviso: #ffd166;
@@ -230,13 +230,80 @@ details.bad > summary { color: var(--hoja-mal); }
 #hintLine { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #hintBar button { padding: 0 10px; }
 #fishBox { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-bottom: 1px solid var(--hoja-linea); background: var(--hoja-campo); }
-#fish { flex: none; width: 190px; height: auto; border-radius: 10px; background: linear-gradient(180deg, #8fe6f0, #3fc9e6); }
-.fishside { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-#fishState { font: 700 17px/1.2 var(--mono); }
-#fishState.speaking, #fishState.recording { color: var(--hoja-bien); }
-#fishState.thinking { color: var(--hoja-aviso); }
-#fishState.offline { color: var(--hoja-mal); }
-.lamps { display: flex; gap: 6px; }
+.fishside { min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 6px; }
+#fishState { padding: 4px 8px; border-left: 6px solid var(--hoja-linea); font: 700 17px/1.2 var(--mono); }
+#fishState.listening { color: var(--hoja-bien); border-color: var(--hoja-bien); }
+#fishState.thinking { color: var(--hoja-aviso); border-color: var(--hoja-aviso); }
+#fishState.speaking { color: #8ab4ff; border-color: #8ab4ff; }
+#fishState.offline { color: var(--hoja-mal); border-color: var(--hoja-mal); }
+.warn-text { color: var(--hoja-aviso); }
+.said { font: 13px/1.35 var(--ui); color: var(--hoja-texto); overflow-wrap: anywhere; }
+.said:empty, #motorNote:empty { display: none; }
+#heardLine { color: #9fd0ff; }
+#hatErr { font: 700 14px/1.3 var(--mono); }
+/* the thinking budget, draining: one linear transform, its duration set by the script */
+#budget { height: 4px; border-radius: 2px; background: var(--hoja-linea); overflow: hidden; }
+#budgetBar { display: block; height: 100%; background: var(--hoja-aviso); transform: scaleX(0); transform-origin: 0 50%; }
+#budgetBar.run { animation: drain 12s linear 1 forwards; }
+
+/* ---- the hat: idle life in CSS, the mouth, tip and brim from the script ------------------------- */
+#hatBox {
+    position: relative;
+    flex: none;
+    display: flex;
+    justify-content: center;
+    width: 220px;
+    padding: 4px 6px 0;
+    border-radius: 14px;
+    background: radial-gradient(ellipse 60% 55% at 50% 62%, rgba(255, 196, 120, 0.42), transparent 75%), linear-gradient(180deg, #2a2550, #1b1a3a);
+}
+#hat { display: block; width: 100%; height: auto; overflow: visible; }
+.perch, .perch-kick, .perch-fx { transform-origin: 50% 90%; }
+.perch { animation: respira 4.2s var(--sine) infinite alternate; }
+@keyframes respira { from { transform: translateY(0) scale(1, 1); } to { transform: translateY(-2px) scale(1.012, 1.018); } }
+#tip { transform-box: fill-box; transform-origin: 100% 100%; animation: cabecea 5.2s var(--sine) infinite alternate; }
+@keyframes cabecea { from { transform: rotate(-2.5deg); } to { transform: rotate(2deg); } }
+#eyes { transform-box: fill-box; transform-origin: 50% 60%; animation: parpadea 7s linear infinite; }
+@keyframes parpadea { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(0.12); } }
+/* poses go on the wrappers only: the script writes the attributes of the parts inside */
+#browsPose, #eyesPose, #tipPose { transform-box: fill-box; transform-origin: 50% 50%; transition: transform 0.45s var(--spring); }
+#tipPose { transform-origin: 100% 100%; }
+.perch-kick { transition: transform 0.5s var(--spring); }
+#hatBox.st-listening .perch-kick { transform: rotate(-3deg) scale(1.03); }
+#hatBox.st-listening #browsPose { transform: translateY(-9px); }
+#hatBox.st-listening #eyesPose { transform: scale(1.12); }
+#hatBox.st-thinking #eyesPose { transform: translate(6px, -7px) scaleY(0.8); }
+#hatBox.st-thinking #tipPose { animation: swirl 1.4s var(--sine) infinite alternate; }
+@keyframes swirl { from { transform: rotate(-7deg); } to { transform: rotate(9deg); } }
+#hatBox.kick .perch-kick { animation: kick 1.5s var(--sine) 1; }
+@keyframes kick {
+    0% { transform: rotate(0deg) scale(1, 1); } 12% { transform: rotate(3.2deg) scale(1.03, 0.97); }
+    32% { transform: rotate(-2.2deg) scale(0.99, 1.01); } 54% { transform: rotate(1.3deg) scale(1, 1); }
+    76% { transform: rotate(-0.6deg); } 100% { transform: rotate(0deg); }
+}
+/* the visit, Akinator-style: the face grows surer from the greeting to the verdict */
+#hatBox.s2 #eyesPose { transform: scaleY(0.78); }
+#hatBox.s3 #browsPose { transform: translateY(-4px) rotate(-5deg); }
+#hatBox.s3 #eyesPose { transform: scaleY(0.7); }
+#hatBox.s4 #browsPose, #hatBox.sdone #browsPose { transform: translateY(-6px); }
+#hatBox.s4 #eyesPose, #hatBox.sdone #eyesPose { transform: scale(1.08); }
+#hatBox.reveal .perch-fx { animation: reveal 1.2s var(--spring) 1; }
+@keyframes reveal { 0% { transform: scale(1); } 30% { transform: scale(1.14) rotate(-4deg); } 60% { transform: scale(0.97) rotate(2deg); } 100% { transform: scale(1); } }
+#hatBox.h-gryffindor { background: radial-gradient(ellipse 70% 60% at 50% 60%, rgba(220, 40, 40, 0.75), transparent 78%), linear-gradient(180deg, #4a1010, #2a0808); }
+#hatBox.h-hufflepuff { background: radial-gradient(ellipse 70% 60% at 50% 60%, rgba(255, 210, 40, 0.75), transparent 78%), linear-gradient(180deg, #3a3010, #1c1608); }
+#hatBox.h-ravenclaw { background: radial-gradient(ellipse 70% 60% at 50% 60%, rgba(60, 110, 230, 0.8), transparent 78%), linear-gradient(180deg, #102040, #0a1228); }
+#hatBox.h-slytherin { background: radial-gradient(ellipse 70% 60% at 50% 60%, rgba(40, 170, 90, 0.75), transparent 78%), linear-gradient(180deg, #0e3020, #081a10); }
+#hatHouse { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font: 800 20px/1 var(--ui); color: #fff; text-shadow: 0 2px 6px #000; animation: rowIn 0.4s ease 1; }
+/* a turn that died shakes it; no stream slumps it and greys it */
+#hatBox.err .perch-fx { animation: shake 0.6s linear 2; }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-7px) rotate(-3deg); } 40% { transform: translateX(6px) rotate(2deg); } 60% { transform: translateX(-4px); } 80% { transform: translateX(3px); } }
+#hatBox.st-offline .perch-kick { transform: translateY(16px) rotate(7deg) scale(0.95); }
+#hatBox.st-offline #hat { opacity: 0.45; }
+#hatBox.no-net::after { content: "NO INTERNET"; position: absolute; top: 4px; left: 4px; padding: 1px 6px; border-radius: 6px; background: var(--hoja-mal); color: var(--hoja); font: 700 11px var(--mono); }
+body.still .perch, body.still #tip, body.still #eyes, body.still #tipPose { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .perch, #tip, #eyes, #tipPose { animation: none !important; } }
+.lamps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+#motorNote { margin: 0; }
 .lamp { padding: 3px 9px; border: 2px solid var(--hoja-linea); border-radius: 999px; font: 700 11px/1.3 var(--mono); color: var(--hoja-tenue); opacity: 0.55; transition: opacity 0.25s ease, transform 0.2s var(--spring); }
 .lamp.lit { opacity: 1; transform: scale(1.08); color: var(--hoja); background: var(--hoja-bien); border-color: var(--hoja-bien); }
 .lamp.lit.hollow { color: var(--hoja-aviso); background: none; border-color: var(--hoja-aviso); border-style: dashed; }
@@ -252,3 +319,54 @@ details.bad > summary { color: var(--hoja-mal); }
 #toast { position: fixed; left: 50%; bottom: 14px; max-width: 80vw; padding: 8px 16px; border: 1px solid var(--hoja-linea); border-radius: 10px; background: #232b35; font: 13px/1.4 var(--mono); transform: translateX(-50%); animation: toastIn 0.3s var(--spring) 1; z-index: 5; }
 #toast.warn { border-color: var(--hoja-aviso); color: var(--hoja-aviso); }
 @keyframes toastIn { from { transform: translateX(-50%) translateY(16px); opacity: 0; } }
+
+/* ---- the thumb bar: a new visitor, and the hold-to-talk backup for the remote ------------------ */
+#thumbBar { position: fixed; right: 12px; bottom: 12px; z-index: 4; display: flex; gap: 8px; }
+#thumbBar button { min-height: 44px; padding: 8px 16px; border-radius: 12px; font: 700 15px/1.2 var(--ui); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+#visitNew { background: #6b46c1; border-color: #6b46c1; color: #fff; }
+#pttButton { background: var(--hoja); }
+#pttButton.held { background: var(--hoja-bien); border-color: var(--hoja-bien); color: var(--hoja); transform: scale(0.96); }
+#tabs button.phone { display: none; }
+
+/* ---- the visit tab: cues and the badge ------------------------------------------------------- */
+.c-visit, .c-read { display: flex; flex-direction: column; gap: 8px; }
+.c-read { flex-flow: row wrap; align-items: center; }
+.cue-group { display: flex; flex-wrap: wrap; gap: 6px; }
+.cue-group > span { flex-basis: 100%; font-size: 12px; color: var(--hoja-tenue); }
+.cue { min-height: 40px; min-width: 40px; padding: 0 14px; border: 2px solid var(--hoja-linea); border-radius: 999px; background: none; font-size: 15px; }
+.cue[aria-pressed="true"] { background: #6b46c1; border-color: #6b46c1; color: #fff; }
+#cVisit input[type="text"], #readName { min-height: 44px; padding: 6px 10px; border: 1px solid var(--hoja-linea); border-radius: 8px; background: var(--hoja-campo); font-size: 16px; }
+#readName { flex: 1 1 140px; min-width: 0; }
+.c-read button { min-height: 44px; }
+
+/* ---- his phone (Galaxy S24 Ultra: about 384 × 832 CSS px): one column at a time ------------- */
+@media (max-width: 700px) {
+    html, body { height: auto; min-height: 100svh; overscroll-behavior-y: none; }
+    body { overflow: visible; font-size: 15px; padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+    #bar { position: sticky; top: 0; z-index: 3; flex-wrap: wrap; gap: 5px; padding: max(6px, env(safe-area-inset-top)) 8px 6px; }
+    #bar .who, #bar .chips, #armBtn, #hStream { display: none; }
+    #bar .right { flex-wrap: wrap; gap: 5px; margin-left: 0; width: 100%; }
+    #bar .chip { font-size: 13px; }
+    .stop { margin-left: auto; min-height: 40px; }
+    #phoneTop { background: var(--hoja); }
+    #fishBox { flex-direction: column; align-items: stretch; }
+    #hatBox { width: min(76vw, 34svh * 1.2, 330px); align-self: center; }
+    #fishState { font-size: 18px; }
+    .said { font-size: 15px; }
+    #tabs { flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding: 6px 8px; scrollbar-width: none; }
+    #tabs button, #tabs button.phone { display: block; flex: none; min-height: 44px; padding: 6px 14px; font-size: 15px; }
+    main { display: block; }
+    .col { display: none; border: 0; }
+    body[data-col="colTurns"] #colTurns, body[data-col="colPanels"] #colPanels, body[data-col="colLog"] #colLog { display: flex; }
+    .scroll { flex: none; overflow: visible; }
+    #logBox { max-height: 70svh; overflow: auto; overscroll-behavior: contain; }
+    #colTurns .scroll.detail { flex: none; }
+    .stages { flex-wrap: wrap; }
+    .stage { flex: 1 1 30%; }
+    #panels { padding: 0 10px 18px; }
+    button { min-height: 40px; }
+    .kv { font-size: 13px; }
+    #thumbBar { left: 0; right: 0; bottom: 0; gap: 8px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: var(--hoja); border-top: 1px solid var(--hoja-linea); }
+    #thumbBar button { flex: 1 1 0; min-height: 56px; font-size: 17px; }
+    #toast { bottom: calc(84px + env(safe-area-inset-bottom)); max-width: 92vw; }
+}
