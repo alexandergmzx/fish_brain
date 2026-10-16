@@ -1,7 +1,7 @@
 """FISH_PERSONA: the body's words (the fish by default, the Sorting Hat for the fair)."""
 import pytest
 
-from fish_brain.config import PERSONAS, CannedConfig, LLMConfig, ReadingConfig
+from fish_brain.config import PERSONAS, CannedConfig, LLMConfig, ReadingConfig, STTConfig, TTSConfig
 
 
 def test_fish_is_the_default(monkeypatch):
@@ -39,3 +39,15 @@ def test_unknown_persona_is_refused(monkeypatch):
         CannedConfig()
     with pytest.raises(ValueError):
         LLMConfig()
+
+
+def test_the_hat_hears_and_speaks_as_a_hat(monkeypatch):
+    monkeypatch.delenv("FISH_STT_PROMPT", raising=False)
+    monkeypatch.delenv("FISH_TTS_INSTRUCTIONS", raising=False)
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+    assert "sombrero" in STTConfig().prompt and "sombrero" in TTSConfig().openai_instructions
+    monkeypatch.setenv("FISH_STT_PROMPT", "otra cosa")
+    assert STTConfig().prompt == "otra cosa"                 # the env var still wins
+    monkeypatch.delenv("FISH_STT_PROMPT")
+    monkeypatch.setenv("FISH_PERSONA", "fish")
+    assert "pez" in STTConfig().prompt and "pez" in TTSConfig().openai_instructions

@@ -39,7 +39,7 @@ TOTAL_MS_MAX = 1500       # one test line, all its pairs together
 RESTART_GRACE_S = 12.0    # after the stop signal: STOP and a hard exit if still alive
 LOOP_MIN_RMS = 0.02       # the bring-up script's floor for "the microphone heard it"
 LOOP_OVER_ROOM = 3.0      # and this many times the room (estimate: the remote's floor is noisy)
-VOICE_PHRASE = "Probando la voz del pez."
+VOICE_PHRASE = "Probando la voz."
 _LINE = re.compile(r"^(MOUTH|NECK|TAIL)((?: -?\d{1,3} [1-9]\d{0,3}){1,2})$")
 
 

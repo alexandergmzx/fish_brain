@@ -58,6 +58,11 @@ _FISH_SYSTEM_PROMPT = (
     "mexicano, en frases cortas y naturales para ser habladas en voz alta. Evita "
     "listas, emojis y texto que no se pueda pronunciar."
 )
+_FISH_STT_PROMPT = "Conversación en español mexicano con un pez animatrónico parlante."
+_FISH_TTS_INSTRUCTIONS = (
+    "Voz masculina de caricatura: un pez parlante bromista y sarcástico. Español "
+    "mexicano, entonación exagerada, ritmo ágil y con energía."
+)
 _FISH_FALLBACK_REPLY = "¡Glub! Se me fue la señal. Pregúntame otra vez."
 _FISH_READING_RULES = (
     "Cuando sepas el nombre de un visitante por su gafete, confírmalo con una pregunta "
@@ -107,6 +112,12 @@ PERSONAS: dict[str, dict] = {
             "que no se pueda pronunciar."
         ),
         "fallback_reply": "Se me nubló la mente. Pregúntame otra vez.",
+        "stt_prompt": "Conversación en español mexicano con un sombrero seleccionador parlante.",
+        "tts_instructions": (
+            "Voz de caricatura: un sombrero mágico parlante, sabio y bromista. Español "
+            "mexicano, entonación exagerada, ritmo ágil y con energía."
+        ),
+        "burble_sound": "hum",
         "reading_rules": (
             "Cuando sepas el nombre de un visitante por su gafete, confírmalo con una pregunta "
             "corta; cuando lo confirme o te diga su nombre, salúdalo por su nombre de pila y "
@@ -269,9 +280,7 @@ class TTSConfig:
     openai_model: str = field(default_factory=lambda: _env("FISH_TTS_MODEL", "gpt-4o-mini-tts"))
     openai_voice: str = field(default_factory=lambda: _env("FISH_TTS_VOICE", "ash"))
     openai_instructions: str = field(default_factory=lambda: _env(
-        "FISH_TTS_INSTRUCTIONS",
-        "Voz masculina de caricatura: un pez parlante bromista y sarcástico. Español "
-        "mexicano, entonación exagerada, ritmo ágil y con energía."))
+        "FISH_TTS_INSTRUCTIONS", _persona().get("tts_instructions", _FISH_TTS_INSTRUCTIONS)))
     openai_pcm_rate: int = 24000    # what the API returns for response_format="pcm"
 
 
@@ -317,7 +326,7 @@ class STTConfig:
     cloud_model: str = field(default_factory=lambda: _env("FISH_STT_CLOUD_MODEL", ""))
     # Context sentence and literal vocabulary hints for the cloud model.
     prompt: str = field(default_factory=lambda: _env(
-        "FISH_STT_PROMPT", "Conversación en español mexicano con un pez animatrónico parlante."))
+        "FISH_STT_PROMPT", _persona().get("stt_prompt", _FISH_STT_PROMPT)))
     keywords: tuple[str, ...] = field(default_factory=lambda: _env_list("FISH_STT_KEYWORDS"))
     min_clip_s: float = 0.3         # shorter recordings are skipped (the cloud rejects < 0.1 s)
 
@@ -447,6 +456,8 @@ class BurbleConfig:
     """The short bubble sound the fish makes when the button is released on a recording it
     can use: "I heard you", at once and without words. No burble means it did not hear."""
     enabled: bool = field(default_factory=lambda: _env_bool("FISH_BURBLE", True))
+    # Which sound (burble.SOUNDS): the fish's bubbles, or the hat's hum; set by the persona.
+    sound: str = field(default_factory=lambda: _persona().get("burble_sound", "bubbles"))
     # One flap of the tail with the sound. Never the mouth: the fish is not talking.
     tail: bool = True
     # Where the synthesized sounds are written once (WAVs are not tracked nor synced).
