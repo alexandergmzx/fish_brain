@@ -150,8 +150,15 @@ def test_trust_local_lets_this_machine_read_the_stream_and_audio(server):
 
 
 def test_page_status_and_mics_stay_open(server):
-    for path in ("/", "/index.html", "/fish.js", "/fish.css", "/status"):
+    for path in ("/", "/index.html", "/face", "/fish.js", "/fish.css", "/rec.js", "/status"):
         assert get(server.url + path)[0] == 200, path
+
+
+def test_root_is_the_operators_page_and_face_the_old_one(server):
+    # No hub here: the page itself is still served (its data routes answer 404, it says so).
+    for path in ("/", "/index.html", "/debug"):
+        assert b'src="/debug.js"' in get(server.url + path)[1], path
+    assert b'src="/fish.js"' in get(server.url + "/face")[1]
 
 
 def test_post_without_a_length_is_411(server):

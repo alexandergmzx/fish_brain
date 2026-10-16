@@ -7,7 +7,7 @@ screen down. Every two seconds it looks at three things and makes the browser ma
 
 - no display connected, or the pause file exists  -> no browser at all
 - display connected, the fish does not answer      -> the local waiting page
-- display connected, the fish answers /status      -> the visitor view, /?kiosk=1
+- display connected, the fish answers /status      -> the visitor view, /face?kiosk=1
 
 The fish itself (the `fish-brain` user unit) never depends on any of this.
 
@@ -190,7 +190,7 @@ def main() -> int:
                 browser.stop()
             elif (not browser.alive() or browser.showing != want
                   or browser.size != (lit.width, lit.height)):
-                url = (f"http://127.0.0.1:{port}/?kiosk=1" if want == "fish"
+                url = (f"http://127.0.0.1:{port}/face?kiosk=1" if want == "fish"
                        else WAIT_PAGE.as_uri())
                 browser.show(want, url, exe, (lit.width, lit.height))
             time.sleep(POLL_S)

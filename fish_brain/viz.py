@@ -739,12 +739,12 @@ def _make_handler(server: "VizServer"):
 
         def do_GET(self):  # noqa: N802
             path, _, query = self.path.partition("?")
-            if path == "/" or path == "/index.html":
-                self._serve_file("index.html")
+            if path in ("/", "/index.html", "/debug", "/debug/", "/debug.html"):
+                self._serve_file("debug.html")          # the operator's page (ADR 0011)
+            elif path in ("/face", "/face/"):
+                self._serve_file("index.html")          # the old visitor face, until after the fair
             elif path in ("/fish.js", "/fish.css", "/rec.js", "/debug.js", "/debug.css"):
                 self._serve_file(path.lstrip("/"))
-            elif path in ("/debug", "/debug/", "/debug.html"):
-                self._serve_file("debug.html")
             elif path.startswith("/debug/"):
                 self._get_debug(path, query)
             elif path.startswith("/img/"):
