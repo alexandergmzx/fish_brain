@@ -73,3 +73,36 @@ def test_the_page_speaks_of_the_hat_not_the_fish():
         text = (WEB_DIR / name).read_text(encoding="utf-8")
         assert not re.search(r"\bpez\b", text, re.I), name
     assert "Coloca PNGs" not in (WEB_DIR / "fish.js").read_text(encoding="utf-8")
+
+
+# --- the hat's visit row ---
+
+def test_the_visit_chips_are_the_cues_the_host_takes():
+    from fish_brain.visit import CUE_CHOICES, CUE_TEXT, CUE_TEXT_MAX
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    pairs = set()
+    for tag in re.findall(r"<button[^>]*\bclass=\"chip\"[^>]*>", html):
+        cue = re.search(r'data-cue="([^"]+)"', tag).group(1)
+        val = re.search(r'data-val="([^"]+)"', tag).group(1)
+        pairs.add((cue, val))
+    assert pairs == {(k, v) for k, vals in CUE_CHOICES.items() for v in vals}
+    inputs = re.findall(r"<input[^>]*\bdata-cue=\"([^\"]+)\"[^>]*>", html)
+    assert sorted(inputs) == sorted(CUE_TEXT)
+    for tag in re.findall(r"<input[^>]*\bdata-cue=[^>]*>", html):
+        assert int(re.search(r'maxlength="(\d+)"', tag).group(1)) <= CUE_TEXT_MAX
+
+
+def test_the_visit_row_is_hidden_and_in_the_sheet():
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    start, end = html.index('class="controls"'), html.index('id="talkParts"')
+    tag = re.search(r'<div[^>]*id="cVisit"[^>]*>', html)
+    assert start < tag.start() < end and " hidden" in tag.group(0)
+
+
+def test_every_path_the_page_posts_to_is_routed():
+    js = (WEB_DIR / "fish.js").read_text(encoding="utf-8")
+    viz = (WEB_DIR.parent / "viz.py").read_text(encoding="utf-8")
+    paths = set(re.findall(r'fetch\(\s*"(/[\w/]+)"', js))
+    assert {"/visit", "/cues"} <= paths
+    for path in paths:
+        assert f'"{path}"' in viz, path

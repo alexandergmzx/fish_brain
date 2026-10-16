@@ -192,6 +192,23 @@
                 <input type="file" id="badgeCam" accept="image/jpeg,image/*" capture="environment" hidden>
                 <input type="file" id="badgeFile" accept="image/jpeg,image/*" hidden>
             </div>
+            <!-- The hat's visit (visit.py): a new visitor and the cues the hat turns into
+                 "visions". Shown only when /status says visit_enabled. A lit chip is one the
+                 hat has not used yet; the row draws what the server holds. -->
+            <div class="c-visit" id="cVisit" hidden>
+                <p id="visitState" role="status" aria-live="polite">Sin visitante</p>
+                <button id="visitNew" type="button">✨ Nuevo visitante</button>
+                <div class="cue-group" role="group" aria-label="Edad"><span>Edad</span><button type="button" class="chip" data-cue="edad" data-val="niño" aria-pressed="false">Niño</button><button type="button" class="chip" data-cue="edad" data-val="adolescente" aria-pressed="false">Adolescente</button><button type="button" class="chip" data-cue="edad" data-val="adulto" aria-pressed="false">Adulto</button></div>
+                <div class="cue-group" role="group" aria-label="Viene con"><span>Viene con</span><button type="button" class="chip" data-cue="compania" data-val="solo" aria-pressed="false">Solo</button><button type="button" class="chip" data-cue="compania" data-val="amigos" aria-pressed="false">Amigos</button><button type="button" class="chip" data-cue="compania" data-val="familia" aria-pressed="false">Familia</button></div>
+                <div class="cue-group" role="group" aria-label="Color"><span>Color</span><button type="button" class="chip" data-cue="color" data-val="rojo" aria-pressed="false">Rojo</button><button type="button" class="chip" data-cue="color" data-val="azul" aria-pressed="false">Azul</button><button type="button" class="chip" data-cue="color" data-val="verde" aria-pressed="false">Verde</button><button type="button" class="chip" data-cue="color" data-val="amarillo" aria-pressed="false">Amarillo</button><button type="button" class="chip" data-cue="color" data-val="negro" aria-pressed="false">Negro</button><button type="button" class="chip" data-cue="color" data-val="blanco" aria-pressed="false">Blanco</button><button type="button" class="chip" data-cue="color" data-val="rosa" aria-pressed="false">Rosa</button><button type="button" class="chip" data-cue="color" data-val="morado" aria-pressed="false">Morado</button></div>
+                <div class="cue-group" role="group" aria-label="Impresión"><span>Impresión</span><button type="button" class="chip" data-cue="impresion" data-val="tímido" aria-pressed="false">Tímido</button><button type="button" class="chip" data-cue="impresion" data-val="sonriente" aria-pressed="false">Sonriente</button><button type="button" class="chip" data-cue="impresion" data-val="curioso" aria-pressed="false">Curioso</button></div>
+                <input type="text" id="cueLleva" data-cue="lleva" maxlength="60" placeholder="Lleva… (playera de dinosaurios)"
+                       autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+                <input type="text" id="cueNota" data-cue="nota" maxlength="60" placeholder="Nota (trae un kit de robótica)"
+                       autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+                <span id="visitSent"></span>
+                <span id="visitMsg" role="status" aria-live="polite"></span>
+            </div>
             <div class="slider-container">
                 <label for="sensitivity">Sensibilidad: <span id="sensitivityValue">2.5</span></label>
                 <input type="range" id="sensitivity" min="1" max="5" step="0.1" value="2.5">

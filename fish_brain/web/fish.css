@@ -57,7 +57,7 @@ body {
 }
 
 /* ---- the developer page (/?debug=1): a dark card on the water, the fish in a window -------- */
-.scene, .say, .sheet-head, .c-status, #cRead, .warn, #sheetScrim,
+.scene, .say, .sheet-head, .c-status, #cRead, #cVisit, .warn, #sheetScrim,
 #consoleGear svg { display: none; }
 .container {
     position: relative;
@@ -155,7 +155,7 @@ input[type="range"] { width: 100%; accent-color: var(--accion); }
 .toggles { grid-column: 1 / -1; display: flex; gap: 18px; flex-wrap: wrap; }
 .toggles label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .mic-row, .speak-row { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; }
-.mic-row select, .speak-row textarea, #readName {
+.mic-row select, .speak-row textarea, #readName, #cVisit input[type="text"] {
     width: 100%;
     padding: 9px 10px;
     border-radius: 10px;
@@ -165,7 +165,7 @@ input[type="range"] { width: 100%; accent-color: var(--accion); }
     font: 16px/1.3 var(--font-ui);      /* 16 px: no zoom on focus on a phone */
 }
 .speak-row textarea { resize: vertical; }
-.speak-row textarea::placeholder, #readName::placeholder { color: var(--hoja-tenue); }
+.speak-row textarea::placeholder, #readName::placeholder, #cVisit input::placeholder { color: var(--hoja-tenue); }
 #micMeter { width: 100%; height: 40px; border-radius: 8px; background: var(--hoja-campo); }
 .transcript {
     margin-top: 8px;
@@ -180,7 +180,7 @@ input[type="range"] { width: 100%; accent-color: var(--accion); }
 .transcript .t-fish { color: var(--letrero); }
 .transcript .updated { animation: tFlash 0.6s ease-out; }
 @keyframes tFlash { from { opacity: 0.35; } to { opacity: 1; } }
-.speak-row button, .file-row label, .c-read button, #sheetClose {
+.speak-row button, .file-row label, .c-read button, .c-visit button, #sheetClose {
     align-self: flex-start;
     padding: 10px 16px;
     font: 600 15px/1.2 var(--font-ui);
@@ -191,7 +191,7 @@ input[type="range"] { width: 100%; accent-color: var(--accion); }
     cursor: pointer;
     transition: transform 0.25s var(--spring);
 }
-.speak-row button:active, .c-read button:active, #sheetClose:active { transform: scale(0.94); }
+.speak-row button:active, .c-read button:active, .c-visit button:active, #sheetClose:active { transform: scale(0.94); }
 .file-row { grid-column: 1 / -1; }
 .file-row label { display: inline-block; }
 .file-row input[type=file] { position: absolute; left: -9999px; }
@@ -737,6 +737,22 @@ html.console #readMsg.high { color: var(--hoja-bien); }
 html.console #readMsg.medium, html.console #readMsg.low { color: var(--hoja-aviso); }
 html.console #readMsg.bad { color: var(--hoja-mal); }
 html.console #readMsg.busy { animation: earBreathe 1.1s var(--sine) infinite; }
+/* The hat's visit: the stage line, "Nuevo visitante", the cue chips (a lit chip is a cue the
+   hat has not used yet). A pressed chip changes at once: colour is never animated. */
+html.console #cVisit:not([hidden]) { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--hoja-linea); }
+html.console #visitState { margin: 0; font: 700 17px/1.3 var(--font-ui); color: var(--hoja-texto); }
+html.console #visitNew { align-self: stretch; min-height: 52px; font-size: 17px; }
+html.console #visitNew:disabled { opacity: 0.45; cursor: default; }
+html.console .cue-group { display: flex; flex-wrap: wrap; gap: 6px; }
+html.console .cue-group > span { flex-basis: 100%; font-size: 12px; color: var(--hoja-tenue); }
+html.console .c-visit .chip { align-self: auto; min-height: 44px; min-width: 44px; padding: 0 14px; border: 2px solid var(--hoja-linea); border-radius: 999px; background: none; color: var(--hoja-texto); }
+html.console .c-visit .chip[aria-pressed="true"] { background: var(--accion); border-color: var(--accion); color: #fff; }
+html.console #cVisit input[type="text"] { min-height: 48px; }
+html.console #visitSent { font-size: 13px; color: var(--hoja-tenue); }
+html.console #visitSent:empty, html.console #visitMsg:empty { display: none; }
+html.console #visitMsg { min-height: 1.3em; font: 600 16px/1.3 var(--font-ui); color: var(--hoja-texto); }
+html.console #visitMsg.bad { color: var(--hoja-mal); }
+html.console #visitMsg.busy { animation: earBreathe 1.1s var(--sine) infinite; }
 /* Not in the console's sheet: the mic picker, the slider, the WAV test, bubbles and browser
    sound. The console is muted: the fish speaks on the board, the phone shows. */
 html.console .controls .slider-container,

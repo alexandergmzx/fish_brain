@@ -765,6 +765,8 @@
       // Accepted: the fish takes over, the sheet leaves and the next visitor finds it empty.
       function accepted() {
         name.blur();
+        // The hat's visit: the sheet stays for the cues (the 45 s close still applies).
+        if (visitRow.on()) { name.value = ""; return; }
         setTimeout(() => { if (!busy) { ops(false); name.value = ""; say(""); } }, CLOSE_MS);
       }
       function say(text, cls) { msg.textContent = text || ""; msg.className = cls || ""; }
@@ -880,6 +882,116 @@
       };
     })();
 
+    // The hat's visit (visit.py, console only): "Nuevo visitante" and the operator's cues.
+    // The server owns the cues: a lit chip is one the hat has not used yet, and the row
+    // draws the server's view (the POST /cues answer, the `visit` event) unless an edit of
+    // its own is still on its way.
+    const visitRow = (() => {
+      const stub = { status() {}, view() {}, flush() {}, on: () => false };
+      if (!CONSOLE) return stub;
+      const el = (id) => document.getElementById(id);
+      const row = el("cVisit"), state = el("visitState"), btn = el("visitNew"),
+            msg = el("visitMsg"), used = el("visitSent");
+      const texts = [el("cueLleva"), el("cueNota")];
+      const chips = Array.from(row.querySelectorAll(".chip"));
+      let on = false, rev = 0, postedRev = 0, inflight = false, timer = 0;
+      let latest = null, lastN = -1, wantN = null, btnTimer = 0;
+      function note(text, cls) { msg.textContent = text || ""; msg.className = cls || ""; }
+      function current() {
+        const out = {};
+        for (const c of chips) if (c.getAttribute("aria-pressed") === "true") out[c.dataset.cue] = c.dataset.val;
+        for (const t of texts) { const v = t.value.trim(); if (v) out[t.dataset.cue] = v; }
+        return out;
+      }
+      function draw(v) {
+        if (!v) return;
+        if (v.n !== lastN) {
+          lastN = v.n;
+          if (wantN !== null && v.n >= wantN) { wantN = null; clearTimeout(btnTimer); btn.disabled = false; }
+        }
+        const who = v.first ? " · " + v.first : "";
+        state.textContent = !v.stage ? "Sin visitante"
+          : v.stage > v.of ? `Veredicto: ${v.house || "—"}${who}` : `Etapa ${v.stage} de ${v.of}${who}`;
+        const s = Object.values(v.sent || {});
+        used.textContent = s.length ? "Usadas: " + s.join(" · ") : "";
+        if (rev !== postedRev || inflight || timer) { latest = v; return; }
+        latest = null;
+        const cues = v.cues || {};
+        for (const c of chips) c.setAttribute("aria-pressed", cues[c.dataset.cue] === c.dataset.val ? "true" : "false");
+        for (const t of texts) if (document.activeElement !== t) t.value = cues[t.dataset.cue] || "";
+      }
+      function edit(ms) {
+        rev++;
+        clearTimeout(timer);
+        timer = setTimeout(() => { timer = 0; flush(); }, ms);
+      }
+      async function flush() {
+        clearTimeout(timer); timer = 0;
+        if (inflight || rev === postedRev) return;
+        const at = rev;
+        inflight = true;
+        try {
+          const r = await fetch("/cues", { method: "POST", headers: jsonHeaders(),
+                                           body: JSON.stringify({ cues: current() }) });
+          let out = {};
+          try { out = await r.json(); } catch (_) {}
+          postedRev = at;                          // no retry for a refusal
+          if (r.ok) { note(""); latest = out.visit || latest; }
+          else if (r.status === 400) note("Pista no válida", "bad");
+          else if (r.status === 403) note("Sin permiso (token)", "bad");
+          else note("El modo visita está apagado", "bad");
+        } catch (_) {
+          note("Sin conexión: la pista no llegó", "bad");
+          timer = setTimeout(() => { timer = 0; flush(); }, 3000);
+        } finally {
+          inflight = false;
+          if (rev !== postedRev && !timer) flush();
+          else if (latest && !timer) draw(latest);
+        }
+      }
+      for (const c of chips) {
+        c.addEventListener("click", () => {
+          const was = c.getAttribute("aria-pressed") === "true";
+          for (const o of chips) if (o.dataset.cue === c.dataset.cue) o.setAttribute("aria-pressed", "false");
+          c.setAttribute("aria-pressed", was ? "false" : "true");
+          edit(250);
+        });
+      }
+      for (const t of texts) {
+        t.addEventListener("input", () => { rev++; });      // sent when the field is left
+        t.addEventListener("change", () => { if (rev === postedRev) rev++; flush(); });
+        t.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); t.blur(); } });
+      }
+      btn.addEventListener("click", async () => {
+        if (btn.disabled || reader.busy()) return;
+        flush();
+        btn.disabled = true;
+        note("Llamando al sombrero…", "busy");
+        let ok = false;
+        try {
+          const r = await fetch("/visit", { method: "POST", headers: jsonHeaders(), body: "{}" });
+          if (r.ok) {
+            ok = true;
+            note("");
+            say(heard, ""); say(reply, "");        // the next visitor does not see the last one's
+            wantN = lastN + 1;                     // enabled again by the new visit's view
+            btnTimer = setTimeout(() => { wantN = null; btn.disabled = false; }, 3000);
+          } else if (r.status === 409) note("El sombrero está ocupado · espera a que termine", "bad");
+          else if (r.status === 503) note("El modo visita está apagado", "bad");
+          else note("No se pudo empezar la visita", "bad");
+        } catch (_) {
+          note("No se pudo empezar la visita", "bad");
+        }
+        if (!ok) btn.disabled = false;
+      });
+      return {
+        status(st) { on = !!st.visit_enabled; row.hidden = !on; },
+        view: draw,
+        flush,
+        on: () => on,
+      };
+    })();
+
     function paintStrip(st) {
       if (!CONSOLE) return;
       // The target shows only once /status has said whether it is a sign or a button; the
@@ -912,6 +1024,7 @@
       // pressed (?talk=1 keeps the hold target for a device without the remote).
       setForm(/evdev/.test(b.ptt || "") && PARAMS.get("talk") !== "1");
       reader.status(st);
+      visitRow.status(st);
     }
     function setForm(remote) {
       if (remote === root.classList.contains("notalk")) return;
@@ -955,6 +1068,7 @@
     }
     function ops(open) {
       const was = root.classList.contains("ops-open");
+      if (!open && was) visitRow.flush();        // a cue being typed still goes
       root.classList.toggle("ops-open", open);
       clearTimeout(opsTimer); clearInterval(opsPoll);
       if (open) {
@@ -1106,6 +1220,8 @@
           if (ev.stage === "ask") show("reading", "¿Tú eres…?");
           else show("thinking");
           thinkTimer = setTimeout(settle, 45000);
+        } else if (ev.type === "visit") {
+          visitRow.view(ev);                       // the operator's sheet only
         }
       },
     };
