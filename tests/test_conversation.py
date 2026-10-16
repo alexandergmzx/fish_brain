@@ -346,3 +346,237 @@ def test_a_debug_item_runs_in_the_loop(make):
     item = type("Item", (), {"run_in_loop": lambda self, convo: ran.append(convo)})()
     convo, viz, spoken = make(item)
     assert convo.turn() is True and ran == [convo] and spoken == []
+
+
+# ---- the hat's visit (visit.py) -----------------------------------------------------------
+from fish_brain import canned  # noqa: E402
+from fish_brain.conversation import TurnTimeout  # noqa: E402
+from fish_brain.visit import NewVisit  # noqa: E402
+
+
+class VisitViz(FakeViz):
+    def __init__(self):
+        super().__init__(None)
+        self.visits = []
+
+    def push_visit(self, **view):
+        self.visits.append(view)
+
+
+class ScriptLLM(FakeLLM):
+    """Replies from a list; an item ("error", text) answers like a failed call."""
+
+    def __init__(self, replies):
+        super().__init__()
+        self.script = list(replies)
+        self.kwargs = []
+
+    def reply(self, text, remember=True):
+        self.replies.append(text)
+        self.kwargs.append(remember)
+        r = self.script.pop(0) if self.script else "Mmm."
+        if isinstance(r, tuple):
+            self.last_error = "APIError"
+            return r[1]
+        self.last_error = None
+        return r
+
+
+class Clock:
+    def __init__(self):
+        self.t = 1000.0
+
+    def __call__(self):
+        return self.t
+
+
+@pytest.fixture
+def hat(monkeypatch):
+    """A hat in text mode: `build(inputs, replies)` -> (convo, viz, llm, spoken)."""
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+
+    def build(inputs, replies, *, echo=False, clock=None, spoken_ok=True):
+        cfg = Config()
+        viz = VisitViz()
+        convo = FishConversation(cfg, MockSerialLink(cfg.serial, stream=io.StringIO()),
+                                 text_input=True, play_audio=False, viz=viz, echo=echo,
+                                 clock=clock or Clock())
+        llm = ScriptLLM(replies)
+        convo._llm = llm
+        spoken = []
+        ok = spoken_ok if callable(spoken_ok) else (lambda text: spoken_ok)
+        monkeypatch.setattr(convo.speaker, "speak",
+                            lambda text, role="fish": (spoken.append(text), ok(text))[1])
+        monkeypatch.setattr(convo.speaker, "say_canned", lambda name, **k: True)
+        it = iter(inputs)
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(it))
+        return convo, viz, llm, spoken
+
+    return build
+
+
+VERDICT = "¡Ravenclaw! Hoy verás un robot.\nCASA: Ravenclaw"
+
+
+def test_a_whole_visit_tags_four_stages_and_strips_the_house(hat):
+    convo, viz, llm, spoken = hat(["hola", "Ana", "libro", "investigo", "gracias"],
+                                  ["¡Hola! ¿Tu nombre?", "Ana, ¿mapa o libro?",
+                                   "Libros. ¿Abres o investigas?", VERDICT, "¡Hola de nuevo!"])
+    for _ in range(4):
+        assert convo.turn() is True
+    assert llm.replies == ["[ETAPA 1/4] hola", "[ETAPA 2/4] Ana", "[ETAPA 3/4] libro",
+                           "[ETAPA 4/4] investigo"]
+    assert llm.kwargs == [False] * 4
+    assert [u for u, _ in llm.remembered] == llm.replies
+    assert llm.remembered[-1][1] == VERDICT                 # the history keeps the tag line
+    assert spoken[-1] == "¡Ravenclaw! Hoy verás un robot."
+    assert not any("CASA" in t for _, t in viz.transcripts)
+    assert convo.visit.done and convo.visit.house == "Ravenclaw"
+    assert viz.visits[-1]["stage"] == 5 and viz.visits[-1]["house"] == "Ravenclaw"
+    assert llm.extra_rules == convo.cfg.visit.rules and llm.resets == 1
+    assert convo.turn() is True                              # the next one is a new visitor
+    assert llm.replies[-1] == "[ETAPA 1/4] gracias" and llm.resets == 2
+
+
+def test_a_dropped_reply_is_not_remembered_and_the_stage_stays(hat):
+    convo, viz, llm, spoken = hat(["hola", "hola otra vez"], ["Uno", "Dos"], spoken_ok=False)
+    convo.turn()
+    convo.turn()
+    assert llm.remembered == [] and llm.replies == ["[ETAPA 1/4] hola", "[ETAPA 1/4] hola otra vez"]
+
+
+def test_a_failed_call_speaks_the_fallback_and_changes_nothing(hat):
+    convo, viz, llm, spoken = hat(["hola", "Ana"], [("error", "Se me nubló."), "Hola Ana."])
+    convo.cfg.tts.backend = "loq"                 # with loq the fallback is spoken
+    convo.turn()
+    assert spoken == ["Se me nubló."] and llm.remembered == [] and convo.visit.said == 0
+    convo.turn()
+    assert llm.replies[-1] == "[ETAPA 1/4] Ana" and convo.visit.said == 1
+
+
+def test_a_verdict_past_the_budget_stays_at_stage_four(hat, monkeypatch):
+    convo, viz, llm, spoken = hat(["a", "b", "c", "d"], ["1", "2", "3"])
+    convo.visit.set_cues({"color": "azul"})
+    for _ in range(3):
+        convo.turn()
+    assert convo.visit.pending() == {}
+    convo.visit.set_cues({"edad": "niño"})
+
+    def too_late(stage, fn, **kw):
+        raise TurnTimeout(stage)
+    monkeypatch.setattr(convo, "_await", too_late)
+    assert convo.turn() is True
+    assert convo.visit.stage == 4 and len(llm.remembered) == 3
+    assert convo.visit.pending() == {"edad": "niño"}
+
+
+def test_cues_go_once_with_the_next_turn(hat):
+    convo, viz, llm, spoken = hat(["hola", "Ana"], ["¿Nombre?", "Ana..."])
+    convo.turn()
+    convo.visit.set_cues({"edad": "niño", "lleva": "gorra"})
+    convo.turn()
+    assert llm.replies[1] == "[ETAPA 2/4] [PISTAS: edad=niño; lleva=gorra] Ana"
+    assert convo.visit.pending() == {} and viz.visits[-1]["sent"] == {"edad": "niño",
+                                                                      "lleva": "gorra"}
+
+
+def test_idle_starts_a_new_visitor(hat):
+    clock = Clock()
+    convo, viz, llm, spoken = hat(["hola", "Ana", "otra"], ["1", "2", "3"], clock=clock)
+    convo.turn()
+    clock.t += 20
+    convo.turn()
+    assert llm.replies[1] == "[ETAPA 2/4] Ana" and llm.resets == 1
+    clock.t += 31
+    convo.turn()
+    assert llm.replies[2] == "[ETAPA 1/4] otra" and llm.resets == 2
+
+
+def test_echo_has_a_visit_that_waits_for_the_model(hat):
+    convo, viz, llm, spoken = hat(["hola", "hola"], ["¡Hola!"], echo=True)
+    assert convo.visit is not None
+    convo.turn()
+    assert spoken == ["hola"] and llm.replies == []
+    convo.echo = False                             # /debug mode=llm
+    convo.turn()
+    assert llm.replies == ["[ETAPA 1/4] hola"]
+
+
+def test_a_rebuilt_model_starts_a_new_visit(hat):
+    convo, viz, llm, spoken = hat(["hola", "Ana"], ["1"])
+    convo.turn()
+    fresh = ScriptLLM(["2"])
+    convo._llm = fresh                             # what debug_actions._fresh_llm leads to
+    convo.turn()
+    assert fresh.extra_rules == convo.cfg.visit.rules and fresh.replies == ["[ETAPA 1/4] Ana"]
+
+
+def test_a_badge_is_stage_one_with_the_first_name_only(hat):
+    convo, viz, llm, spoken = hat(["sí"], ["Laura, ¿mapa o libro?"])
+    assert convo._handle_item(Reading(name="Garcia Lopez Maria Jose", first_name="María José"))
+    assert spoken == ["¿Tú eres María José?"] and viz.readings == ["ask"]
+    user, answer = llm.remembered[0]
+    assert user.startswith("[ETAPA 1/4] ") and "María José" in user and "Garcia" not in user
+    assert answer == "¿Tú eres María José?" and llm.replies == []
+    convo.turn()
+    assert llm.replies == ["[ETAPA 2/4] sí"]
+
+
+def test_a_typed_name_gets_stage_one_from_the_model(hat):
+    convo, viz, llm, spoken = hat([], ["¡Valeria! Ayúdame a ver."])
+    assert convo._handle_item(Reading(name="Valeria Ruiz", first_name="Valeria", confirmed=True))
+    assert llm.replies == ["[ETAPA 1/4] [Lectura] Se llama Valeria, confirmado."]
+    assert spoken == ["¡Valeria! Ayúdame a ver."] and convo.visit.said == 1
+
+
+def test_new_visitor_greets_and_seeds_stage_one(hat, monkeypatch):
+    convo, viz, llm, spoken = hat(["Me llamo Ana"], ["Ana, ¿mapa o libro?"])
+    monkeypatch.setattr(canned, "cached", lambda name, cfg: True)
+    said = []
+    monkeypatch.setattr(convo.speaker, "say_canned", lambda name, **k: said.append(name) or True)
+    assert convo._handle_item(NewVisit(at=convo._clock()))
+    greeting = convo.cfg.canned.phrases["visit_greeting"]
+    assert said == ["visit_greeting"] and ("fish", greeting) in viz.transcripts
+    assert llm.remembered[0] == ("[ETAPA 1/4] " + convo.cfg.visit.arrival_note, greeting)
+    convo.turn()
+    assert llm.replies == ["[ETAPA 2/4] Me llamo Ana"]
+
+
+def test_a_greeting_not_said_is_not_remembered(hat, monkeypatch):
+    convo, viz, llm, spoken = hat(["Ana"], ["¿Nombre?"])
+    monkeypatch.setattr(canned, "cached", lambda name, cfg: True)
+    monkeypatch.setattr(convo.speaker, "say_canned", lambda name, **k: False)
+    convo._handle_item(NewVisit(at=convo._clock()))
+    assert llm.remembered == []
+    convo.turn()
+    assert llm.replies == ["[ETAPA 1/4] Ana"]
+
+
+def test_a_new_visitor_already_started_by_a_turn_is_moot(hat):
+    convo, viz, llm, spoken = hat(["hola"], ["1"])
+    convo.visit.request_new(convo._clock() - 1)
+    convo.turn()                                   # the turn opened the visit the tap asked for
+    n = convo.visit.n
+    convo._handle_item(NewVisit(at=convo._clock() - 1))
+    assert convo.visit.n == n and len(llm.remembered) == 1
+
+
+def test_echo_new_visitor_only_greets(hat, monkeypatch):
+    convo, viz, llm, spoken = hat([], [], echo=True)
+    monkeypatch.setattr(canned, "cached", lambda name, cfg: False)
+    convo._handle_item(NewVisit(at=convo._clock()))
+    assert spoken == [convo.cfg.canned.phrases["visit_greeting"]]
+    assert llm.remembered == [] and llm.resets == 0
+
+
+def test_the_visit_off_keeps_the_hats_old_reading(hat, monkeypatch):
+    monkeypatch.setenv("FISH_VISIT", "false")
+    convo, viz, llm, spoken = hat([], [])
+    assert convo._handle_item(Reading(name="Valeria Ruiz", first_name="Valeria", confirmed=True))
+    assert llm.replies == ["[Lectura] Se llama Valeria Ruiz, confirmado. Dile su futuro."]
+
+
+def test_the_fish_has_no_visit(make):
+    convo, viz, spoken = make(Reading(name="Valeria Ruiz", first_name="Valeria",
+                                      confirmed=True), echo=False)
+    assert convo.visit is None and not convo._visit_on()

@@ -290,6 +290,8 @@ def main(argv: list[str] | None = None) -> int:
                 from . import reading
                 viz.register_reader(                  # a badge photo from the console (/badge)
                     lambda data, look: reading.read_badge(data, cfg, want_look=look))
+                if convo.visit is not None:           # the hat's visit: /visit, /cues
+                    viz.register_visit(convo.visit)
                 if hub is not None:
                     try:
                         from .debug_actions import DebugActions

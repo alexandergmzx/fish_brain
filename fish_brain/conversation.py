@@ -117,6 +117,13 @@ class FishConversation:
         self._stage_s: float | None = None    # the last awaited stage's own seconds
         self._last_burble = None              # the burble said last, not to repeat it
         self._recent: deque[str] = deque(maxlen=3)   # fillers not to say again so soon
+        # The hat's visit (visit.py): built from the persona whatever echo is, so a /debug
+        # switch to the model turns it on; `_visit_on()` decides it turn by turn.
+        self.visit = None
+        if cfg.visit.rules:
+            from .visit import Visit
+            self.visit = Visit(cfg.visit.stages, cfg.visit.idle_s, clock=clock)
+        self._heard_at: float | None = None   # when the visitor started talking, this turn
         # Button-like push-to-talk sources (browser button, remote). Empty -> keyboard.
         self.button = None
         self.sources: list[ptt.ButtonSource] = []
@@ -389,6 +396,7 @@ class FishConversation:
         """An input item that is not a recording (offered by the page). The single dispatch
         point for such items; returns whether the loop goes on."""
         from .reading import Reading, Utterance
+        from .visit import NewVisit
         if hasattr(item, "run_in_loop"):
             # A test from the debug page (a motor pulse, the microphone check): it runs here,
             # on the turn loop's own thread, and answers for its own errors.
@@ -398,6 +406,8 @@ class FishConversation:
             return self._reading_turn(item)
         if isinstance(item, Utterance):
             return self._utterance_turn(item)
+        if isinstance(item, NewVisit):
+            return self._new_visit_turn(item)
         print(f"[turn] unknown input item {type(item).__name__}", flush=True)
         return True
 
@@ -405,6 +415,7 @@ class FishConversation:
         """A recording the page made with the phone's microphone and uploaded. From here on
         it is a normal voice turn: the hold plus the upload stand for the recording time."""
         times: dict[str, float] = {"rec": u.hold_s + u.upload_s}
+        self._heard_at = self._clock() - times["rec"]
         debug.turn_set(trigger="phone microphone")
         t0 = time.monotonic()
         self._start_wait(self._clock(), burble=True)
@@ -420,6 +431,8 @@ class FishConversation:
         per-visitor rules attached. Unconfirmed (a badge): the fish asks "¿Tú eres X?" and
         the answer is the next normal voice turn, with the question seeded in the history.
         Confirmed (typed): the fish tells the future now. The quit words never apply here."""
+        if self._visit_on():
+            return self._visit_reading_turn(r)
         from . import reading
         times: dict[str, float] = {}
         look_note = f" Lleva: {r.look}." if r.look else ""
@@ -534,6 +547,7 @@ class FishConversation:
                 user = input("you> ").strip()
             except EOFError:
                 return False                       # Ctrl-D
+            self._heard_at = self._clock()
             debug.turn_set(trigger="text", user=user)
         else:
             t0 = time.monotonic()
@@ -542,6 +556,7 @@ class FishConversation:
                 return self._handle_item(wav)
             # The hold itself, not the wait for a press (the wait can be minutes long).
             times["rec"] = ptt.wav_duration_s(wav)
+            self._heard_at = self._clock() - times["rec"]
             cut = ptt.last_recording_was_cut()
             info = ptt.last_info()
             debug.turn_set(trigger=info.get("trigger", "button"), ended=info.get("ended", ""),
@@ -579,8 +594,12 @@ class FishConversation:
             return True                            # nothing captured -> keep listening
 
         # Echo mode just speaks the transcription back -> never touches the LLM (no API key).
+        visit_turn = None
         if self.echo:
             reply = user
+        elif self._visit_on():
+            visit_turn = self._visit_ask(user, times)
+            reply = visit_turn["spoken"]
         else:
             t0 = time.monotonic()
             ask = self.llm.reply                   # the client is built here, on this thread
@@ -601,11 +620,15 @@ class FishConversation:
             self.viz.push_transcript(reply, "fish")
             self.viz.push_draft(reply)
             debug.turn_set(outcome="draft (wait-to-speak)")
+            delivered = True                       # the operator says it
         else:
             # Speaker pushes the "fish" transcript + speaks; False = it was already speaking.
-            if not self._speak_reply(reply):
+            delivered = self._speak_reply(reply)
+            if not delivered:
                 debug.turn_set(outcome="dropped: speaking")
             times.update(self.speaker.last_timing)
+        if visit_turn is not None:
+            self._visit_commit(visit_turn, delivered)
         self._note_fill(times)
         debug.turn_set(times=times, link=self.link.health())
         if times:
@@ -618,6 +641,7 @@ class FishConversation:
         problem inside the turn; see the module docstring."""
         debug.turn_open()
         self._wait = None
+        self._heard_at = None
         try:
             keep_going = self._turn()
             self._errors = 0
@@ -657,9 +681,161 @@ class FishConversation:
             self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
         finally:
             self._wait = None                      # the welcome and the like are no turn's
+            if self.visit is not None:
+                self.visit.touch(self._clock())    # the hat's last speech, for the idle rule
         # A failing turn that returns at once must not spin: pause, longer if it keeps failing.
         self._errors += 1
         time.sleep(5.0 if self._errors >= 5 else 1.0)
+        return True
+
+    # --- the hat's visit (visit.py) -------------------------------------------------
+    def _visit_on(self) -> bool:
+        return self.visit is not None and self.cfg.visit.enabled and not self.echo
+
+    def _push_visit(self) -> None:
+        push = getattr(self.viz, "push_visit", None)
+        if push is not None and self.visit is not None:
+            push(**self.visit.view())
+
+    def _new_visit(self, first: str = "", *, forget: bool = True) -> None:
+        """A new visitor, on the loop's thread: the model forgets the last one and gets the
+        visit's rules. `forget=False` keeps /debug's records (a badge: its vision record was
+        made for this visitor, after viz.read_badge had already forgotten the last one)."""
+        from .visit import begin_model
+        if forget:
+            debug.new_visitor()
+        begin_model(self.llm, self.cfg.visit.rules)
+        self.visit.start(first, self._clock())   # last: a model that cannot be built leaves it closed
+        print(f"[visit] new #{self.visit.n}", flush=True)
+        self._push_visit()
+
+    def _visit_ask(self, user: str, times: dict[str, float]) -> dict:
+        """One visit turn up to the reply: a new visitor when it is one (or when the model
+        was rebuilt by a switch and lost the rules), the stage and the cues on the text, the
+        "CASA:" line split off. Nothing is remembered here (see `_visit_commit`)."""
+        from .visit import split_reply
+        llm = self.llm
+        at = self._heard_at if self._heard_at is not None else self._clock()
+        if self.visit.needs_new(at) or llm.extra_rules != self.cfg.visit.rules:
+            self._new_visit()
+        stage = self.visit.stage
+        tagged, snapshot = self.visit.prepare(user)
+        t0 = time.monotonic()
+        raw = self._await("llm", lambda: llm.reply(tagged, remember=False))
+        times["llm"] = self._stage_time(time.monotonic() - t0)
+        debug.turn_set(times=times)
+        if llm.last_error and self.cfg.tts.backend != "loq":
+            raise cloud.CloudUnavailable(llm.last_error)
+        spoken, house = split_reply(raw)
+        return {"stage": stage, "tagged": tagged, "raw": raw, "snapshot": snapshot,
+                "spoken": spoken, "house": house, "ok": not llm.last_error}
+
+    def _visit_commit(self, t: dict, delivered: bool) -> None:
+        """The reply was spoken (or drafted): only now does it enter the model's history and
+        the stage move on. A fallback line, a dropped or empty reply changes nothing."""
+        if not (delivered and t["ok"] and t["spoken"]):
+            return
+        self.llm.remember(t["tagged"], t["raw"])
+        self.visit.delivered(t["house"], t["snapshot"], self._clock())
+        print(f"[visit] etapa {t['stage']}/{self.visit.stages}"
+              + (f" casa={t['house']}" if t["house"] else "")
+              + (" fin" if self.visit.done else ""), flush=True)
+        debug.turn_set(visit=f"{t['stage']}/{self.visit.stages}")
+        self._push_visit()
+
+    def _visit_reading_turn(self, r) -> bool:
+        """A name for the hat's visit (ADR 0007): a new visitor. A badge's "¿Tú eres X?" is
+        stage 1, said without the model and remembered before it is said (so a "sí" still
+        finds the name if the voice runs out of time); a typed name gets stage 1 from the
+        model. Only the first name reaches the model."""
+        from . import reading
+        from .visit import note
+        times: dict[str, float] = {}
+        cfg = self.cfg.visit
+        first = r.first_name
+        self._start_wait(self._clock())
+        self._new_visit(first, forget=r.confirmed)
+        if not r.confirmed:
+            question = reading.echo_question(first)
+            if self.viz is not None:
+                self.viz.push_reading("ask")
+            print("fish> (lectura: pregunta por el nombre)", flush=True)
+            self.llm.remember(f"[ETAPA 1/{self.visit.stages}] "
+                              + note(cfg.badge_note, first, r.look), question)
+            self.visit.delivered(None, None, self._clock())
+            self._push_visit()
+            said = self._speak_reply(question)
+            times.update(self.speaker.last_timing)
+            self._note_fill(times)
+            debug.turn_set(trigger="reading", times=times, link=self.link.health(),
+                           outcome="read: ask" if said else "dropped: speaking")
+            print("[turn] read=ask " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
+                  + f" link={self.link.health()}", flush=True)
+            return True
+        t = self._visit_ask_reading(note(cfg.name_note, first, r.look), times)
+        if t is None:
+            return True
+        print("fish> (lectura)", flush=True)
+        if not t["spoken"]:
+            return True
+        if self.viz is not None:
+            self.viz.push_reading("speaking")
+        said = self._speak_reply(t["spoken"])
+        self._visit_commit(t, said)
+        times.update(self.speaker.last_timing)
+        self._note_fill(times)
+        debug.turn_set(trigger="reading", times=times, link=self.link.health(),
+                       outcome="read: tell" if said else "dropped: speaking")
+        print("[turn] read=tell " + " ".join(f"{k}={v:.1f}s" for k, v in times.items())
+              + f" link={self.link.health()}", flush=True)
+        return True
+
+    def _visit_ask_reading(self, text: str, times: dict[str, float]) -> dict | None:
+        """A typed name's stage 1 from the model; None when it could not be asked."""
+        from .visit import split_reply
+        llm = self.llm
+        tagged, snapshot = self.visit.prepare(text)
+        t0 = time.monotonic()
+        raw = self._await("llm", lambda: llm.reply(tagged, remember=False))
+        times["llm"] = self._stage_time(time.monotonic() - t0)
+        if llm.last_error and self.cfg.tts.backend != "loq":
+            print(f"[turn] lectura sin señal: {llm.last_error}", flush=True)
+            debug.turn_set(trigger="reading", times=times, outcome="read: no signal")
+            self._apologize(self.cfg.canned.reading_fail)
+            return None
+        spoken, house = split_reply(raw)
+        return {"stage": 1, "tagged": tagged, "raw": raw, "snapshot": snapshot,
+                "spoken": spoken, "house": house, "ok": not llm.last_error}
+
+    def _new_visit_turn(self, item) -> bool:
+        """"Nuevo visitante" from the sheet: a new visit and the canned greeting (stage 1,
+        no model). Moot when a turn already started a visit after it was asked for. In echo
+        mode the hat only greets."""
+        v = self.visit
+        if v is None:
+            print("[turn] a new visit, but this persona has none", flush=True)
+            return True
+        if v.open and v.started_at is not None and v.started_at >= item.at:
+            return True
+        debug.turn_set(trigger="visit")
+        on = self._visit_on()
+        if on:
+            self._new_visit()
+        name = self.cfg.visit.greeting
+        text = self.cfg.canned.phrases.get(name, "")
+        from . import canned
+        if canned.cached(name, self.cfg):
+            if self.viz is not None:
+                self.viz.push_transcript(text, "fish")   # canned.play shows no bubble
+            said = self.speaker.say_canned(name, render=False)
+        else:
+            said = self.speaker.speak(text)              # rendered now, live
+        if said and on:
+            self.llm.remember(f"[ETAPA 1/{v.stages}] " + self.cfg.visit.arrival_note, text)
+            v.delivered(None, None, self._clock())
+            self._push_visit()
+        debug.turn_set(outcome="visit: greeting" if said else "dropped: speaking")
+        print(f"[turn] visit=greeting said={said}", flush=True)
         return True
 
     # --- the loop --------------------------------------------------------------------
