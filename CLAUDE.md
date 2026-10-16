@@ -43,7 +43,7 @@ data when warranted.
 | Board: HDMI touch display | Unplugged since 2026-10-12 (ADR 0005 replaced by 0006): the browser cost 1.1 to 1.3 cores and 60 to 68 C; without it the board idles at 1 % and 41 to 44 C, a turn peaks at 30 % (results 2026-10-12). The LightDM session stays installed, it starts nothing |
 | The reading (la lectura) | Built (ADR 0007, proposed): badge photo on the phone → `gpt-6-luna` through the board (4.3 to 6.7 s, 1163 image tokens, surnames split, accents restored: `docs/results/2026-10-11-reading-badge.md`) → the fish asks "¿Tú eres X?" → the answer is a turn. Not yet tried with a real badge or on the phone |
 | Motors on the UNO Q (TB6612FNG), the hat's values | Not wired. One module in the hat's bell, channel A on the `MOUTH` pins, AIN2 tied to GND (a one-way cam), standby from D9, no pull-down resistors, VM from the hat's own pack: `docs/wiring-hat.md`. The mouth in gate mode (`FISH_MOUTH_MODE=gate`, `FISH_MOUTH_OPEN_PWM`), built 2026-10-16 at level 0 and 1 only |
-| Fair | **2026-10-17**. The Spin Master Sorting Hat replaces Billy Bass #2 (his word, 2026-10-16), on branch `sorting-hat`. Interface: the page on the operator's phone (ADR 0006). Open: the hat's persona and phrases (the fish's until he decides) |
+| Fair | **2026-10-17**. The Spin Master Sorting Hat replaces Billy Bass #2 (his word, 2026-10-16), on branch `sorting-hat`. Interface: the page on the operator's phone (ADR 0006). `FISH_PERSONA=hat` selects the hat's words (`PERSONAS` in `config.py`, 2026-10-16): the texts are his to write, speakable placeholders until then |
 
 Ask before starting the next Braintip phase. Until the fair, prefer work that closes the fair
 path over polishing one module. The phase list lives in `docs/BRAINTIP.md`; keep this table
@@ -90,7 +90,7 @@ together.
 |---|---|---|
 | Push-to-talk | Keyboard key, the page's hold button, or a remote's button; a fresh press starts a recording, `FISH_PTT_MAX_S` ends a long one and the LLM is told the visitor was still talking. With `FISH_MIC_CAPTURE=browser` the page records with its own microphone and uploads a 16 kHz WAV (`POST /utterance`), taken by the loop through one inbox like a board recording; a remote's press is relayed to the page in browser mode | [`ptt.py`](fish_brain/ptt.py), [`evdev_button.py`](fish_brain/evdev_button.py), [`viz.py`](fish_brain/viz.py) |
 | Speech-to-text | `local` faster-whisper (optionally on an encoder window that follows the clip), `canary` (NVIDIA Canary through sherpa-onnx, for recordings up to 6 s; longer ones go to the services in `FISH_STT_LONG` while online, else to the local model), or the recording uploaded to `openai` / `groq`; the model loads in the background at start-up | [`stt.py`](fish_brain/stt.py) |
-| LLM | Profiles `groq` (GPT-OSS-20B) and `luna` (GPT-6 Luna); bounded history; fallback line on error. `reading.read_badge` turns a badge photo into a name (`luna` only: it takes images, `groq` does not) | [`llm.py`](fish_brain/llm.py), [`ab.py`](fish_brain/ab.py) |
+| LLM | Profiles `groq` (GPT-OSS-20B) and `luna` (GPT-6 Luna); bounded history; fallback line on error; the persona's words by `FISH_PERSONA` (`PERSONAS` in `config.py`: the fish, or the hat). `reading.read_badge` turns a badge photo into a name (`luna` only: it takes images, `groq` does not) | [`llm.py`](fish_brain/llm.py), [`ab.py`](fish_brain/ab.py) |
 | Cloud plumbing | One client per service, short timeouts, a background "is the internet there" flag, two error types | [`cloud.py`](fish_brain/cloud.py) |
 | Text-to-speech | `loq` (Loquendo "Jorge") or `openai`; always a WAV file, never played here | [`tts.py`](fish_brain/tts.py) |
 | Canned phrases | welcome, goodbye, no_signal, no_mic, reading_wait, reading_fail, and the fillers and apologies of a waiting turn (`filler_first_*`, `filler_more_*`, `timeout_stt_*`); cached by text and voice; an older rendering is used when a new one can't be made | [`canned.py`](fish_brain/canned.py) |
@@ -214,7 +214,7 @@ check its replies against this table.
   `FISH_READING_LOOK`, `FISH_SAY_ADDRESS`. Since 2026-10-12: `FISH_STT_MODEL_DIR`,
   `FISH_STT_WINDOW_S`, `FISH_STT_BEAM`, `FISH_STT_LONG`. Since 2026-10-13: `FISH_FILLER`,
   `FISH_FILLER_DELAY_S`, `FISH_FILLER_GAP_S`, `FISH_TURN_TIMEOUT_S`, `FISH_BURBLE`. Since
-  2026-10-16: `FISH_MOUTH_MODE`, `FISH_MOUTH_OPEN_PWM`.
+  2026-10-16: `FISH_MOUTH_MODE`, `FISH_MOUTH_OPEN_PWM`, `FISH_PERSONA`.
 
 ### Every hardware boundary has a stand-in
 

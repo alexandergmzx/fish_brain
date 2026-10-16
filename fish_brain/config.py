@@ -45,6 +45,93 @@ def _env_opt(name: str) -> str | None:
     return os.environ.get(name, "").strip() or None
 
 
+# ---- personas --------------------------------------------------------------------------------
+# Who the body is (FISH_PERSONA): the words the LLM, the canned phrases and the reading use.
+# "fish" is Billy Bass; "hat" is the Spin Master Sorting Hat (the fair of 2026-10-17). A
+# persona lists only what differs from the fish; the rest (the fillers, the timeouts, no_mic,
+# reading_wait) is shared. The hat's texts are the owner's to write: the entries below are
+# speakable placeholders that keep the hat working until he does.
+
+_FISH_SYSTEM_PROMPT = (
+    "Eres un pez animatrónico parlante (un Big Mouth Billy Bass) con mucha "
+    "personalidad: simpático, bromista y un poco sarcástico. Respondes en español "
+    "mexicano, en frases cortas y naturales para ser habladas en voz alta. Evita "
+    "listas, emojis y texto que no se pueda pronunciar."
+)
+_FISH_FALLBACK_REPLY = "¡Glub! Se me fue la señal. Pregúntame otra vez."
+_FISH_READING_RULES = (
+    "Cuando sepas el nombre de un visitante por su gafete, confírmalo con una pregunta "
+    "corta; cuando lo confirme o te diga su nombre, salúdalo por su nombre de pila y dile "
+    "su futuro: tres o cuatro frases cortas para decir en voz alta, amables y juguetonas, "
+    "con una predicción concreta y absurda sobre el resto del día en la feria. Sin asumir "
+    "si es niño o niña; sin edad, aspecto físico, salud, dinero ni nada triste; de su "
+    "apariencia solo lo que te doy, para una broma ligera."
+)
+_FISH_PHRASES: dict[str, str] = {
+    "welcome": "¡Hola! Soy el pez que todo lo sabe. Pregúntame lo que quieras, o enséñame "
+               "tu gafete y te leo el futuro.",
+    "goodbye": "¡Me voy a nadar! Que les vaya bonito.",
+    "no_signal": "Uy, se me fue la señal. Dame un segundo y repítemelo.",
+    "no_mic": "No te escucho, revisa el micrófono.",
+    "reading_wait": "A ver, a ver… déjame leer ese gafete. No te muevas.",
+    "reading_fail": "Uy, no alcanzo a leer tu gafete. ¿Cómo te llamas?",
+    # Said while a turn waits (FillerConfig): the first of a turn, then the next ones.
+    # Short on purpose (his word, 2026-10-13): 0.9 to 1.9 s in Loquendo, so a phrase
+    # that starts just before the answer is ready delays it little.
+    "filler_first_1": "Mmm… a ver.",
+    "filler_first_2": "Leyendo tu mente…",
+    "filler_first_3": "No cuelgues la mente.",
+    "filler_first_4": "Espérame tantito.",
+    "filler_first_5": "Ya te oí, ya te oí.",
+    "filler_first_6": "Sintonizando…",
+    "filler_first_7": "Qué interesante…",
+    "filler_first_8": "Un momento, por favor.",
+    "filler_more_1": "Sigo leyendo.",
+    "filler_more_2": "Ya casi, ya casi.",
+    "filler_more_3": "Sigo contigo.",
+    "filler_more_4": "Tu turno ya viene.",
+    "filler_more_5": "Paciencia, paciencia.",
+    "filler_more_6": "Ya merito.",
+    # The turn passed its budget while the recording was being transcribed.
+    "timeout_stt_1": "Perdón, no te escuché bien. ¿Me lo repites?",
+    "timeout_stt_2": "Uy, se me cruzaron las burbujas. ¿Me lo dices otra vez?",
+}
+
+PERSONAS: dict[str, dict] = {
+    "fish": {},
+    "hat": {   # placeholders: the owner's texts go here
+        "system_prompt": (
+            "Eres el Sombrero Seleccionador, un sombrero animatrónico parlante que decide a "
+            "qué casa pertenece cada visitante. Respondes en español mexicano, en frases "
+            "cortas y naturales para ser habladas en voz alta. Evita listas, emojis y texto "
+            "que no se pueda pronunciar."
+        ),
+        "fallback_reply": "Se me nubló la mente. Pregúntame otra vez.",
+        "reading_rules": (
+            "Cuando sepas el nombre de un visitante por su gafete, confírmalo con una pregunta "
+            "corta; cuando lo confirme o te diga su nombre, salúdalo por su nombre de pila y "
+            "dile a qué casa pertenece: tres o cuatro frases cortas para decir en voz alta, "
+            "amables y juguetonas, con una razón concreta y absurda. Sin asumir si es niño o "
+            "niña; sin edad, aspecto físico, salud, dinero ni nada triste; de su apariencia "
+            "solo lo que te doy, para una broma ligera."
+        ),
+        "phrases": {
+            "welcome": "¡Hola! Soy el Sombrero Seleccionador. Pregúntame lo que quieras, o "
+                       "enséñame tu gafete y te digo tu casa.",
+            "goodbye": "Me voy a dormir. Que les vaya bonito.",
+            "timeout_stt_2": "Uy, se me enredó el ala. ¿Me lo dices otra vez?",
+        },
+    },
+}
+
+
+def _persona() -> dict:
+    name = _env("FISH_PERSONA", "fish")
+    if name not in PERSONAS:
+        raise ValueError(f"FISH_PERSONA={name!r}; choose one of {list(PERSONAS)}")
+    return PERSONAS[name]
+
+
 @dataclass
 class SerialConfig:
     port: str = field(default_factory=lambda: _env("FISH_SERIAL_PORT", "/dev/ttyACM0"))
@@ -287,13 +374,10 @@ class LLMConfig:
     timeout_s: float = 8.0
     max_history_turns: int = 8      # user+assistant pairs kept for context
     # Spoken instead of crashing when the API is unreachable / errors out.
-    fallback_reply: str = "¡Glub! Se me fue la señal. Pregúntame otra vez."
-    system_prompt: str = (
-        "Eres un pez animatrónico parlante (un Big Mouth Billy Bass) con mucha "
-        "personalidad: simpático, bromista y un poco sarcástico. Respondes en español "
-        "mexicano, en frases cortas y naturales para ser habladas en voz alta. Evita "
-        "listas, emojis y texto que no se pueda pronunciar."
-    )
+    fallback_reply: str = field(
+        default_factory=lambda: _persona().get("fallback_reply", _FISH_FALLBACK_REPLY))
+    system_prompt: str = field(
+        default_factory=lambda: _persona().get("system_prompt", _FISH_SYSTEM_PROMPT))
 
     def __post_init__(self) -> None:
         if self.profile not in LLM_PROFILES:
@@ -329,36 +413,11 @@ class CannedConfig:
     reading_fail: str = "reading_fail"   # the badge could not be read
     # True = greet once per boot, not on every (re)start. Marker lives in $XDG_RUNTIME_DIR.
     welcome_once: bool = field(default_factory=lambda: _env_bool("FISH_WELCOME_ONCE", False))
-    # name -> Spanish text spoken by the fish.
-    phrases: dict[str, str] = field(default_factory=lambda: {
-        "welcome": "¡Hola! Soy el pez que todo lo sabe. Pregúntame lo que quieras, o enséñame "
-                   "tu gafete y te leo el futuro.",
-        "goodbye": "¡Me voy a nadar! Que les vaya bonito.",
-        "no_signal": "Uy, se me fue la señal. Dame un segundo y repítemelo.",
-        "no_mic": "No te escucho, revisa el micrófono.",
-        "reading_wait": "A ver, a ver… déjame leer ese gafete. No te muevas.",
-        "reading_fail": "Uy, no alcanzo a leer tu gafete. ¿Cómo te llamas?",
-        # Said while a turn waits (FillerConfig): the first of a turn, then the next ones.
-        # Short on purpose (his word, 2026-10-13): 0.9 to 1.9 s in Loquendo, so a phrase
-        # that starts just before the answer is ready delays it little.
-        "filler_first_1": "Mmm… a ver.",
-        "filler_first_2": "Leyendo tu mente…",
-        "filler_first_3": "No cuelgues la mente.",
-        "filler_first_4": "Espérame tantito.",
-        "filler_first_5": "Ya te oí, ya te oí.",
-        "filler_first_6": "Sintonizando…",
-        "filler_first_7": "Qué interesante…",
-        "filler_first_8": "Un momento, por favor.",
-        "filler_more_1": "Sigo leyendo.",
-        "filler_more_2": "Ya casi, ya casi.",
-        "filler_more_3": "Sigo contigo.",
-        "filler_more_4": "Tu turno ya viene.",
-        "filler_more_5": "Paciencia, paciencia.",
-        "filler_more_6": "Ya merito.",
-        # The turn passed its budget while the recording was being transcribed.
-        "timeout_stt_1": "Perdón, no te escuché bien. ¿Me lo repites?",
-        "timeout_stt_2": "Uy, se me cruzaron las burbujas. ¿Me lo dices otra vez?",
-    })
+    # name -> Spanish text spoken by the body. The fish's set, with the persona's own words
+    # over it (FISH_PERSONA). A changed text is a new WAV in the cache: render it on the
+    # machine that speaks (`--prerender-canned`, or `deploy/unoq_setup.sh install`).
+    phrases: dict[str, str] = field(
+        default_factory=lambda: {**_FISH_PHRASES, **_persona().get("phrases", {})})
 
 
 @dataclass
@@ -422,14 +481,8 @@ class ReadingConfig:
         "look es null. Si no hay gafete legible, badge_found es false y los demás campos null."
     )
     # Per-visitor rules appended to the persona for the reading turns.
-    rules: str = (
-        "Cuando sepas el nombre de un visitante por su gafete, confírmalo con una pregunta "
-        "corta; cuando lo confirme o te diga su nombre, salúdalo por su nombre de pila y dile "
-        "su futuro: tres o cuatro frases cortas para decir en voz alta, amables y juguetonas, "
-        "con una predicción concreta y absurda sobre el resto del día en la feria. Sin asumir "
-        "si es niño o niña; sin edad, aspecto físico, salud, dinero ni nada triste; de su "
-        "apariencia solo lo que te doy, para una broma ligera."
-    )
+    rules: str = field(
+        default_factory=lambda: _persona().get("reading_rules", _FISH_READING_RULES))
 
 
 @dataclass

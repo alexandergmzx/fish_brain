@@ -174,7 +174,8 @@ Each step has a pass line; every reading goes into
    `FISH_MOUTH_OPEN_PWM` and into the calibration file.
 8. **The app, you at the hat, laptop watching the journal:** on the board, with
    `FISH_MOUTH_MODE=gate` and the chosen `FISH_MOUTH_OPEN_PWM` in `.env`,
-   `cd ~/fish_brain && .venv/bin/python -m fish_brain.app --say "Hola"`; the voice comes from
+   `cd ~/fish_brain && .venv/bin/python -m fish_brain.app --say "Hola"` (with `FISH_PERSONA=hat` in
+   `.env` and the phrases rendered: `--prerender-canned` first); the voice comes from
    the cone in the bell and the flapping follows it; the `[turn]` line and the mouth lane
    agree. Pack voltage (switch on, hat idle) before and after the rehearsal sentences with
    the sentence count; the module's temperature by touch after a long sentence.
@@ -191,7 +192,7 @@ runs unchanged with no motor.
 | Cells in the hat pack and VM under a stall | Steps 0 and 6 | Fresh cells, or a 4 AA holder with a lower `FISH_MOUTH_OPEN_PWM` |
 | The hat's battery box inside or outside the bell | The owner, at assembly | Wires 8 and 9 |
 | The speaker's amplifier inside or outside | The owner, at assembly | Only the cone is planned inside |
-| The fish's persona and phrases, or the hat's, on 2026-10-17 | The owner | The prompt and the canned phrases in `fish_brain` |
+| The hat's words | `FISH_PERSONA=hat` on the board; the owner writes the texts in `PERSONAS["hat"]` in `config.py` (speakable placeholders until then), then `python -m fish_brain.app --prerender-canned` there | The persona, the welcome and goodbye, the reading's rules |
 | D9's state in reset | Steps 2 and 5 | Whether STBY stays on D9 |
 | Rest state IN1 = IN2 = L, PWM = L: brake or high-Z | Step 5 | Nothing in code; one line in the calibration notes |
 | Can the motor run in reverse safely | After the fair (locked out now) | Whether AIN2 ever goes back to D11 |

@@ -121,6 +121,7 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_TURN_TIMEOUT_S` | `12` | From the end of the recording to the start of the reply's voice; past it the turn is dropped |
 | `FISH_MOUTH_MODE` | `position` | How loudness becomes mouth pulses. `position`: the jaw model, drive time from closed through the measured curves. `gate`: the motor runs while the level is above a gate and stops when it falls, for a one-way mechanism such as the Sorting Hat's cam (150 ms pulses re-sent every 100 ms, a 1 ms zero pulse at the fall, nothing held): [`docs/wiring-hat.md`](docs/wiring-hat.md) |
 | `FISH_MOUTH_OPEN_PWM` | `238` | The open drive (in gate mode, the flap speed) for a body without values of its own in `config.py` |
+| `FISH_PERSONA` | `fish` | Whose words: `fish` (Billy Bass) or `hat` (the Sorting Hat): the LLM's persona, its fallback line, the welcome and goodbye and the reading's rules, in `PERSONAS` in `config.py`; a persona lists only what differs from the fish. The hat's texts are placeholders to be written. A changed phrase is a new WAV: `--prerender-canned` on the machine that speaks |
 | `FISH_READING_PROFILE` | empty = `FISH_LLM_PROFILE` | LLM profile that reads a badge photo (the reading, ADR 0007). It needs image input: `luna` |
 | `FISH_READING_LOOK` | `false` | `true`: the console shows a per-visitor consent tick and the model may add one kind line on clothing, colours or accessories |
 | `FISH_CLOUD_TIMEOUT`, `FISH_CLOUD_CONNECT_TIMEOUT` | `10`, `3` | Seconds before a cloud call gives up |
