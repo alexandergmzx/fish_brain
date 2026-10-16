@@ -121,6 +121,8 @@ def run_visit(llm, cfg, visitor: dict, *, clock=None) -> dict:
         turns.append(turn)
         if llm.last_error or not spoken:
             continue                            # not delivered: the stage stays
+        if house and house.lower() not in spoken.lower():
+            turn["problems"].append("the house is not said aloud")
         llm.remember(tagged, raw)
         v.delivered(house, snap)
     verdict = v.done

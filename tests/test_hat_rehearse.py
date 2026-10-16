@@ -65,3 +65,12 @@ def test_a_spoken_tag_and_a_missing_house_are_problems(monkeypatch):
     assert rec["turns"][0]["hat"] == "¿Tú eres Leo?"
     assert any("CASA" in p for p in rec["turns"][1]["problems"])
     assert rec["house"] is None and rec["problems"] == ["no house at the verdict"]
+
+
+def test_a_house_only_on_the_tag_line_is_a_problem(monkeypatch):
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+    llm = ScriptLLM(["a?", "b?", "Eres valiente.\nCASA: Gryffindor"])
+    visitor = {"badge": None, "greet": True, "steps": [("say", "x"), ("say", "y"), ("say", "z")]}
+    rec = hat_rehearse.run_visit(llm, Config(), visitor)
+    assert rec["house"] == "Gryffindor"
+    assert "the house is not said aloud" in rec["turns"][-1]["problems"]
