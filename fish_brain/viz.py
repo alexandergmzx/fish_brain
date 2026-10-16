@@ -94,6 +94,7 @@ class VizServer:
         self._wait = False                    # "wait to speak" checkbox: gate auto-speak of replies
         self._speaker = None                  # speak.Speaker, registered by app.py (text box -> /speak)
         self._reader = None                   # reading.read_badge, registered by app.py (/badge)
+        self._visit = None                    # visit.Visit, the hat's (/visit, /cues), by app.py
         self._status_provider = None          # app.py: link, internet and backends for /status
         self._debug = None                    # debug.DebugHub, registered by app.py (/debug)
         self._started = time.monotonic()
@@ -166,7 +167,9 @@ class VizServer:
                "max_record_s": float(self.cfg.ptt.max_record_s),
                "mic_capture": self.cfg.ptt.capture, "tls": self._tls_httpd is not None,
                "listening": self._listening, "mic_pages": self.mic_pages(),
-               "reading": self._reader is not None, "reading_look": bool(self.cfg.reading.look)}
+               "reading": self._reader is not None, "reading_look": bool(self.cfg.reading.look),
+               # Only whether the sheet shows the visit's row: never its cues, name or stage.
+               "visit_enabled": self._visit is not None}
         provider = self._status_provider
         if provider is not None:
             try:
@@ -280,6 +283,13 @@ class VizServer:
                 q.put_nowait(json.dumps(event))
             except (ValueError, queue.Full):
                 pass
+        visit = self._visit
+        if visit is not None:
+            # The visit's view, read live: a phone that slept draws the current one.
+            try:
+                q.put_nowait(json.dumps({"type": "visit", **visit.view()}))
+            except queue.Full:
+                pass
         return q
 
     def _unsubscribe(self, q: queue.Queue) -> None:
@@ -367,6 +377,48 @@ class VizServer:
         Never the photo; a name is fine, the stream needs the token."""
         self._publish(json.dumps({"type": "reading", "stage": stage, **fields}))
 
+    def push_visit(self, **view) -> None:
+        """The hat's visit for the operator's sheet (visit.Visit.view()): its number, stage,
+        first name, house and the pending cues. On the stream, which needs the token."""
+        self._publish(json.dumps({"type": "visit", **view}))
+
+    # --- the hat's visit: "Nuevo visitante" and the operator's cues (visit.py) ---
+    def register_visit(self, visit) -> None:
+        self._visit = visit
+
+    def new_visit(self) -> tuple[int, dict]:
+        """`POST /visit`: a new visitor. The request is marked first, so a recording already
+        under way opens the new visit; a refused item withdraws it."""
+        from .visit import NewVisit
+        visit = self._visit
+        if visit is None:
+            return 503, {"ok": False, "error": "no visit"}
+        at = time.monotonic()
+        visit.request_new(at)
+        if not self.offer(NewVisit(at)):
+            visit.cancel_request(at)
+            return 409, {"ok": False, "busy": True}
+        return 200, {"ok": True}
+
+    def set_cues(self, cues) -> tuple[int, dict]:
+        """`POST /cues {"cues": {...}}`: the sheet's whole set of lit cues."""
+        visit = self._visit
+        if visit is None:
+            return 503, {"ok": False, "error": "no visit"}
+        try:
+            visit.set_cues(cues)
+        except ValueError as e:                 # fixed words: never the text that was sent
+            return 400, {"ok": False, "error": str(e)}
+        view = visit.view()
+        self.push_visit(**view)                 # another open sheet follows
+        return 200, {"ok": True, "visit": view}
+
+    def _visit_request(self) -> None:
+        """A badge that could not be read: the hat asks the name, and the answer is a new
+        visitor's, not the last one's."""
+        if self._visit is not None:
+            self._visit.request_new(time.monotonic())
+
     # --- the reading: a badge photo or a typed name becomes an input item ---
     def register_reader(self, fn) -> None:
         """`fn(jpeg_bytes, want_look) -> reading.BadgeRead`; raises the cloud errors."""
@@ -392,15 +444,19 @@ class VizServer:
         try:
             res = self._reader(jpeg, want_look)
         except cloud.CloudUnavailable:
+            self._visit_request()
             self._say_canned(self.cfg.canned.reading_fail)
             return 503, {"ok": False, "error": "offline"}
         except cloud.CloudMisconfigured:
+            self._visit_request()
             self._say_canned(self.cfg.canned.reading_fail)
             return 503, {"ok": False, "error": "misconfigured"}
         except ValueError as e:
+            self._visit_request()
             self._say_canned(self.cfg.canned.reading_fail)
             return 400, {"ok": False, "error": str(e)}
         if not res.found:
+            self._visit_request()
             self._say_canned(self.cfg.canned.reading_fail)
             return 200, {"ok": True, "found": False}
         first = res.name_for_speech or first_word(res.full_name)
@@ -715,7 +771,7 @@ def _make_handler(server: "VizServer"):
                 self._post_debug(path, query)
                 return
             if path in ("/mic", "/ptt", "/speak", "/wait", "/badge", "/reading", "/utterance",
-                        "/micstate"):
+                        "/micstate", "/visit", "/cues"):
                 if not self._authorized(query):
                     self._send_json({"ok": False, "error": "bad token"}, status=403)
                     return
@@ -740,6 +796,12 @@ def _make_handler(server: "VizServer"):
                         self._send_json(server.speak_text(body.get("text")))
                     elif path == "/reading":
                         status, out = server.read_name(body.get("name"), body.get("look"))
+                        self._send_json(out, status=status)
+                    elif path == "/visit":
+                        status, out = server.new_visit()
+                        self._send_json(out, status=status)
+                    elif path == "/cues":
+                        status, out = server.set_cues(body.get("cues"))
                         self._send_json(out, status=status)
                     else:
                         self._send_json(server.set_wait(body.get("on")))
@@ -873,6 +935,7 @@ def _make_handler(server: "VizServer"):
                 status, out = server.read_badge(data, want_look)
             except Exception as e:     # the reader must never take the handler down
                 print(f"[reading] failed: {type(e).__name__}", flush=True)
+                server._visit_request()
                 server._say_canned(server.cfg.canned.reading_fail)
                 status, out = 500, {"ok": False, "error": type(e).__name__}
             finally:

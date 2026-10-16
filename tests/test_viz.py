@@ -744,4 +744,84 @@ def test_status_keys_are_unchanged_by_the_debug_view(server, dbg):
     status, body = get(server.url + "/status")
     assert set(json.loads(body)) == {"ok", "up_s", "host", "ip", "ready", "wait", "max_record_s",
                                      "mic_capture", "tls", "listening", "mic_pages", "reading",
-                                     "reading_look"}
+                                     "reading_look", "visit_enabled"}
+
+
+# ---- the hat's visit: /visit and /cues ------------------------------------------------------
+def _visit(server):
+    from fish_brain.visit import Visit
+    v = Visit()
+    server.register_visit(v)
+    return v
+
+
+def test_visit_and_cues_need_the_token_and_a_visit(server):
+    assert post(server.url + "/visit", {})[0] == 403
+    assert post(server.url + "/cues", {"cues": {}})[0] == 403
+    assert post(server.url + "/visit", {}, AUTH) == (503, {"ok": False, "error": "no visit"})
+    assert post(server.url + "/cues", {"cues": {}}, AUTH)[0] == 503
+
+
+def test_new_visit_while_busy_is_409_and_withdraws_its_request(server):
+    v = _visit(server)
+    v.start()
+    assert post(server.url + "/visit", {}, AUTH) == (409, {"ok": False, "busy": True})
+    assert not v.needs_new(time.monotonic())
+    assert server.take_inbox() is None
+
+
+def test_new_visit_queues_an_item_and_leaves_wait_alone(server):
+    from fish_brain.visit import NewVisit
+    v = _visit(server)
+    v.start()
+    server.set_listening(True)
+    wait = server.status()["wait"]
+    assert post(server.url + "/visit", {}, AUTH) == (200, {"ok": True})
+    item = server.take_inbox()
+    assert isinstance(item, NewVisit) and v.needs_new(time.monotonic())
+    assert server.status()["wait"] == wait
+
+
+def test_cues_are_set_checked_and_never_in_status(server):
+    v = _visit(server)
+    v.start("Ana")
+    status, out = post(server.url + "/cues",
+                       {"cues": {"edad": "niño", "lleva": "gorra [roja]"}}, AUTH)
+    assert status == 200 and out["visit"]["cues"] == {"edad": "niño", "lleva": "gorra roja"}
+    assert v.pending() == {"edad": "niño", "lleva": "gorra roja"}
+    status, out = post(server.url + "/cues", {"cues": {"sabor": "fresa secreta"}}, AUTH)
+    assert status == 400 and "fresa" not in json.dumps(out)
+    assert post(server.url + "/cues", {"cues": "nope"}, AUTH)[0] == 400
+    assert v.pending() == {"edad": "niño", "lleva": "gorra roja"}       # a refusal changes nothing
+    st = get(server.url + "/status")[1].decode()
+    assert json.loads(st)["visit_enabled"] is True
+    text = json.dumps(json.loads(st), ensure_ascii=False)
+    assert not any(x in text for x in ("gorra", "Ana", "niño"))
+
+
+def test_status_says_visit_only_when_registered(server):
+    assert server.status()["visit_enabled"] is False
+    _visit(server)
+    assert server.status()["visit_enabled"] is True
+
+
+def test_a_page_that_connects_gets_the_visits_view(server):
+    v = _visit(server)
+    v.start("Ana")
+    q = server._subscribe()
+    events = []
+    while not q.empty():
+        events.append(json.loads(q.get_nowait()))
+    seen = [e for e in events if e.get("type") == "visit"]
+    assert seen and seen[-1]["first"] == "Ana" and seen[-1]["stage"] == 1
+    server.push_visit(**v.view())
+    assert json.loads(q.get_nowait())["type"] == "visit"
+
+
+def test_an_unread_badge_asks_for_a_new_visitor(server):
+    v = _visit(server)
+    v.start()
+    server.register_reader(StubReader(found=False))
+    server.set_listening(True)
+    assert post_badge(server, headers=AUTH)[1]["found"] is False
+    assert v.needs_new(time.monotonic())
