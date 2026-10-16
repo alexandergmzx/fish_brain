@@ -262,7 +262,7 @@ class FishConversation:
         if lock is not None and lock.locked():
             return
         try:
-            sounds = burble.ensure(self.cfg.burble.cache_dir)
+            sounds = burble.ensure(self.cfg.burble.cache_dir, self.cfg.burble.sound)
             wav = self._rng.choice([p for p in sounds if p != self._last_burble] or sounds)
             chain = (self._rng.choice(self.cfg.gesture.tail_chains)
                      if self.cfg.burble.tail and self.cfg.gesture.enabled else None)

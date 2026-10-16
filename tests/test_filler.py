@@ -683,6 +683,29 @@ def test_the_burbles_are_made_once_and_differ(tmp_path):
     assert burble.self_test() == 0
 
 
+def test_the_hat_hums_instead_of_bubbling(tmp_path):
+    from fish_brain import burble
+    import pytest as _pytest
+    hums = burble.ensure(tmp_path, "hum")
+    assert [p.name for p in hums] == [f"hum_{i}-v{burble.VERSION}.wav" for i in range(1, 5)]
+    assert not list(tmp_path.glob("burble_*"))
+    assert len({p.stat().st_size for p in hums}) == 4
+    for p in hums:
+        with wave.open(str(p)) as w:
+            assert 0.3 <= w.getnframes() / w.getframerate() <= 0.6 and w.getnchannels() == 1
+    assert all(burble._rises(burble.hum(*r)) for r in burble.HUM_RECIPES)
+    with _pytest.raises(ValueError):
+        burble.ensure(tmp_path, "gong")
+
+
+def test_the_hats_burble_sound_comes_from_the_persona(monkeypatch):
+    from fish_brain.config import BurbleConfig
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+    assert BurbleConfig().sound == "hum"
+    monkeypatch.setenv("FISH_PERSONA", "fish")
+    assert BurbleConfig().sound == "bubbles"
+
+
 def test_a_recording_made_here_gets_its_burble_too(rig, monkeypatch, tmp_path):
     convo, viz, world, offer = rig(burble=True)
     wav = loud_wav(tmp_path / "host.wav")
