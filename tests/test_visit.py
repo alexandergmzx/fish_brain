@@ -1,4 +1,5 @@
 """The hat's visit, pure: stages, the house line, the operator's cues."""
+import re
 import threading
 
 import pytest
@@ -214,3 +215,42 @@ def test_note_and_begin_model():
     llm = LLM()
     visit.begin_model(llm, "reglas")
     assert llm.resets == 1 and llm.extra_rules == "reglas"
+
+
+# ---- the verdict's future ---------------------------------------------------------------------
+import random  # noqa: E402
+
+BANK = {"hours": ["11:30", "16:45"], "card_odds": 0.5, "lugar": ["la Plaza de las Artes", "la torre morada"],
+        "cosa": ["un ajolote impreso en 3D", "un dron"], "carta": ["El sol"]}
+
+
+def test_only_the_verdict_carries_the_future():
+    v = Visit(clock=Clock(), future=BANK, rng=random.Random(3))
+    v.start()
+    for n in (1, 2, 3):
+        assert "[FUTURO" not in v.prepare("x")[0]
+        v.delivered()
+    tagged = v.prepare("investigo")[0]
+    assert tagged.startswith("[ETAPA 4/4] [FUTURO: hora=") and tagged.endswith("] investigo")
+
+
+def test_the_future_is_random_but_seeded_and_within_the_hours():
+    a = [visit.future_tag(BANK, random.Random(5)) for _ in range(2)]
+    assert a[0] == a[1]
+    many = {visit.future_tag(BANK, random.Random(s)) for s in range(30)}
+    assert len(many) > 5
+    rng = random.Random(9)
+    for _ in range(200):
+        h = re.search(r"hora=las? (\d+)(?: y (\d+)| en punto)", visit.future_tag(BANK, rng))
+        hour, minute = int(h.group(1)), int(h.group(2) or 0)
+        t = (hour if hour >= 11 else hour + 12) * 60 + minute     # 11, 12, then 1..4 pm
+        assert 11 * 60 + 30 <= t <= 16 * 60 + 45
+
+
+def test_no_bank_no_future_and_an_echoed_tag_is_never_spoken():
+    v = Visit(clock=Clock())
+    v.start()
+    v.said = 3
+    assert "[FUTURO" not in v.prepare("x")[0]
+    assert visit.say_hour(13 * 60 + 5) == "la 1 y 5" and visit.say_hour(15 * 60) == "las 3 en punto"
+    assert split_reply("[FUTURO: lugar=x] ¡Ravenclaw!\nCASA: Ravenclaw") == ("¡Ravenclaw!", "Ravenclaw")

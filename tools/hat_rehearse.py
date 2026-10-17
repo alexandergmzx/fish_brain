@@ -86,7 +86,7 @@ def run_visit(llm, cfg, visitor: dict, *, clock=None) -> dict:
     import time
     from fish_brain import reading, visit
     clock = clock or time.monotonic
-    v = visit.Visit(cfg.visit.stages, idle_s=0, clock=clock)
+    v = visit.Visit(cfg.visit.stages, idle_s=0, clock=clock, future=cfg.visit.future)
     first = visitor["badge"] or ""
     v.start(first)
     visit.begin_model(llm, cfg.visit.rules)
@@ -180,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         by_stage: dict[int, list[float]] = {}
         houses = problems = cost = 0
+        futures: dict[tuple, int] = {}            # (lugar, cosa) of each verdict: repeats?
         for i, visitor in enumerate(visitors, args.only or 1):
             rec = run_visit(llm, cfg, visitor)
             _print_visit(i, name, rec)
@@ -188,10 +189,19 @@ def main(argv: list[str] | None = None) -> int:
                     by_stage.setdefault(t["stage"], []).append(t["s"])
                     cost += _cost(lcfg, t.get("usage"))
                 problems += bool(t["problems"] or t.get("error"))
+            for t in rec["turns"]:
+                m = re.search(r"\[FUTURO:([^\]]*)\]", t.get("sent", ""))
+                if m:
+                    kv = dict(p.split("=", 1) for p in m.group(1).strip().split("; ") if "=" in p)
+                    key = (kv.get("lugar"), kv.get("cosa"))
+                    futures[key] = futures.get(key, 0) + 1
             houses += bool(rec["house"])
             problems += bool(rec["problems"])
         print(f"\n### {name}: {houses} of {len(visitors)} visits with a house; "
               f"{problems} problem(s); cost ${cost:.4f}")
+        repeats = {k: n for k, n in futures.items() if n > 1}
+        if repeats:
+            print(f"    same place and thing twice: {repeats}")
         for stage in sorted(by_stage):
             xs = by_stage[stage]
             print(f"    stage {stage}: median {statistics.median(xs):.1f} s, "

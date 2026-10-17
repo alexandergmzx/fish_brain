@@ -424,8 +424,9 @@ def test_a_whole_visit_tags_four_stages_and_strips_the_house(hat):
                                    "Libros. ¿Abres o investigas?", VERDICT, "¡Hola de nuevo!"])
     for _ in range(4):
         assert convo.turn() is True
-    assert llm.replies == ["[ETAPA 1/4] hola", "[ETAPA 2/4] Ana", "[ETAPA 3/4] libro",
-                           "[ETAPA 4/4] investigo"]
+    assert llm.replies[:3] == ["[ETAPA 1/4] hola", "[ETAPA 2/4] Ana", "[ETAPA 3/4] libro"]
+    assert llm.replies[3].startswith("[ETAPA 4/4] [FUTURO: hora=")      # the day's ingredients
+    assert llm.replies[3].endswith("] investigo")
     assert llm.kwargs == [False] * 4
     assert [u for u, _ in llm.remembered] == llm.replies
     assert llm.remembered[-1][1] == VERDICT                 # the history keeps the tag line

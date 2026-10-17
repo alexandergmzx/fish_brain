@@ -48,7 +48,7 @@ CUE_ORDER = (*CUE_CHOICES, *CUE_TEXT)
 CUE_LABEL = {"edad": "edad", "compania": "compañía", "color": "color",
              "impresion": "impresión", "lleva": "lleva", "nota": "nota"}
 
-_TAG = re.compile(r"\[\s*(?:ETAPA|PISTAS|FIN)\b[^\]]*\]", re.IGNORECASE)
+_TAG = re.compile(r"\[\s*(?:ETAPA|PISTAS|FIN|FUTURO)\b[^\]]*\]", re.IGNORECASE)
 _LINE_LEAD = re.compile(r"^[\s>*_#•·-]+")
 _CASA_LINE = re.compile(r"^casa\s*:\s*(.*)$", re.IGNORECASE)
 # The tag run into the end of the text ("… feria. CASA: Ravenclaw"): only in capitals and
@@ -108,6 +108,38 @@ def clean_cue_text(text) -> str:
     return s.strip(" -,").strip()
 
 
+_HOURS = ("doce", "una", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve",
+          "diez", "once")
+
+
+def say_hour(minutes: int) -> str:
+    """Minutes after midnight as the hat says it: 917 -> "las 3 y 17" ("la 1 y 5")."""
+    h, m = divmod(int(minutes), 60)
+    h12 = h % 12 or 12
+    art = "la" if h12 == 1 else "las"
+    return f"{art} {h12}" + (f" y {m}" if m else " en punto")
+
+
+def future_tag(bank: dict | None, rng) -> str:
+    """The verdict's ingredients, picked at random (the model alone settles on the same few):
+    `[FUTURO: hora=…; lugar=…; …] `. `bank` is the persona's: {"hours": [from, to] as "H:MM",
+    "card_odds": 0..1, kind: [choices], …}. Empty bank: no tag."""
+    if not bank:
+        return ""
+    parts = []
+    hours = bank.get("hours")
+    if hours:
+        lo, hi = (int(a) * 60 + int(b) for a, b in (h.split(":") for h in hours))
+        parts.append("hora=" + say_hour(rng.randint(lo, hi)))
+    for kind, choices in bank.items():
+        if kind in ("hours", "card_odds") or not isinstance(choices, (list, tuple)) or not choices:
+            continue
+        if kind == "carta" and rng.random() >= float(bank.get("card_odds", 1.0)):
+            continue
+        parts.append(f"{kind}={rng.choice(list(choices))}")
+    return "[FUTURO: " + "; ".join(parts) + "] " if parts else ""
+
+
 def note(template: str, first: str = "", look: str | None = None) -> str:
     """A persona's note to the model with the visitor's first name and the look clause.
     Plain replacement, so braces in the owner's text never break it."""
@@ -129,8 +161,12 @@ class NewVisit:
 
 
 class Visit:
-    def __init__(self, stages: int = 4, idle_s: float = 30.0, clock=time.monotonic):
+    def __init__(self, stages: int = 4, idle_s: float = 30.0, clock=time.monotonic,
+                 future: dict | None = None, rng=None):
+        import random
         self.stages = max(1, int(stages))
+        self.future = future or {}              # the verdict's ingredients (future_tag)
+        self._rng = rng or random.Random()
         self.idle_s = float(idle_s)
         self._clock = clock
         # The loop's side.
@@ -203,6 +239,8 @@ class Visit:
         with self._lock:
             snapshot = dict(self._cues)
         tag = f"[ETAPA {n}/{self.stages}] "
+        if n == self.stages:
+            tag += future_tag(self.future, self._rng)
         cues = [f"{CUE_LABEL[k]}={snapshot[k][0]}" for k in CUE_ORDER if k in snapshot]
         if cues:
             tag += "[PISTAS: " + "; ".join(cues) + "] "

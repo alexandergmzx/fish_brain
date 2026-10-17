@@ -122,7 +122,7 @@ class FishConversation:
         self.visit = None
         if cfg.visit.rules:
             from .visit import Visit
-            self.visit = Visit(cfg.visit.stages, cfg.visit.idle_s, clock=clock)
+            self.visit = Visit(cfg.visit.stages, cfg.visit.idle_s, clock=clock, future=cfg.visit.future)
         self._heard_at: float | None = None   # when the visitor started talking, this turn
         # Button-like push-to-talk sources (browser button, remote). Empty -> keyboard.
         self.button = None
