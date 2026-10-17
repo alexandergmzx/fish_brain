@@ -122,6 +122,7 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_MOUTH_LEAD_START_MS`, `FISH_MOUTH_LEAD_STOP_MS` | `0` | Gate mode: start each phrase's motion this early, stop it this early (the motor's lag; not measured) |
 | `FISH_MOUTH_CALM_PWM` | `0` | Gate mode: the speed of the quieter phrases (per phrase); `0` = every phrase at `FISH_MOUTH_OPEN_PWM` |
 | `FISH_MOUTH_STOP` | `0 1` | Gate mode: the line that ends each phrase and each utterance, `<pwm> <ms>`: `0 1` coasts, `1 150` brakes (TB6612), `-200 74` is a reverse kick |
+| `FISH_LOQ_PREFIX` | the persona's (`\language=SpanishMx ` for the hat) | Loquendo control tags put before every text (`loq` only), each ended by a space. `\speed=N` sets the rate: 50 is the default, 30 is 13 % slower, 20 is 28 % slower ([results](docs/results/2026-10-17-loquendo-speed.md)). Changing it re-renders the canned phrases |
 | `FISH_TURN_TIMEOUT_S` | `12` | From the end of the recording to the start of the reply's voice; past it the turn is dropped |
 | `FISH_READING_PROFILE` | empty = `FISH_LLM_PROFILE` | LLM profile that reads a badge photo (the reading, ADR 0007). It needs image input: `luna` |
 | `FISH_READING_LOOK` | `false` | `true`: the console shows a per-visitor consent tick and the model may add one kind line on clothing, colours or accessories |
