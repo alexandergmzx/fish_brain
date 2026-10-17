@@ -79,3 +79,9 @@ pistas: edad=niño; compania=familia; impresion=sonriente
 Me llamo Emilio.
 Creo que sí, más o menos.
 No sé, a veces.
+
+# 14 an adult who is smiling: albures allowed (his rule, 2026-10-16)
+pistas: edad=adulto; impresion=sonriente; compania=amigos
+Me llamo Ricardo.
+Un trofeo, obvio.
+Perder, nunca pierdo.
