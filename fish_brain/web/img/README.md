@@ -1,7 +1,7 @@
 # On-screen sprites (`web/img/`)
 
 The page draws the Sorting Hat itself (`svg#hat` in [`../index.html`](../index.html)) until
-sprites are here. Drop **transparent PNGs** in this folder; they are served at
+sprites are here. Drop **transparent PNGs** in `hat/`; they are served at
 `/img/<name>.png` and drawn by [`../fish.js`](../fish.js), which picks **one whole-hat
 composite** per frame for the current `(neck, mouth, tail)` state.
 
@@ -31,7 +31,7 @@ neck{Rest|Out}_mouth{0..3}_tail{Rest|Flap}.png
   `neckRest_mouth{0..3}_tailRest.png` have loaded. Fewer than four: the drawn hat stays.
 - Missing poses fall back: first the brim, then the tip, then a lower mouth; the last fallback is
   `neckRest_mouth0_tailRest.png`. Four files start the mouth; sixteen move the whole hat.
-- Check a pose without a turn: `/?pose=speaking&mouth=1&tip=1&brim=1` (also `ready`,
+- Check a pose without a turn: `/face?pose=speaking&mouth=1&tip=1&brim=1` (also `ready`,
   `listening`, `thinking`, `reading`; `mouth` from 0 to 1).
 
 The operator's page (`/`, `debug.js`) draws the same four base poses once they have all loaded:

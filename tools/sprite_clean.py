@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Clean the cut-out of the on-screen fish sprites (fish_brain/web/img/*.png).
+"""Clean the cut-out of the on-screen sprites (fish_brain/web/img/hat/*.png by default).
 
 The sprites were keyed out of a flat #91b9bc background with 1-bit alpha. That left a
 one-pixel rim of the background colour around the outline, a few stray specks, and in one
@@ -24,7 +24,7 @@ import sys
 import zlib
 from pathlib import Path
 
-IMG_DIR = Path(__file__).resolve().parent.parent / "fish_brain" / "web" / "img"
+IMG_DIR = Path(__file__).resolve().parent.parent / "fish_brain" / "web" / "img" / "hat"
 PASSES = 2
 SIG = b"\x89PNG\r\n\x1a\n"
 
@@ -154,7 +154,7 @@ def clean(w: int, h: int, px: bytearray) -> tuple[int, int]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("files", nargs="*", type=Path, help="default: every PNG in fish_brain/web/img")
+    ap.add_argument("files", nargs="*", type=Path, help="default: every PNG in fish_brain/web/img/hat (the fish's in img/fish/ by path)")
     ap.add_argument("--write", action="store_true", help="rewrite the files (default: report only)")
     args = ap.parse_args()
     files = args.files or sorted(IMG_DIR.glob("*.png"))

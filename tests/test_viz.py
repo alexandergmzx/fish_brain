@@ -161,6 +161,15 @@ def test_root_is_the_operators_page_and_face_the_old_one(server):
     assert b'src="/fish.js"' in get(server.url + "/face")[1]
 
 
+def test_his_hat_sprites_are_served_from_img_hat(server):
+    hat = viz_mod.WEB_DIR / "img" / "hat"
+    for m in range(4):
+        name = f"neckRest_mouth{m}_tailRest.png"
+        status, body = get(server.url + "/img/" + name)
+        assert status == 200 and body == (hat / name).read_bytes(), name
+    assert get(server.url + "/img/neckOut_mouth0_tailFlap.png")[0] == 404   # the fish's, parked
+
+
 def test_post_without_a_length_is_411(server):
     conn = http.client.HTTPConnection("127.0.0.1", server._httpd.server_address[1], timeout=3)
     conn.putrequest("POST", "/ptt?token=s3cret-token")

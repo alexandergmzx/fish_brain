@@ -14,7 +14,7 @@
  * Bubbles: drawn on top. Connection: the pearl in the corner shell (#conn-dot) — green/red/amber.
  * The canvas is transparent: the sea behind it belongs to the page (fish.css).
  *
- * Assets live in fish_brain/web/img/ and are served at /img/<name>.png. Missing sprites fall
+ * Assets live in fish_brain/web/img/hat/ and are served at /img/<name>.png. Missing sprites fall
  * back to a simpler pose (see currentSprite); if none load, the stage shows a hint so the page
  * never looks broken — drop the four neckRest_mouth{0..3}_tailRest poses in first.
  */

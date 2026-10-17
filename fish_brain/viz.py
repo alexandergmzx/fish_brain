@@ -49,7 +49,7 @@ from . import debug
 from .config import Config
 
 WEB_DIR = Path(__file__).parent / "web"
-IMG_DIR = WEB_DIR / "img"
+IMG_DIR = WEB_DIR / "img" / "hat"   # his hat sprites; the fish's are parked in img/fish/
 _CONTENT_TYPES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css",
                   ".png": "image/png"}
 
@@ -996,7 +996,7 @@ def _make_handler(server: "VizServer"):
             self.wfile.write(body)
 
         def _serve_img(self, name: str):
-            # Sanitize to a bare filename (no path traversal) under web/img/.
+            # Sanitize to a bare filename (no path traversal) under web/img/hat/.
             safe = Path(name).name
             fp = IMG_DIR / safe
             if not safe or fp.suffix != ".png" or not fp.exists():
