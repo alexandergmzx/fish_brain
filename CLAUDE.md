@@ -115,14 +115,14 @@ Other repos. **They stay untouched; this repo only calls them.**
 
 ## Targets and hosts (measured 2026-10-10)
 
-| | Laptop (Linux Mint) | UNO Q `segunda` (`ssh arduino@segunda.local`) |
-|---|---|---|
-| Python | 3.12 in `.venv` | 3.13.5; needs `python3-venv python3-dev gcc libportaudio2` from apt |
-| Motor board | Uno R4 WiFi on `/dev/ttyACM0` | STM32U585 on `/dev/ttyHS1` (`root:dialout`), owned by `arduino-router` 0.10.0 |
-| MCU core | — | `arduino:zephyr` 0.55.2: the Linux link is `Serial2` |
-| Audio | PipeWire with `pactl` | PipeWire as user services, no `pactl` (`wpctl`, `pw-dump`); own sound card besides USB |
-| Voice | `loq` under Wine. **Wine does not work on this desktop (NVIDIA): never run `loq` or any `.exe` here** | Hangover Wine + Loquendo: works, 0.75 s warm. Running `loq` on the board is fine |
-| USB | — | Power bank into a hub, hub into the board. Speaker: Jieli "UACDemoV1.0". Microphone: RedOctane. PipeWire makes them the defaults |
+| | Desktop (Linux Mint, NVIDIA) | lapG7, the fair laptop (`ssh 192.168.1.66` at home; 2026-10-17) | UNO Q `segunda` (`ssh arduino@segunda.local`) |
+|---|---|---|---|
+| Python | 3.12 in `.venv` | Mint 22.3, 3.12.3 in `.venv`, pinned to the desktop's set | 3.13.5; needs `python3-venv python3-dev gcc libportaudio2` from apt |
+| Motor board | Uno R4 WiFi on `/dev/ttyACM0` | none: the fallback is voice only (`FISH_SERIAL_PORT=/dev/null-no-motors`, always `--dry-run`) | STM32U585 on `/dev/ttyHS1` (`root:dialout`), owned by `arduino-router` 0.10.0 |
+| MCU core | — | — | `arduino:zephyr` 0.55.2: the Linux link is `Serial2` |
+| Audio | PipeWire with `pactl` | PipeWire with `pactl` and `wpctl` | PipeWire as user services, no `pactl` (`wpctl`, `pw-dump`); own sound card besides USB |
+| Voice | `loq` under Wine. **Wine does not work on this desktop (NVIDIA): never run `loq` or any `.exe` here** | Intel GPU; `loq` works (2.4 s daemon start, 0.42 s a phrase), needs `LOQ_LTTS` (Loquendo under `Program Files`) | Hangover Wine + Loquendo: works, 0.75 s warm. Running `loq` on the board is fine |
+| USB | — | not measured | Power bank into a hub, hub into the board. Speaker: Jieli "UACDemoV1.0". Microphone: RedOctane. PipeWire makes them the defaults |
 
 Bodies: Billy Bass #1 (laptop, calibrated June 2026), Billy Bass #2 (fair, not calibrated),
 the Spin Master Sorting Hat (maybe; "the reading" names the badge feature, never the hat). Full board notes:
