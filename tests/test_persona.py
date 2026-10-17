@@ -71,3 +71,16 @@ def test_the_visit_is_the_hats_only(monkeypatch):
     assert VisitConfig().enabled                                     # blank = the default
     monkeypatch.setenv("FISH_VISIT_IDLE_S", "45")
     assert VisitConfig().idle_s == 45.0
+
+
+def test_the_hats_future_bank_is_full_and_clean(monkeypatch):
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+    bank = VisitConfig().future
+    for kind in ("lugar", "cosa", "lluvia", "antojo", "acción", "carta"):
+        assert len(bank[kind]) >= 5, kind
+    words = " ".join(" ".join(v) for v in bank.values() if isinstance(v, list)).lower()
+    for bad in ("pájaro", "chile", "plátano", "huevo", "muerte", "calavera", "diablito", "borracho",
+                "inundación", "rayo", "biblioteca", "pato", "ardilla", "cartón"):
+        assert bad not in words, bad
+    monkeypatch.setenv("FISH_PERSONA", "fish")
+    assert VisitConfig().future == {}

@@ -113,13 +113,17 @@ ETAPAS (el sistema te dice la etapa entre corchetes, como [ETAPA 2/4]; nunca rep
 1. SALUDO: preséntate, pide su nombre y su ayuda para "ver" dentro de su cabeza.
 2. LECTURA 1: una frase que le quede a casi cualquiera y una pregunta del banco con tres o cuatro opciones de palabras largas y distintas, nunca de sí o no.
 3. LECTURA 2: retoma algo que dijo como si lo hubieras visto tú, y haz otra pregunta del banco con opciones.
-4. VEREDICTO, en este orden: dos rasgos de su personalidad sacados de lo que dijo, uno junto con su opuesto ("callado, pero cuando algo te importa nadie te detiene"); el nombre de su casa dicho en voz alta y con emoción; su futuro como lo diría el Sombrero ("podrías ser grande, y Ravenclaw te ayudará a lograrlo"); y una predicción loca y concreta para hoy en la feria: una hora exacta y chistosa, un detalle absurdo, un animal u objeto inofensivo y algo pequeño que puede hacer ya. Termina con una línea aparte: CASA: <Gryffindor|Hufflepuff|Ravenclaw|Slytherin>
+4. VEREDICTO, en este orden: dos rasgos de su personalidad sacados de lo que dijo, uno junto con su opuesto ("callado, pero cuando algo te importa nadie te detiene"); el nombre de su casa dicho en voz alta y con emoción; su futuro como lo diría el Sombrero ("podrías ser grande, y Ravenclaw te ayudará a lograrlo"); y una predicción loca y concreta para hoy en la feria, hecha con los ingredientes que te llegan en [FUTURO: ...] (juega con ellos; si son muchos, usa los mejores y termina con algo pequeño que puede hacer ya). Termina con una línea aparte: CASA: <Gryffindor|Hufflepuff|Ravenclaw|Slytherin>
 
 TRUCOS
 - Pide ayuda, di frases que le quedan a casi todos, junta un rasgo y su opuesto en la misma frase, haz preguntas como si fueran visiones, repite sus palabras como si las adivinaras.
 - Si dice "no" o no contesta, una línea ligera y sigue a la siguiente etapa.
 - Si dice "creo que sí", "más o menos", "a veces" o "no sé", tómalo como respuesta y sigue; nunca lo corrijas.
-- No copies las frases de los ejemplos: varía siempre. Cada predicción es nueva: otra hora (entre las once y las siete), otro animal u objeto y otra cosa que hacer; nada "de cartón".
+- No copies las frases de los ejemplos: varía siempre.
+
+EL DÍA
+- Hoy es la Feria Maker en el CENART: carpas de talleres en los jardines, robots, impresoras 3D, la torre morada sobre Río Churubusco. Más tarde va a llover: la lluvia es parte de la diversión.
+- Nada de inundaciones, rayos, accidentes ni enfermedades; no prometas premios.
 
 CASAS (todas son buenas; dilo siempre en positivo)
 - Gryffindor: valentía, aventura. Hufflepuff: lealtad, amigos, equipo. Ravenclaw: curiosidad, libros, inventos. Slytherin: ambición, planes, ganar.
@@ -153,7 +157,7 @@ Visitante: Sofía.
 Visitante: Construir, hago robots con mi papá.
 [ETAPA 3/4] Sombrero: Robots, sí, y veo a alguien a tu lado cuando los armas. Si encuentras una puerta cerrada, ¿la abres de inmediato o primero investigas?
 Visitante: Primero investigo.
-[ETAPA 4/4] Sombrero: Sofía, eres paciente, pero cuando algo te importa nadie te detiene. ¡RAVENCLAW! Podrías ser grande, y Ravenclaw te ayudará a lograrlo. Hoy a las cuatro y diecisiete un robot te va a saludar con la mano izquierda: salúdalo tú primero.
+[ETAPA 4/4] Sombrero: Sofía, eres paciente, pero cuando algo te importa nadie te detiene. ¡RAVENCLAW! Podrías ser grande, y Ravenclaw te ayudará a lograrlo. Hoy a las tres y diez, en la Plaza de las Artes, un ajolote impreso en 3D te va a guiñar un ojo justo cuando caiga la primera gota gorda: grita "¡aguas!" bajito.
 CASA: Ravenclaw"""
 
 # Phrase names a persona may add to the fish's set (only the visit's greeting).
@@ -198,6 +202,32 @@ PERSONAS: dict[str, dict] = {
                           "Pregúntale si es él o ella.",
             "name_note": "[Lectura] Se llama {first}, confirmado.{look}",
             "arrival_note": "(Llega un visitante nuevo.)",
+            # The verdict's future: one pick of each kind, at random (visit.future_tag), so the
+            # predictions vary and belong to the day: Feria Maker at CENART, 17 Oct 2026, rain
+            # later (researched 2026-10-16: feriamaker.mx, meteored). Drafted for him to edit.
+            "future": {
+                "hours": ["11:30", "16:45"],
+                "card_odds": 0.34,
+                "lugar": ["la Plaza de las Artes", "la Plaza Ricardo Legorreta", "la Plaza de la Danza",
+                          "la torre morada", "la Carpa de Talleres 1", "el escenario principal",
+                          "la zona de food trucks", "los jardines"],
+                "cosa": ["un robot hecho de basura del Hebocon", "un ajolote impreso en 3D",
+                         "un código QR escondido", "un Pikachu impreso en 3D", "un cohete de papel",
+                         "una tira de LEDs", "una impresora 3D", "un gafete que brilla",
+                         "un llavero de madera", "una maquinita arcade",
+                         "una playera recién estampada", "un dron"],
+                "lluvia": ["el olor a tierra mojada", "la primera gota gorda", "el chipi chipi",
+                           "un paraguas amarillo", "el charco perfecto",
+                           "la lluvia sonando sobre la carpa", "un arcoíris si sale el sol",
+                           "la chamarra que alguien te presta"],
+                "antojo": ["un chocolate caliente", "un champurrado", "un tamal", "un elote",
+                           "unos esquites", "una concha", "unos churros"],
+                "acción": ["saluda con la mano izquierda", "cuenta tres paraguas", "haz una reverencia",
+                           "grita \"¡aguas!\" bajito", "choca los cinco con alguien",
+                           "ponle nombre a un robot", "presta tu paraguas un ratito"],
+                "carta": ["El sol", "La estrella", "La luna", "El paraguas", "La rana", "El nopal",
+                          "La sandía", "El tambor", "El gallo", "El árbol"],
+            },
         },
         "phrases": {
             # The visit's canned greeting (stage 1, no model): his doc's example.
@@ -611,6 +641,8 @@ class VisitConfig:
     name_note: str = field(default_factory=lambda: _persona().get("visit", {}).get("name_note", ""))
     arrival_note: str = field(default_factory=lambda: _persona().get("visit", {}).get("arrival_note", ""))
     greeting: str = "visit_greeting"      # the canned phrase of a "Nuevo visitante"
+    # The verdict's ingredients, picked at random (visit.future_tag). Empty = no [FUTURO] tag.
+    future: dict = field(default_factory=lambda: dict(_persona().get("visit", {}).get("future", {})))
 
 
 @dataclass
