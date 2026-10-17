@@ -17,6 +17,7 @@ from pathlib import Path
 
 from . import debug
 from .config import Config
+from .envelope import end_pulse
 from .serial_link import BaseLink
 
 
@@ -170,9 +171,10 @@ def perform(
                 link.gesture(channel, body)
         player.wait()
     finally:
-        # Always close the mouth when the utterance ends or is interrupted: a full close
-        # pulse (the jaw may hold open between pulses, so coasting to 0 isn't enough).
-        link.mouth_pulse(cfg.mouth.close_pwm, cfg.mouth.close_curve[-1][1])
+        # Always end the mouth when the utterance ends or is interrupted: on a jaw a full
+        # close pulse (it may hold open between pulses, so coasting to 0 isn't enough); on
+        # the hat's cam the gate_stop line (see envelope.end_pulse).
+        link.mouth_pulse(*end_pulse(cfg.mouth))
         perf["play_s"] = round(time.monotonic() - t0, 2)
         debug.emit("perf", **perf)
         debug.turn_set(perf=perf)

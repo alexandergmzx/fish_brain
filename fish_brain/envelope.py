@@ -109,6 +109,14 @@ def _interp_ms(curve: tuple[tuple[float, int], ...], openness: float) -> float:
     return float(curve[-1][1])
 
 
+def end_pulse(cfg: MouthConfig) -> tuple[int, int]:
+    """The pulse that ends every utterance: a full close stroke for a jaw (position), the
+    gate_stop line for a cam (gate)."""
+    if cfg.mode == "gate":
+        return cfg.stop_pulse()
+    return cfg.close_pwm, int(cfg.close_curve[-1][1])
+
+
 def mouth_pulses(level_track: list[tuple[int, float]],
                  cfg: MouthConfig) -> list[tuple[int, int, int]]:
     """Convert an openness `level_track` into (t_ms, pwm, ms) timed motor pulses.
@@ -141,36 +149,78 @@ def mouth_pulses(level_track: list[tuple[int, float]],
     return pulses
 
 
+def _gate_phrases(level_track: list[tuple[int, float]],
+                  cfg: MouthConfig) -> list[tuple[int, int, int]]:
+    """The phrases of a level track as (start_ms, end_ms, pwm): the runs above gate_level,
+    joined across quiet stretches shorter than gate_gap_ms, each at least gate_min_run_ms
+    long. With gate_calm_pwm set, a phrase quieter than the median phrase runs at it."""
+    spans: list[list[float]] = []         # [start, end, level sum, points]
+    for t, level in level_track:
+        if level > cfg.gate_level:
+            if spans and spans[-1][1] < 0:
+                spans[-1][2] += level
+                spans[-1][3] += 1
+            else:
+                spans.append([t, -1, level, 1])
+        elif spans and spans[-1][1] < 0:
+            spans[-1][1] = t
+    if spans and spans[-1][1] < 0:
+        spans[-1][1] = level_track[-1][0]
+    merged: list[list[float]] = []
+    for s in spans:
+        s[1] = max(s[1], s[0] + max(0, cfg.gate_min_run_ms))
+        if merged and s[0] - merged[-1][1] < max(0, cfg.gate_gap_ms):
+            m = merged[-1]
+            m[1] = max(m[1], s[1])
+            m[2] += s[2]
+            m[3] += s[3]
+        else:
+            merged.append(s)
+    means = sorted(m[2] / m[3] for m in merged)
+    median = means[len(means) // 2] if means else 0.0
+    out = []
+    for s, e, total, n in merged:
+        calm = cfg.gate_calm_pwm and len(merged) > 1 and total / n < median
+        out.append((int(s), int(e), cfg.gate_calm_pwm if calm else cfg.open_pwm))
+    return out
+
+
 def gate_pulses(level_track: list[tuple[int, float]],
                 cfg: MouthConfig) -> list[tuple[int, int, int]]:
-    """Run the motor while the level is above `cfg.gate_level`, stop it when the level falls.
+    """Keep the motor running through each phrase and stop it at the pauses.
 
     For a mechanism with no position (the Sorting Hat: one motor turns a cam that moves the
-    mouth and the tip), where a pulse is motion rather than a place. While the level holds
-    above the gate a pulse of gate_pulse_ms at +open_pwm is sent, and sent again every
-    gate_refresh_ms before the running one ends (the MCU replaces a running pulse with the
-    next line), so the motor runs without a gap and never more than gate_pulse_ms past the
-    last line the host managed to send. When the level falls below the gate a 1 ms zero
-    pulse stops it at once. Every line is a timed pulse: the firmware's limit still applies
-    and nothing is ever held.
+    mouth, the brow and the tip), where a pulse is motion rather than a place. Through a
+    phrase (see `_gate_phrases`) a pulse of gate_pulse_ms is sent, and sent again before
+    the running one ends (the MCU replaces a running pulse with the next line), so the motor
+    runs without a gap and never more than gate_pulse_ms past the last line the host managed
+    to send. Each phrase is moved gate_lead_start_ms / gate_lead_stop_ms early and ends with
+    the gate_stop line ("0 1" lets it coast). Every line is a timed pulse: the firmware's
+    limit still applies and nothing is ever held.
     """
     pulses: list[tuple[int, int, int]] = []
     refresh = max(10, int(cfg.gate_refresh_ms))
     pulse_ms = max(refresh + 1, int(cfg.gate_pulse_ms))
-    until = -1                     # when the last commanded pulse ends (ms); -1 = stopped
-    n = len(level_track)
-    for i, (t, level) in enumerate(level_track):
-        t_next = level_track[i + 1][0] if i + 1 < n else t
-        if level > cfg.gate_level:
+    stop = cfg.stop_pulse()
+    windows: list[list[int]] = []
+    for s, e, pwm in _gate_phrases(level_track, cfg):
+        a = max(0, s - max(0, cfg.gate_lead_start_ms))
+        b = max(a + max(1, cfg.gate_min_run_ms), e - max(0, cfg.gate_lead_stop_ms))
+        if windows and a <= windows[-1][1] + 30:       # no room for a stop: one phrase
+            windows[-1][1] = max(windows[-1][1], b)
+        else:
+            windows.append([a, b, pwm])
+    times = [t for t, _ in level_track]
+    for a, b, pwm in windows:
+        # Checks at the track's own points inside the window, and every refresh between them.
+        marks = [a] + [t for t in times if a < t < b] + [b]
+        until = -1
+        for t, t_next in zip(marks, marks[1:]):
             tt = t
-            while True:
-                if until - tt < refresh:       # the running pulse ends before the next refresh
-                    pulses.append((tt, cfg.open_pwm, pulse_ms))
+            while tt < t_next:
+                if until - tt < refresh:
+                    pulses.append((tt, pwm, pulse_ms))
                     until = tt + pulse_ms
                 tt += refresh
-                if tt >= t_next:
-                    break
-        elif until > t:
-            pulses.append((t, 0, 1))
-            until = -1
+        pulses.append((b, stop[0], stop[1]))
     return pulses

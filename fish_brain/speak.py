@@ -134,11 +134,12 @@ class Speaker:
         finally:
             self._lock.release()
 
-    def play_sound(self, wav: str | Path, *, tail_chain: str | None = None) -> float | None:
-        """Play a sound that is not speech (the burble) under the same lock: no mouth pulse,
-        at most one tail chain, and the close pulse that ends every performance. The page
-        gets it as a filler with an empty mouth track. Returns when playback started, or
-        None when the fish was already speaking (dropped)."""
+    def play_sound(self, wav: str | Path, *, tail_chain: str | None = None,
+                   flap: tuple[int, int] | None = None) -> float | None:
+        """Play a sound that is not speech (the burble) under the same lock: at most one tail
+        chain, or on the hat one short mouth `flap` (pwm, ms), and the pulse that ends every
+        performance. The page gets it as a filler with an empty mouth track. Returns when
+        playback started, or None when the fish was already speaking (dropped)."""
         if not self._lock.acquire(blocking=False):
             return None
         try:
@@ -147,7 +148,8 @@ class Speaker:
                 with wave.open(str(wav), "rb") as w:
                     duration_ms = int(1000 * w.getnframes() / (w.getframerate() or 1))
                 self.viz.announce_speech(wav, duration_ms, events, mouth_track=[], filler=True)
-            return perform(wav, [], events, self.link, self.cfg, player=self.player)
+            pulses = [(0, flap[0], flap[1])] if flap else []
+            return perform(wav, pulses, events, self.link, self.cfg, player=self.player)
         finally:
             self._lock.release()
 

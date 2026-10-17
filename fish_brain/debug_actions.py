@@ -58,7 +58,12 @@ def check_line(line: str) -> str:
 
 def build_lines(cfg, part: str) -> list[str]:
     """The lines of one motor test, from the configuration (the values speech itself uses)."""
-    if part == "mouth":
+    if part == "mouth" and cfg.mouth.mode == "gate":
+        # The hat's cam: one run, then the line that ends every utterance.
+        pwm, ms = cfg.mouth.stop_pulse()
+        lines = [f"MOUTH {int(cfg.mouth.open_pwm)} {int(cfg.mouth.gate_test_ms)}",
+                 f"MOUTH {pwm} {ms}"]
+    elif part == "mouth":
         lines = [f"MOUTH {int(cfg.mouth.open_pwm)} {int(cfg.mouth.open_curve[-1][1])}",
                  f"MOUTH {int(cfg.mouth.close_pwm)} {int(cfg.mouth.close_curve[-1][1])}"]
     elif part == "neck":

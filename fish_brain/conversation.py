@@ -271,9 +271,14 @@ class FishConversation:
         try:
             sounds = burble.ensure(self.cfg.burble.cache_dir, self.cfg.burble.sound)
             wav = self._rng.choice([p for p in sounds if p != self._last_burble] or sounds)
-            chain = (self._rng.choice(self.cfg.gesture.tail_chains)
-                     if self.cfg.burble.tail and self.cfg.gesture.enabled else None)
-            started = self.speaker.play_sound(wav, tail_chain=chain)
+            m = self.cfg.mouth
+            if m.mode == "gate":                 # the hat: one motor, a short slow flap
+                flap = (m.gate_calm_pwm or m.open_pwm, m.burble_flap_ms)
+                started = self.speaker.play_sound(wav, flap=flap)
+            else:
+                chain = (self._rng.choice(self.cfg.gesture.tail_chains)
+                         if self.cfg.burble.tail and self.cfg.gesture.enabled else None)
+                started = self.speaker.play_sound(wav, tail_chain=chain)
             if started is not None:
                 self._last_burble = wav
                 w["burble_s"] = max(0.0, started - w["ended"])

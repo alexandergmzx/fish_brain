@@ -89,6 +89,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Configuration problem: unknown transport {cfg.serial.transport!r} "
               f"(FISH_SERIAL_TRANSPORT: serial or bridge)", file=sys.stderr)
         return 78
+    for problem in cfg.mouth.problems():
+        print(f"Configuration problem: {problem}", file=sys.stderr)
+        return 78
     if cfg.tts.backend not in ("loq", "openai"):
         print(f"Configuration problem: unknown TTS backend {cfg.tts.backend!r} "
               f"(FISH_TTS_BACKEND: loq or openai)", file=sys.stderr)

@@ -118,6 +118,10 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_FILLER` | `true` | While a voice turn waits for its transcription, its reply or its voice, the fish says short cached phrases, and past the turn's budget it apologizes and listens again (ADR 0010). `false` = silent waits and no limit. With `FISH_BURBLE=false` too, every stage runs as before both. Never in text mode |
 | `FISH_FILLER_DELAY_S`, `FISH_FILLER_GAP_S` | `2.5`, `2.0` | Silence before the first phrase, and between two phrases |
 | `FISH_BURBLE` | `true` | When the button is released on a recording the fish can use, it answers at once with a short bubble sound and one chain of the tail, a flap or two (never the mouth; no tail with the gestures off). No burble means it did not hear. The sounds are synthesized (`python -m fish_brain.burble --out DIR` writes them to listen to) |
+| `FISH_MOUTH_GAP_MS` | `300` | Gate mode (the hat's cam): a quiet stretch shorter than this does not stop the motor; it keeps moving through a phrase and stops at the pauses |
+| `FISH_MOUTH_LEAD_START_MS`, `FISH_MOUTH_LEAD_STOP_MS` | `0` | Gate mode: start each phrase's motion this early, stop it this early (the motor's lag; not measured) |
+| `FISH_MOUTH_CALM_PWM` | `0` | Gate mode: the speed of the quieter phrases (per phrase); `0` = every phrase at `FISH_MOUTH_OPEN_PWM` |
+| `FISH_MOUTH_STOP` | `0 1` | Gate mode: the line that ends each phrase and each utterance, `<pwm> <ms>`: `0 1` coasts, `1 150` brakes (TB6612), `-200 74` is a reverse kick |
 | `FISH_TURN_TIMEOUT_S` | `12` | From the end of the recording to the start of the reply's voice; past it the turn is dropped |
 | `FISH_READING_PROFILE` | empty = `FISH_LLM_PROFILE` | LLM profile that reads a badge photo (the reading, ADR 0007). It needs image input: `luna` |
 | `FISH_READING_LOOK` | `false` | `true`: the console shows a per-visitor consent tick and the model may add one kind line on clothing, colours or accessories |

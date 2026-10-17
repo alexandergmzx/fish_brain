@@ -319,11 +319,26 @@ class MouthConfig:
     #             (the Sorting Hat: one motor turns a cam, a pulse is motion, not a position).
     #             Pulses of gate_pulse_ms, re-sent every gate_refresh_ms while the level holds
     #             (a new pulse replaces the running one on the MCU), so the motor never runs
-    #             more than gate_pulse_ms past the last line; a fall sends a 1 ms zero pulse.
+    #             more than gate_pulse_ms past the last line. Quiet stretches shorter than
+    #             gate_gap_ms do not stop it (the hat keeps moving and stops at the pauses), a
+    #             phrase shorter than gate_min_run_ms runs that long, and every stop (each
+    #             pause and the end of each utterance) is the gate_stop line: "0 1" coasts,
+    #             "1 150" brakes on the TB6612, "-200 74" is a reverse kick.
     mode: str = field(default_factory=lambda: _env("FISH_MOUTH_MODE", "position"))
     gate_level: float = 0.08
     gate_pulse_ms: int = 150
     gate_refresh_ms: int = 100
+    gate_gap_ms: int = field(default_factory=lambda: _env_int("FISH_MOUTH_GAP_MS", 300))
+    gate_min_run_ms: int = 250      # (estimate)
+    # Motor lead (not measured): start this early before a phrase, stop this early before
+    # its end. Clamped at the start of the audio.
+    gate_lead_start_ms: int = field(default_factory=lambda: _env_int("FISH_MOUTH_LEAD_START_MS", 0))
+    gate_lead_stop_ms: int = field(default_factory=lambda: _env_int("FISH_MOUTH_LEAD_STOP_MS", 0))
+    # A slower speed for the quieter phrases (per phrase, never inside one); 0 = one speed.
+    gate_calm_pwm: int = field(default_factory=lambda: _env_int("FISH_MOUTH_CALM_PWM", 0))
+    gate_stop: str = field(default_factory=lambda: _env("FISH_MOUTH_STOP", "0 1"))
+    gate_test_ms: int = 1000        # the /debug mouth test: one run this long (estimate)
+    burble_flap_ms: int = 300       # the hat's hum: one short slow flap (estimate)
     # Below the loudness threshold the jaw returns to rest (fully closed).
     rest_pwm: int = 0
     # Attack-time calibration: (openness_fraction, ms) anchors, ascending by openness.
@@ -339,6 +354,33 @@ class MouthConfig:
     # Attack/release smoothing (0..1 per frame): higher attack = snappier open.
     attack: float = 0.6
     release: float = 0.35
+
+    def stop_pulse(self) -> tuple[int, int]:
+        """The gate_stop line as (pwm, ms); ValueError when it is not one timed pulse."""
+        try:
+            pwm, ms = (int(x) for x in self.gate_stop.split())
+        except ValueError:
+            raise ValueError(f"FISH_MOUTH_STOP must be '<pwm> <ms>': {self.gate_stop!r}") from None
+        if abs(pwm) > 255 or not 1 <= ms <= 1500:
+            raise ValueError(f"FISH_MOUTH_STOP out of range (|pwm| <= 255, 1..1500 ms): "
+                             f"{self.gate_stop!r}")
+        return pwm, ms
+
+    def problems(self) -> list[str]:
+        """What is wrong with the mouth settings, for the start-up check."""
+        out = []
+        if self.mode not in ("position", "gate"):
+            out.append(f"FISH_MOUTH_MODE must be position or gate, not {self.mode!r}")
+        if not 1 <= self.open_pwm <= 255:
+            out.append(f"FISH_MOUTH_OPEN_PWM must be 1..255, not {self.open_pwm}")
+        if self.gate_calm_pwm and not 1 <= self.gate_calm_pwm <= 255:
+            out.append(f"FISH_MOUTH_CALM_PWM must be 0 or 1..255, not {self.gate_calm_pwm}")
+        if self.mode == "gate":
+            try:
+                self.stop_pulse()
+            except ValueError as e:
+                out.append(str(e))
+        return out
 
 
 @dataclass

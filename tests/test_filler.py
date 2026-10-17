@@ -66,7 +66,7 @@ class FakeSpeaker:
         self.world.advance(PHRASE_S)
         return True
 
-    def play_sound(self, wav, *, tail_chain=None):
+    def play_sound(self, wav, *, tail_chain=None, flap=None):
         self.events.append(("burble", Path(wav).name))
         self.tails.append(tail_chain)
         self.world.advance(BURBLE_S)
@@ -667,6 +667,21 @@ def test_a_burble_moves_the_tail_and_never_the_mouth(tmp_path):
     assert mouth_track == [] and filler is True
     with speaker._lock:
         assert speaker.play_sound(wav) is None              # already speaking: dropped
+
+
+def test_the_hats_burble_is_one_short_flap_of_the_mouth(tmp_path):
+    from fish_brain import burble
+    from fish_brain.config import MouthConfig
+    cfg = Config()
+    cfg.mouth = MouthConfig(mode="gate", open_pwm=200, gate_stop="0 1")
+    out = io.StringIO()
+    link = MockSerialLink(cfg.serial, stream=out)
+    from fish_brain.conductor import SilentPlayer
+    speaker = speak_mod.Speaker(link, cfg, player=SilentPlayer())
+    wav = burble.ensure(tmp_path)[1]
+    assert isinstance(speaker.play_sound(wav, flap=(200, 300)), float)
+    lines = [l.split("TX ", 1)[-1].strip() for l in out.getvalue().splitlines() if "TX" in l]
+    assert lines == ["MOUTH 200 300", "MOUTH 0 1"]          # the flap, then the hat's stop
 
 
 def test_the_burbles_are_made_once_and_differ(tmp_path):

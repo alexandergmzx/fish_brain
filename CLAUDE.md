@@ -57,6 +57,8 @@ chains are not covered by it. So:
 1. **`STOP` on every exit** (normal, Ctrl-C, exception, stop signal) and a full close pulse
    after every utterance. Enforced by the link's context manager, the conductor's `finally`,
    the SIGTERM handler in `app.py` and `KillSignal=SIGINT` in the unit. Never remove these.
+   On the hat's cam (`FISH_MOUTH_MODE=gate`) there is no closed position: the end of an
+   utterance is the `FISH_MOUTH_STOP` line (`0 1`, a coast, by default).
 2. **During speech only timed `MOUTH <pwm> <ms>` pulses.** Held `MOUTH <n>` is for manual
    calibration.
 3. **No motors unattended.** Nothing past `--dry-run` unless Alexander is at the fish. Tell
@@ -65,7 +67,8 @@ chains are not covered by it. So:
    "Unknown command").
 5. **Never flash the MCU, change router units or drive GPIO 37/70 on the board** without his
    word. Those steps are his.
-6. **Calibration pulses start from the closed position.**
+6. **Calibration pulses start from the closed position.** Not on the hat's cam, which has none
+   (his word, 2026-10-17: no home position for now).
 7. **During the fair, ask before restarting `fish-brain` or rebooting the board.**
 8. **The debug view's motor tests, speaker test and restart are Alexander's to press** (ADR 0009:
    armed on the page for 60 s; a test is a validated timed stroke and its return, run by the
