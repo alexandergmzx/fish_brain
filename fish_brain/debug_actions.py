@@ -775,6 +775,9 @@ class DebugActions:
         # The unit's own stop signal, aimed at the main thread so a blocking call returns:
         # KeyboardInterrupt, the goodbye, STOP, exit; Restart=always brings the fish back.
         signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
+        from . import shutdown
+        if shutdown.installed():             # its watcher sends STOP and exits after the grace
+            return
         time.sleep(RESTART_GRACE_S)
         try:                                 # still here: stuck in a call. Motors off, then out.
             self.link.all_stop()

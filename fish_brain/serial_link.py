@@ -213,6 +213,21 @@ class BaseLink:
         self._last_mouth = None
         self.send("STOP", throttle=False)
 
+    def emergency_stop(self) -> None:
+        """STOP from a thread other than the stuck one (see shutdown.py), then mute so only
+        STOP goes out. Waits at most 0.5 s for the line lock. Without it a line may be half
+        written: a newline first ends that line (the firmware ignores an empty line and
+        answers a broken one "Unknown command"), so STOP still arrives on its own line."""
+        got = _TX_LOCK.acquire(timeout=0.5)
+        try:
+            self._write_raw((b"" if got else self.cfg.newline) + b"STOP" + self.cfg.newline)
+        finally:
+            if got:
+                _TX_LOCK.release()
+        self._last_mouth = None
+        self.muted = True
+        debug.tx("STOP", "emergency")
+
     # --- context manager: guarantee a stop + clean close ---
     def __enter__(self):
         return self
@@ -527,6 +542,11 @@ class BridgeLink(BaseLink):
         self._client.notify(self.cfg.bridge_method, "STOP")
         self._last_send = time.monotonic()
 
+    def emergency_stop(self) -> None:
+        # Whole messages on this transport: no half-written line to end, no raw bytes.
+        self.muted = True
+        self.all_stop()
+
     def close(self) -> None:
         self._client.close()
 
@@ -675,6 +695,17 @@ class ResilientLink(BaseLink):
             return
         try:
             link.all_stop()
+        except Exception as e:
+            self._detach(link, e)
+
+    def emergency_stop(self) -> None:
+        self.muted = True                     # the stuck thread's next lines are dropped here
+        self._last_mouth = None
+        link = self._link
+        if link is None:
+            return
+        try:
+            link.emergency_stop()
         except Exception as e:
             self._detach(link, e)
 

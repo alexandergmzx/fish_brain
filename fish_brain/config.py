@@ -290,6 +290,9 @@ class SerialConfig:
     bridge_ping_method: str = field(default_factory=lambda: _env("FISH_BRIDGE_PING", "fish_ping"))
     # A file that records every line written to the MCU and every byte read back. Empty = off.
     log_path: str = field(default_factory=lambda: _env("FISH_LINK_LOG", ""))
+    # After a stop signal: STOP from a watcher if the main thread is stuck, and a hard exit
+    # this many seconds later. Keep it below the unit's TimeoutStopSec (15).
+    stop_grace_s: float = field(default_factory=lambda: _env_float("FISH_STOP_GRACE_S", 10.0))
 
 
 @dataclass

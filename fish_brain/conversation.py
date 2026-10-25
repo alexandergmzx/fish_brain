@@ -36,7 +36,7 @@ import traceback
 from collections import deque
 from pathlib import Path
 
-from . import cloud, debug, ptt, speak as speak_mod
+from . import cloud, debug, ptt, shutdown, speak as speak_mod
 from .conductor import Player, make_player
 from .config import Config
 from .serial_link import BaseLink
@@ -897,6 +897,7 @@ class FishConversation:
                         break
                 except KeyboardInterrupt:
                     print()
+                    shutdown.reached()          # STOP now; the watcher stands down
                     clean = True
                     break
         finally:

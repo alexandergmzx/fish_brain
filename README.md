@@ -113,6 +113,7 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_SAY_ADDRESS` | `false` | `true`: after the welcome the fish says the last two octets of its IP (only when bound to `0.0.0.0`) |
 | `FISH_KIOSK_MODE`, `FISH_KIOSK_OUTPUT` | empty | Board display: force a mode such as `1280x720`, pick an output; see `deploy/README.md` |
 | `FISH_LINK_LOG` | empty | A file that records every line sent to the MCU and every byte read back |
+| `FISH_STOP_GRACE_S` | `10` | After a stop signal: STOP from a watcher thread if the main thread has not stopped within 1 s, and a hard exit this many seconds after the signal. Keep it below the unit's `TimeoutStopSec` (15) |
 | `FISH_VOICE_QUIT` | `true` | Saying "salir" ends the program |
 | `FISH_WELCOME_ONCE` | `false` | Greet once per boot instead of at every start |
 | `FISH_FILLER` | `true` | While a voice turn waits for its transcription, its reply or its voice, the fish says short cached phrases, and past the turn's budget it apologizes and listens again (ADR 0010). `false` = silent waits and no limit. With `FISH_BURBLE=false` too, every stage runs as before both. Never in text mode |

@@ -108,6 +108,9 @@ def main(argv: list[str] | None = None) -> int:
         signal.signal(signal.SIGTERM, _on_sigterm)
     except ValueError:
         pass                                            # not the main thread
+    # If the main thread is stuck in a C call when the stop signal comes, STOP still goes out.
+    from . import shutdown
+    shutdown.install(cfg.serial.stop_grace_s)
 
     # The debug hub (docs/debug.md), before anything else prints: the /debug page shows the
     # start-up lines too. Never in the way: a fault here must not stop the fish from starting.
@@ -265,6 +268,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         with link_cm as link:
+            shutdown.arm(link)
             if args.say is not None or args.say_canned is not None:
                 from .conductor import make_player
                 player = make_player(not args.no_audio, cfg.ptt.speaker)
