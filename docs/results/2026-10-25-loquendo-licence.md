@@ -1,7 +1,7 @@
 # 2026-10-25: why Loquendo says "la licencia que posee no es válida para este ordenador"
 
-Board `segunda`, tree `b44a540`. Read-only: no `loq` or Wine was run. The experiment that
-settles the open point (L1) is below, not yet run.
+Board `segunda`, tree `b44a540`. The findings were read-only. L1 (renders to `/tmp`, no
+restart, no motor line) is below.
 
 ## Findings
 
