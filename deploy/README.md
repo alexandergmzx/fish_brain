@@ -101,6 +101,23 @@ Alternative, not shipped: a **system** unit with `User=arduino` and pure ALSA
 the PipeWire source selection, resampling and gain, and it fights the user session for the sound
 card. Use it only if PipeWire under linger turns out unreliable.
 
+## System drop-ins (his, with sudo)
+
+Two files in this tree are installed by hand; the fish never writes outside the user's home.
+
+```bash
+# Loquendo's licence needs wlan0's own MAC while NetworkManager scans
+# (docs/results/2026-10-25-loquendo-licence.md). Wi-Fi drops for a few seconds.
+sudo install -m 644 ~/fish_brain/deploy/nm/90-fish-wlan0-own-mac.conf /etc/NetworkManager/conf.d/
+sudo systemctl restart NetworkManager
+# undo: sudo rm /etc/NetworkManager/conf.d/90-fish-wlan0-own-mac.conf && sudo systemctl restart NetworkManager
+
+# Keep about 30 boots of journal and lose at most 15 s at a pulled plug (was 4 boots, 5 min).
+sudo install -D -m 644 ~/fish_brain/deploy/journald/90-fish.conf /etc/systemd/journald.conf.d/90-fish.conf
+sudo systemctl restart systemd-journald
+journalctl --disk-usage
+```
+
 ## The router: release or off
 
 `arduino-router` owns `/dev/ttyHS1`, the UART to the STM32. fish_brain needs that port for the
