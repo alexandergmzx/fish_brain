@@ -496,14 +496,21 @@ def test_a_plain_http_client_on_the_tls_port_is_dropped(tls_server):
     assert get_https(tls_server.tls_url + "/status")[0] == 200
 
 
-def test_a_wrong_certificate_path_is_an_oserror(tmp_path):
+def test_a_wrong_certificate_leaves_the_page_on_http(tmp_path, capsys):
+    """No fish at all would be worse than no phone microphone: never exit 78 for it."""
     cfg = Config()
     cfg.viz.host, cfg.viz.port, cfg.viz.tls_port = "127.0.0.1", 0, 0
     cfg.viz.tls_cert, cfg.viz.tls_key = str(tmp_path / "no.crt"), str(tmp_path / "no.key")
     srv = VizServer(cfg)
-    with pytest.raises(CertificateError):     # an OSError: app.py maps it to exit 78
+    try:
         srv.start()
-    srv.stop()
+        assert srv.tls_port_bound is None
+        status = srv.status()
+        assert status["tls"] is False and status["tls_error"] == "certificate"
+        assert str(tmp_path) not in json.dumps(status)          # never the path or the text
+        assert "no https" in capsys.readouterr().err
+    finally:
+        srv.stop()
 
 
 def test_a_busy_port_is_not_a_certificate_error():
@@ -759,7 +766,7 @@ def test_page_events_are_copied_for_the_debug_page(server, tmp_path):
 def test_status_keys_are_unchanged_by_the_debug_view(server, dbg):
     status, body = get(server.url + "/status")
     assert set(json.loads(body)) == {"ok", "up_s", "host", "ip", "ready", "wait", "max_record_s",
-                                     "mic_capture", "tls", "listening", "mic_pages", "reading",
+                                     "mic_capture", "tls", "tls_error", "listening", "mic_pages", "reading",
                                      "reading_look", "visit_enabled"}
 
 

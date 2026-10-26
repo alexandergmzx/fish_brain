@@ -246,17 +246,14 @@ def main(argv: list[str] | None = None) -> int:
     # On-screen fish (browser fallback/debug view), optional.
     viz = None
     if args.viz:
-        from .viz import CertificateError, VizServer
+        from .viz import VizServer
         viz = VizServer(cfg)
         if hub is not None:
             viz.register_debug(hub)
             hub.attach(viz=viz)
-        try:
-            viz.start()
-        except CertificateError as e:   # a set-up error: a restart would not fix it
-            print(f"Configuration problem: the page could not start: {e}", file=sys.stderr)
-            return 78
-        # Any other OSError (a busy port after a quick restart) propagates: the unit retries.
+        # A bad certificate leaves the page on http (viz.tls_error). An OSError (a busy port
+        # after a quick restart) propagates: the unit retries.
+        viz.start()
 
     try:
         try:

@@ -36,6 +36,7 @@ import json
 import os
 import queue
 import socket
+import sys
 import ssl
 import tempfile
 import threading
@@ -103,30 +104,36 @@ class VizServer:
         self._inbox: queue.Queue = queue.Queue(maxsize=2)
         self._listening = False               # the turn loop is waiting for input
         self._mic_pages: dict[str, float] = {}   # page id -> when it last said "ready"
+        self.tls_error: str | None = None     # "certificate" when https could not start
 
     # --- lifecycle ---
     def start(self) -> None:
         """Bind the plain listener and, with a certificate configured, the HTTPS one.
-        A certificate that cannot be loaded raises CertificateError: a set-up error for
-        app.py, not something a restart fixes. A port that is busy raises a plain OSError,
-        which a restart does fix."""
+        A certificate that cannot be loaded leaves the page on http only (`tls_error`), with
+        one warning: no fish at all would be worse than no phone microphone. A port that is
+        busy raises a plain OSError, which a restart does fix."""
         handler = _make_handler(self)
         host, port = self.cfg.viz.host, self.cfg.viz.port
         cert, key = self.cfg.viz.tls_cert, self.cfg.viz.tls_key
+        # Plain http first: a busy port must not leave an HTTPS thread behind.
+        self._httpd = ThreadingHTTPServer((host, port), handler)
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._thread.start()
         if cert and key:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             try:
                 ctx.load_cert_chain(cert, key)
             except (ssl.SSLError, OSError) as e:    # ssl.SSLError is an OSError too
-                raise CertificateError(f"{cert}, {key}: {e}") from e
-            self._tls_httpd = _TLSServer((host, self.cfg.viz.tls_port), handler, ctx)
-            self._tls_thread = threading.Thread(target=self._tls_httpd.serve_forever,
-                                                daemon=True)
-            self._tls_thread.start()
-        self._httpd = ThreadingHTTPServer((host, port), handler)
-        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
-        self._thread.start()
+                self.tls_error = "certificate"
+                print(f"[viz] WARNING: no https, the certificate could not be loaded "
+                      f"({CertificateError(f'{cert}, {key}: {e}')}); the page is on http only",
+                      file=sys.stderr, flush=True)
+            else:
+                self._tls_httpd = _TLSServer((host, self.cfg.viz.tls_port), handler, ctx)
+                self._tls_thread = threading.Thread(target=self._tls_httpd.serve_forever,
+                                                    daemon=True)
+                self._tls_thread.start()
         query = "/?token=…" if self.cfg.viz.token else ""
         remote = host in ("0.0.0.0", "::")
         if self._tls_httpd is not None:
@@ -166,6 +173,7 @@ class VizServer:
                "ready": self._speaker is not None, "wait": self._wait,
                "max_record_s": float(self.cfg.ptt.max_record_s),
                "mic_capture": self.cfg.ptt.capture, "tls": self._tls_httpd is not None,
+               "tls_error": self.tls_error,
                "listening": self._listening, "mic_pages": self.mic_pages(),
                "reading": self._reader is not None, "reading_look": bool(self.cfg.reading.look),
                # Only whether the sheet shows the visit's row: never its cues, name or stage.

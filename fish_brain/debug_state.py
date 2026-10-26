@@ -296,7 +296,8 @@ def _page(hub) -> dict:
             "reading_look": bool(cfg.reading.look),
             "max_record_s": float(cfg.ptt.max_record_s),
             "capture": cfg.ptt.capture,
-            "tls_port": cfg.viz.tls_port if tls is not None else None}
+            "tls_port": cfg.viz.tls_port if tls is not None else None,
+            "tls_error": getattr(viz, "tls_error", None) if viz is not None else None}
 
 
 def _pron(cfg) -> list[str]:
@@ -375,6 +376,10 @@ def hints(st: dict, hub) -> list[dict]:
         add("warn", "inputs", f"The last recording is near silence (rms {rec['rms']}).",
             "check which source is selected against the default one")
 
+    if (st.get("page") or {}).get("tls_error"):
+        add("bad", "switches", "No https: the certificate could not be loaded, so the phone's "
+            "microphone and screen lock are off. The page still works over http.",
+            "deploy/unoq_setup.sh tls, then restart")
     flags, be, mode = st.get("flags") or {}, st.get("backends") or {}, st.get("mode") or {}
     if be.get("echo", flags.get("echo")):         # as it runs now, not as it was started
         add("warn", "switches", "ECHO mode: the fish only repeats what it hears.",
