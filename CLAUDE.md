@@ -27,14 +27,14 @@ data when warranted.
 - When a question has a clean experimental answer, propose the experiment instead of
   guessing. Don't add scope beyond what the task asks.
 
-## Status (as of 2026-10-13)
+## Status (as of 2026-10-26)
 
 | Item | State |
 |---|---|
 | Laptop fish (Billy Bass #1, Uno R4) | Working since June 2026 |
 | `braintip`: software for the UNO Q | Runs on the board as `fish-brain.service` with linger since 2026-10-11: boots alone, welcome, real turns from the remote and from the page on a phone (`stt=openai llm=luna tts=loq`), about 4 s from release to voice on the home Wi-Fi (`rec=3.3s stt=0.6s tts=0.8s`, 2026-10-12). Not yet on the hotspot. Since 2026-10-11: no display, the phone page as the interface, HTTPS, the reading (ADR 0006, 0007 proposed). In echo mode (a unit drop-in) while the remote is being tuned |
 | Board: hub, USB speaker, the 2.4 GHz remote | Working on a power bank. The remote (XING WEI, Nordic) is trigger and microphone (`FISH_PTT_DEVICE=name:XING WEI`, `FISH_PTT_KEY=KEY_ENTER`, `FISH_MIC_SOURCE=…XING_WEI…`); the RedOctane is out, it draws more current than the board gives (2026-10-12) |
-| Board: Loquendo | Works; about 0.75 s per short sentence with the daemon warm |
+| Board: Loquendo | Works; about 0.75 s per short sentence with the daemon warm. Since 2026-10-26 a start-up probe guards the licence (ADR 0013): `wlan0` scans with its own MAC, a bad probe restarts the voice on a fresh wineserver, else no live render. The 80 clean clips are backed up (`docs/results/2026-10-25-canned-backup.md`) |
 | Board: MCU firmware | Big_mouth `braintip` (`unoq/BigMouthQ`) flashed 2026-10-11, no drivers attached: protocol transcript 122 of 122, pulses within 1 ms, 9,999 of 9,999 lines in a soak. LED matrix mirrors the nine L298 signals. PWM measured good on D3, D5, D6 |
 | Board: bring-up script | `tools/unoq_bringup.sh`: all tests passed 2026-10-11 |
 | Board: local speech-to-text | **Canary for recordings up to 6 s, Groq turbo above, `small` on the window when offline** (`FISH_STT_BACKEND=canary`, `FISH_STT_LONG=groq`; his word 2026-10-13 for this week's tests, from 62 push-to-talk takes: `docs/results/2026-10-13-unoq-stt-his-takes.md`). Canary 2.3 s and 21 % word errors on short takes, Groq turbo under 1 s and 7 % on long ones, `gpt-transcribe` 0.6 to 1.5 s and 4 % (held for the fair; its routing is not decided). In real turns Canary took 1.8 to 3.0 s for recordings of 1 to 2 s (2026-10-13); the Groq route not yet in a real turn. `/debug` → Switches flips backend and model without a restart |
@@ -43,7 +43,8 @@ data when warranted.
 | Board: HDMI touch display | Unplugged since 2026-10-12 (ADR 0005 replaced by 0006): the browser cost 1.1 to 1.3 cores and 60 to 68 C; without it the board idles at 1 % and 41 to 44 C, a turn peaks at 30 % (results 2026-10-12). The LightDM session stays installed, it starts nothing |
 | The reading (la lectura) | Built (ADR 0007, proposed): badge photo on the phone → `gpt-6-luna` through the board (4.3 to 6.7 s, 1163 image tokens, surnames split, accents restored: `docs/results/2026-10-11-reading-badge.md`) → the fish asks "¿Tú eres X?" → the answer is a turn. Not yet tried with a real badge or on the phone |
 | Motors on the UNO Q (L298N), Billy Bass #2 calibration | Not started. Before wiring: 10 k pull-downs on D6, D3, D5 and on D7, D8 (D8 is pulled high in reset) |
-| Fair | **2026-10-17**. Billy Bass #2 first; the Spin Master hat body only if it arrives. Interface: the page on the operator's phone (ADR 0006) |
+| Fair | **2026-10-17/18: failed** (the hub enumerated nothing at the venue; the fish had been left disabled; the laptop fallback was untested): `docs/results/2026-10-25-fair-postmortem.md`. No next show date |
+| Board + phone only (`docs/BRAINTIP.md` Phase 7) | Phase 1 on the board 2026-10-26: the licence guard, a bad certificate keeps the page on http, the page before the voice, STOP from a watcher when the main thread is stuck, bench mode, the fish's own record (`FISH_RECORD_DIR`), his power logger from boot (`docs/results/2026-10-26-phase1-on-the-board.md`). Next: his power plan E1–E6, the board's own Wi-Fi, the scripted offline visit |
 
 Ask before starting the next Braintip phase. Until the fair, prefer work that closes the fair
 path over polishing one module. The phase list lives in `docs/BRAINTIP.md`; keep this table
@@ -387,6 +388,11 @@ Machine and tool facts only, each dated.
   stayed in device mode and `lsusb` was empty; with a newer one it worked at once. Check
   `/sys/class/typec/port0/data_role`.
 - **Loquendo runs under Hangover Wine**: 8 s one-shot, 0.75 s with the daemon warm.
+- **Loquendo checks its licence against the adapter list the prefix's wineserver saw at its
+  start** (2026-10-25). NetworkManager scans with a random MAC on `wlan0` (`ath10k_snoc` is not
+  exempt), so a fish started before Wi-Fi connected spoke only "la licencia que posee no es
+  válida para este ordenador" (4.52 s, replacing the phrase) until the wineserver ended.
+  `loq --restart` alone does not clear it; `wineserver -k` does.
 - **`arduino-cli upload` on the board needs no port and no password**, with the router up.
 - **An unpinned `pip install` pulled PyAV 19, which breaks faster-whisper 1.2.1**, and the
   OpenAI SDK 3.x; both are now bounded in `pyproject.toml`.
