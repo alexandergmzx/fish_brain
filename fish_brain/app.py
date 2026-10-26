@@ -212,21 +212,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[cloud] WARNING: {', '.join(missing)} not set; the stages that need it will fail",
               file=sys.stderr, flush=True)
 
-    # Warm the loq daemon so the first phrase isn't slow (does nothing for other backends).
-    if cfg.tts.warm_on_start:
-        from . import tts
-        tts.warm(cfg.tts)
-
-    # Pre-render canned phrases so the first welcome/goodbye is instant. With a cloud voice
-    # this must not hold up listening: the welcome falls back to an older rendering meanwhile.
-    if cfg.canned.enabled:
-        from . import canned
-        if cfg.tts.backend == "loq":
-            canned.prerender_all(cfg)
-        else:
-            threading.Thread(target=canned.prerender_all, args=(cfg,), name="prerender",
-                             daemon=True).start()
-
     # Voice mode needs some way to say "talk now". Without a screen or a terminal that is
     # the browser button or a remote; say so instead of failing on every turn.
     conversing = args.say is None and args.say_canned is None
@@ -256,6 +241,23 @@ def main(argv: list[str] | None = None) -> int:
         viz.start()
 
     try:
+        # Warm the loq daemon so the first phrase isn't slow (does nothing for other backends),
+        # with the licence probe. After the page: a slow or recovering voice must not leave
+        # the phone with nothing to open.
+        if cfg.tts.warm_on_start:
+            from . import tts
+            tts.warm(cfg.tts)
+
+        # Pre-render canned phrases so the first welcome/goodbye is instant. With a cloud voice
+        # this must not hold up listening: the welcome falls back to an older rendering meanwhile.
+        if cfg.canned.enabled:
+            from . import canned
+            if cfg.tts.backend == "loq":
+                canned.prerender_all(cfg)
+            else:
+                threading.Thread(target=canned.prerender_all, args=(cfg,), name="prerender",
+                                 daemon=True).start()
+
         try:
             link_cm = open_link(cfg.serial, dry_run=args.dry_run)
         except Exception as e:
