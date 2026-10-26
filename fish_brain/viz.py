@@ -36,6 +36,7 @@ import json
 import os
 import queue
 import socket
+import subprocess
 import sys
 import ssl
 import tempfile
@@ -702,13 +703,24 @@ def _pipewire_sources():
 
 
 def _lan_ip() -> str:
-    """This machine's address on the local network (no packet is sent)."""
+    """This machine's address on the local network (no packet is sent). On the board's own
+    Wi-Fi there is no route to the probe address: then the first global IPv4 address."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("10.255.255.255", 1))
             return s.getsockname()[0]
     except OSError:
-        return "127.0.0.1"
+        pass
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show", "scope", "global"],
+                             capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        out = ""
+    for line in out.splitlines():
+        parts = line.split()
+        if "inet" in parts and not parts[1].startswith(("docker", "br-", "virbr")):
+            return parts[parts.index("inet") + 1].split("/")[0]
+    return "127.0.0.1"
 
 
 def _is_loopback(addr: str) -> bool:

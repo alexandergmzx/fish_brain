@@ -11,6 +11,8 @@
 #   deploy/unoq_setup.sh tls [--force] [--local] [ip ...]   self-signed certificate for the phone page
 #   deploy/unoq_setup.sh stt                  board: fetch the Canary speech-to-text model
 #   deploy/unoq_setup.sh bench on|off|status  board: the fish keeps running with motors off
+#   deploy/unoq_setup.sh ap "<SSID>" "<password>" [test <s>]   board: the board's own Wi-Fi profile
+#   deploy/unoq_setup.sh net ap|auto|status   board: pin the board's own Wi-Fi, or let fish-net decide
 #   deploy/unoq_setup.sh status               board: what is running, who has the port
 #
 # This script never calls sudo. Steps that need root are printed for the owner to run.
@@ -25,6 +27,8 @@ BOARD_DIR="${FISH_BOARD_DIR:-fish_brain}"
 ME="$(id -un)"
 UNIT=fish-brain.service
 POWERLOG_UNIT=fish-powerlog.service
+NET_UNIT=fish-net.service
+AP_PROFILE=fish-ap
 STAMP="$REPO/.venv/.fish_install_ok"
 
 APT_REQUIRED=(python3-venv python3-pip python3-dev gcc linux-libc-dev libportaudio2)
@@ -347,17 +351,28 @@ cmd_service() {
         user_systemd start "$UNIT"
         ok "started"
     fi
-    step "Power logger (his E4/E5/E9 logger, from every boot)"
-    if [[ "$REPO" == "$HOME/fish_brain" ]]; then
-        cp "$DEPLOY/$POWERLOG_UNIT" "$tmp"
-    else
-        sed "s|%h/fish_brain|$REPO|g" "$DEPLOY/$POWERLOG_UNIT" > "$tmp"
-    fi
-    install -m 644 "$tmp" "$dir/$POWERLOG_UNIT"
-    rm -f "$tmp"
+    local u
+    for u in "$POWERLOG_UNIT" "$NET_UNIT"; do
+        if [[ "$REPO" == "$HOME/fish_brain" ]]; then
+            cp "$DEPLOY/$u" "$tmp"
+        else
+            sed "s|%h/fish_brain|$REPO|g" "$DEPLOY/$u" > "$tmp"
+        fi
+        install -m 644 "$tmp" "$dir/$u"
+        rm -f "$tmp"
+    done
     user_systemd daemon-reload
+    step "Power logger (his logger, from every boot)"
     user_systemd enable --now "$POWERLOG_UNIT"
     ok "$POWERLOG_UNIT: ~/power_soak.csv"
+    step "fish-net (the board's own Wi-Fi when no known network is there)"
+    user_systemd enable "$NET_UNIT"
+    user_systemd restart "$NET_UNIT"
+    if [[ -n "$(env_get FISH_NET_AP_PROFILE)" ]]; then
+        ok "$NET_UNIT: watching for '$(env_get FISH_NET_AP_PROFILE)'"
+    else
+        say "  $NET_UNIT idle: no access point yet (deploy/unoq_setup.sh ap \"<SSID>\" \"<password>\")"
+    fi
 
     sleep 3
     user_systemd --no-pager --lines=15 status "$UNIT" || true
@@ -396,6 +411,55 @@ cmd_bench() {
                 "$(user_systemd is-active "$UNIT" 2>/dev/null)"
             ;;
         *) die "usage: deploy/unoq_setup.sh bench on|off|status" ;;
+    esac
+}
+
+# --- the board's own Wi-Fi (board) ------------------------------------------------------
+# Profile fields measured in docs/results/2026-10-26-board-wifi-modes.md: 5 GHz channel 36 needs
+# no DFS here and leaves 2.4 GHz to Bluetooth; the adapter keeps its own MAC (Loquendo's
+# licence); 10.42.0.1 shared (NetworkManager's dnsmasq hands out addresses); autoconnect off,
+# fish-net raises it.
+cmd_ap() {
+    require_board ap
+    local ssid="${1:-}" pass="${2:-}" mode="${3:-}" secs="${4:-300}"
+    [[ -n "$ssid" && ${#pass} -ge 8 ]] \
+        || die "usage: deploy/unoq_setup.sh ap \"<SSID>\" \"<password, 8+ chars>\" [test <seconds>]"
+    command -v nmcli >/dev/null || die "nmcli not found"
+    nmcli connection delete "$AP_PROFILE" >/dev/null 2>&1 || true
+    nmcli connection add type wifi ifname wlan0 con-name "$AP_PROFILE" ssid "$ssid" \
+        802-11-wireless.mode ap 802-11-wireless.band a 802-11-wireless.channel 36 \
+        802-11-wireless.cloned-mac-address permanent \
+        wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn wifi-sec.pairwise ccmp wifi-sec.group ccmp \
+        wifi-sec.psk "$pass" wifi-sec.psk-flags 0 \
+        ipv4.method shared ipv4.addresses 10.42.0.1/24 ipv6.method disabled \
+        connection.autoconnect no connection.permissions '' >/dev/null \
+        || die "nmcli could not create the profile"
+    ok "profile $AP_PROFILE saved (SSID $ssid, 10.42.0.1, inactive)"
+    if [[ -z "$(env_get FISH_NET_AP_PROFILE)" ]]; then
+        printf '%s\n' "FISH_NET_AP_PROFILE=$AP_PROFILE" >> "$REPO/.env"
+        ok "FISH_NET_AP_PROFILE=$AP_PROFILE added to .env"
+    fi
+    if [[ "$mode" == test ]]; then
+        # The way back is armed before the Wi-Fi drops: ssh over the home network ends here.
+        user_systemd stop "$NET_UNIT" 2>/dev/null || true
+        systemd-run --user --on-active="$secs" --unit=fish-ap-test-end \
+            sh -c "nmcli connection down $AP_PROFILE; systemctl --user start $NET_UNIT" >/dev/null
+        say "  Switching to $ssid now for $secs s; then back to the known networks."
+        setsid -f nmcli connection up "$AP_PROFILE" >/dev/null 2>&1
+    fi
+}
+
+cmd_net() {
+    require_board net
+    local pin="${XDG_STATE_HOME:-$HOME/.local/state}/fish_brain/net-pin"
+    case "${1:-status}" in
+        ap)   mkdir -p "$(dirname "$pin")"; echo ap > "$pin"; ok "pinned: the board's own Wi-Fi stays up" ;;
+        auto) rm -f "$pin"; ok "auto: fish-net raises the board's Wi-Fi only without a known network" ;;
+        status)
+            say "pin: $(cat "$pin" 2>/dev/null || echo auto)"
+            cat "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/fish_brain/net.json" 2>/dev/null && echo
+            ;;
+        *) die "usage: deploy/unoq_setup.sh net ap|auto|status" ;;
     esac
 }
 
@@ -846,6 +910,8 @@ main() {
         tls)     cmd_tls "$@" ;;
         stt)     cmd_stt "$@" ;;
         bench)   cmd_bench "$@" ;;
+        ap)      cmd_ap "$@" ;;
+        net)     cmd_net "$@" ;;
         status)  cmd_status "$@"; cmd_bench status; cmd_kiosk status ;;
         ""|-h|--help|help) usage ;;
         *) usage >&2; die "unknown subcommand: $cmd" ;;

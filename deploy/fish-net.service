@@ -1,0 +1,14 @@
+# fish-net (fish_brain/netwatch.py): the board raises its own Wi-Fi when no known network is
+# there. Standard library only, the system Python. Installed by deploy/unoq_setup.sh service.
+[Unit]
+Description=fish_brain - own Wi-Fi when no known network is there
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/fish_brain
+ExecStart=/usr/bin/python3 -m fish_brain.netwatch
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
