@@ -347,12 +347,12 @@ real certificate; keep Loquendo and fix the licence race; no show date, measurem
 |---|---|---|
 | 0 | Protect and measure: the clean clips backed up; journald drop-in; licence experiment; his power plan E1–E6; the board's own Wi-Fi and Android on it; the name; a Bluetooth speaker; audio and mic failure measurements | clips, journald and licence done 2026-10-25/26; the rest open |
 | 1 | The fish always comes up, stops, never speaks a bad render, leaves a record (ADR 0012–0014) | done on the board 2026-10-26; S1 and R1 open |
-| 2 | The board's own Wi-Fi when no known network appears; the http paths | open |
-| 3 | The scripted offline visit (`FISH_SHOW`), the clip library, nothing said about errors | open |
-| 4 | Sound always comes out: USB, Bluetooth, the phone | open |
-| 5 | The visitor's voice always gets in: microphone failover to the phone | open |
+| 2 | The board's own Wi-Fi when no known network appears; the http paths | built 2026-10-26: fish-net, `fish-ap` on 2.4 GHz channel 6, his phone loaded the page; the certificate covers 10.42.0.1 |
+| 3 | The scripted offline visit (`FISH_SHOW`), the clip library, nothing said about errors | on the board 2026-10-26 (ADR 0015), the Halloween season's lines |
+| 4 | Sound always comes out: USB, Bluetooth, the phone | on the board 2026-10-26 (ADR 0016); a real USB pull and a real phone not yet |
+| 5 | The visitor's voice always gets in: microphone failover to the phone | built 2026-10-26 (`pw-record`, `FISH_MIC_CAPTURE=auto`); with his press not yet |
 | 6 | One name and a real certificate | open |
-| 7 | The phone as the console; the everything-fails drill; his E5, E8, E9 | open |
+| 7 | The phone as the console; the everything-fails drill | the Show tab on the board 2026-10-26 (ADR 0017); the drill open |
 
 ## Proposed config / env (not implemented yet)
 
