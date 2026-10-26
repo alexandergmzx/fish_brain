@@ -220,8 +220,8 @@ deploy/unoq_setup.sh hotspot "<SSID>" "<password>"           # save only
 deploy/unoq_setup.sh hotspot "<SSID>" "<password>" connect   # save and switch now
 ```
 
-It saves a NetworkManager profile named `fish-hotspot` with autoconnect priority 100 (preferred
-over the home Wi-Fi), endless retries, and the password stored system-wide so it works at boot
+It saves a NetworkManager profile named `fish-hotspot` with autoconnect priority 10 (after the
+home networks: IZZI 30, his parents' `yes` 20, set 2026-10-24), endless retries, and the password stored system-wide so it works at boot
 with nobody logged in. No `sudo` on this image. Saving does not need the phone to be on and does
 not drop your ssh session; `connect` (or `nmcli connection up fish-hotspot`) does drop it if you
 came in over the home Wi-Fi.

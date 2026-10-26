@@ -362,6 +362,16 @@ cmd_service() {
         rm -f "$tmp"
     done
     user_systemd daemon-reload
+    step "WirePlumber: the onboard codec (no jack) is never a speaker or a microphone"
+    local wp="$HOME/.config/wireplumber/wireplumber.conf.d"
+    mkdir -p "$wp"
+    if ! cmp -s "$DEPLOY/wireplumber/51-fish.conf" "$wp/51-fish.conf"; then
+        install -m 644 "$DEPLOY/wireplumber/51-fish.conf" "$wp/51-fish.conf"
+        user_systemd restart wireplumber            # sound drops for about a second
+        ok "installed; WirePlumber restarted"
+    else
+        ok "already installed"
+    fi
     step "Power logger (his logger, from every boot)"
     user_systemd enable --now "$POWERLOG_UNIT"
     ok "$POWERLOG_UNIT: ~/power_soak.csv"
@@ -605,17 +615,17 @@ cmd_hotspot() {
         nmcli connection add type wifi ifname "$ifname" con-name "$con" ssid "$ssid" >/dev/null
         ok "profile created"
     fi
-    # priority 100 = preferred over the home Wi-Fi; retries 0 = keep trying forever;
+    # priority 10 = after the home networks (IZZI 30, the parents' 20, his word 2026-10-24); retries 0 = keep trying forever;
     # psk-flags 0 + empty permissions = stored system-wide, usable at boot with nobody logged in.
     nmcli connection modify "$con" \
         802-11-wireless-security.key-mgmt wpa-psk \
         802-11-wireless-security.psk "$pw" \
         802-11-wireless-security.psk-flags 0 \
         connection.autoconnect yes \
-        connection.autoconnect-priority 100 \
+        connection.autoconnect-priority 10 \
         connection.autoconnect-retries 0 \
         connection.permissions ''
-    ok "autoconnect on, priority 100, retries forever"
+    ok "autoconnect on, priority 10, retries forever"
 
     if [[ "$connect" == connect ]]; then
         say "  Switching to '$ssid' now (an ssh session over the old Wi-Fi will drop)..."
