@@ -17,7 +17,7 @@ import time
 import wave
 from pathlib import Path
 
-from . import cloud, debug
+from . import cloud, debug, voice_guard
 from .config import TTSConfig
 
 
@@ -29,7 +29,8 @@ def warm(cfg: TTSConfig) -> None:
         subprocess.run([cfg.loq_bin, "--start"], check=False,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except FileNotFoundError:
-        pass
+        return
+    voice_guard.warm(cfg)            # the licence probe, where FISH_LOQ_PROBE_S is set
 
 
 def fingerprint(cfg: TTSConfig) -> str:
@@ -116,12 +117,15 @@ def synthesize(text: str, cfg: TTSConfig, out_path: str | Path | None = None) ->
             spoken = voice_text(text, cfg.loq_prefix, cfg.loq_hum, cfg.say_as)
             if spoken != text:
                 sent["voice_text"] = spoken            # what Jorge was really given
+            voice_guard.before_render(cfg)
             _synthesize_loq(spoken, cfg, out_path)
         elif cfg.backend == "openai":
             _synthesize_openai(text, cfg, out_path)
         else:
             raise ValueError(f"FISH_TTS_BACKEND={cfg.backend!r}; choose loq or openai")
         _validate_wav(out_path)
+        if cfg.backend == "loq":
+            voice_guard.after_render(cfg, out_path)   # the licence warning is never kept
     except Exception as e:
         debug.model("tts", sent, error=e, seconds=time.monotonic() - t0)
         raise

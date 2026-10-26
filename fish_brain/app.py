@@ -109,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError:
         pass                                            # not the main thread
     # If the main thread is stuck in a C call when the stop signal comes, STOP still goes out.
-    from . import shutdown
+    from . import shutdown, voice_guard
     shutdown.install(cfg.serial.stop_grace_s)
 
     # The debug hub (docs/debug.md), before anything else prints: the /debug page shows the
@@ -316,6 +316,7 @@ def main(argv: list[str] | None = None) -> int:
                 viz.register_status(lambda: {
                     "link": {"desc": link.describe(), "health": link.health()},
                     "online": cloud.is_online(),
+                    "voice": voice_guard.view(),
                     "backends": {"stt": "-" if args.text else cfg.stt.backend,
                                  "llm": "echo" if convo.echo else f"{cfg.llm.profile}:{cfg.llm.model}",
                                  "tts": cfg.tts.backend, "ptt": convo.ptt_summary()}})

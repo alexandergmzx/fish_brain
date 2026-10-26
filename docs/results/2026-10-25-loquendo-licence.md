@@ -56,3 +56,21 @@ that renders this phrase, expects about 3.0 s, and on the warning stops the pref
 
 Pass line: after the drop-in, a cold boot with no known Wi-Fi renders the phrase in
 3.01 ± 0.05 s with a clean transcript.
+
+## The fix applied, and the guard on the board (2026-10-26 00:05–00:15 UTC)
+
+His NetworkManager drop-in was installed; `fish-brain` restarted with the hat's cell pack
+disconnected (no motion possible).
+
+| Check | Result |
+|---|---|
+| Probe through the new daemon (`loq -o`, 16 kHz) | 3.01 s, transcript clean |
+| The guard's probe (`voice_guard.probe`, the fish's own path: 22050 Hz, the hat's settings), three runs | 3.01, 3.01, 3.01 s |
+| Start-up with `FISH_LOQ_PROBE_S=3.01` | `[voice] CLEAN (3.01 s, clean 3.01 s)`; `/status` voice `clean` |
+| Start-up with a wrong clean length (6.0, temporary drop-in) | recovery ran (stop, `wineserver -k`, start) in 4 s, then `[voice] TAINTED`; 0 clips cached; drop-in removed, back to `CLEAN` |
+| `voice_guard.recover()` by hand | 3.2 s; daemon and wineserver replaced (new pids); probe 3.01 s |
+| Canned clips written since 2026-10-16 | 0 |
+
+`FISH_LOQ_WARNING_S=4.52` was measured at 16 kHz with no prefix (part 1); the guard does not
+depend on it, it only adds a re-probe for renders of that length. Not yet run: a cold boot with
+no known Wi-Fi (the pass line above).

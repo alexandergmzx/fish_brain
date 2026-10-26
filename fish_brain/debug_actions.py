@@ -497,7 +497,10 @@ class DebugActions:
             wav = Path(name)
             try:
                 wav.unlink(missing_ok=True)             # loq writes it
+                from . import voice_guard
+                voice_guard.before_render(self.cfg.tts)
                 tts._synthesize_loq(text, self.cfg.tts, wav)
+                voice_guard.after_render(self.cfg.tts, wav)
                 convo.player.play(wav)
                 convo.player.wait()
             except Exception as e:

@@ -452,6 +452,20 @@ class TTSConfig:
     say_as: dict = field(default_factory=lambda: dict(_persona().get("say_as", {})))
     sample_rate: int = 22050        # passed to loq -r; envelope reads the actual WAV rate
     warm_on_start: bool = True      # `loq --start` to warm the daemon at boot (loq only)
+    # Licence guard (voice_guard.py). The probe phrase's clean length in seconds, measured on
+    # the machine that speaks; 0 = no guard (the laptop). A render this far off is not clean.
+    loq_probe_s: float = field(default_factory=lambda: _env_float("FISH_LOQ_PROBE_S", 0.0))
+    loq_probe_tol_s: float = field(default_factory=lambda: _env_float("FISH_LOQ_PROBE_TOL_S", 0.25))
+    loq_probe_text: str = field(default_factory=lambda: _env(
+        "FISH_LOQ_PROBE_TEXT", "Hola, esta es una prueba de la voz del sombrero."))
+    # The licence warning's own length: a render this long is probed again. 0 = never.
+    loq_warning_s: float = field(default_factory=lambda: _env_float("FISH_LOQ_WARNING_S", 0.0))
+    loq_warning_tol_s: float = 0.05
+    # Wait for this adapter's own MAC before restarting the voice (empty = don't wait).
+    loq_mac_iface: str = field(default_factory=lambda: _env("FISH_LOQ_MAC_IFACE", ""))
+    loq_mac_wait_s: float = 90.0
+    loq_wineserver: str = field(default_factory=lambda: _env("FISH_LOQ_WINESERVER", "wineserver"))
+    loq_recheck_s: float = 60.0
     # OpenAI speech (backend "openai"). Rendered as raw PCM and wrapped into a WAV here.
     openai_model: str = field(default_factory=lambda: _env("FISH_TTS_MODEL", "gpt-4o-mini-tts"))
     openai_voice: str = field(default_factory=lambda: _env("FISH_TTS_VOICE", "ash"))

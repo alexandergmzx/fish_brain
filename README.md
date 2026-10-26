@@ -114,6 +114,9 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_KIOSK_MODE`, `FISH_KIOSK_OUTPUT` | empty | Board display: force a mode such as `1280x720`, pick an output; see `deploy/README.md` |
 | `FISH_LINK_LOG` | empty | A file that records every line sent to the MCU and every byte read back |
 | `FISH_STOP_GRACE_S` | `10` | After a stop signal: STOP from a watcher thread if the main thread has not stopped within 1 s, and a hard exit this many seconds after the signal. Keep it below the unit's `TimeoutStopSec` (15) |
+| `FISH_LOQ_PROBE_S` | `0` (off) | Loquendo licence guard: the probe phrase's clean length, measured on the machine that speaks (board: `3.01`). At start-up the phrase is rendered; too far off (`FISH_LOQ_PROBE_TOL_S`, 0.25 s) and the voice is restarted on a fresh wineserver, else marked tainted: no live render, cached clips only, re-checked every minute |
+| `FISH_LOQ_WARNING_S` | `0` (off) | The licence warning's own length (board: `4.52`): a render this long is probed again and deleted if the probe fails, so it is never cached |
+| `FISH_LOQ_MAC_IFACE` | empty | Before restarting the voice, wait up to 90 s for this adapter's own MAC (board: `wlan0`). `FISH_LOQ_PROBE_TEXT` and `FISH_LOQ_WINESERVER` change the phrase and the `wineserver` binary |
 | `FISH_VOICE_QUIT` | `true` | Saying "salir" ends the program |
 | `FISH_WELCOME_ONCE` | `false` | Greet once per boot instead of at every start |
 | `FISH_FILLER` | `true` | While a voice turn waits for its transcription, its reply or its voice, the fish says short cached phrases, and past the turn's budget it apologizes and listens again (ADR 0010). `false` = silent waits and no limit. With `FISH_BURBLE=false` too, every stage runs as before both. Never in text mode |
