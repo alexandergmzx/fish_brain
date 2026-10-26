@@ -84,3 +84,13 @@ def test_the_hats_future_bank_is_full_and_clean(monkeypatch):
         assert bad not in words, bad
     monkeypatch.setenv("FISH_PERSONA", "fish")
     assert VisitConfig().future == {}
+
+
+def test_the_hat_spells_its_english_right_and_jorge_hears_a_respelling(monkeypatch):
+    from fish_brain.say_as import voice_text
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+    cfg = TTSConfig()
+    shown = "¡Hufflepuff! ¡Feliz Halloween! Mis costuras no mienten: ¡Slytherin!"
+    spoken = voice_text(shown, cfg.loq_prefix, cfg.loq_hum, cfg.say_as)
+    assert "Jófl paf" in spoken and "Jálouin" in spoken and "Slízerin" in spoken
+    assert "Gryffindor" in voice_text("¡Gryffindor!", cfg.loq_prefix, cfg.loq_hum, cfg.say_as)

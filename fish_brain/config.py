@@ -167,6 +167,11 @@ VISIT_PHRASES = frozenset({"visit_greeting"})
 PERSONAS: dict[str, dict] = {
     "fish": {},
     "hat": {   # placeholders: the owner's texts go here
+        # How Jorge is told to say the English words the texts spell correctly (say_as.py).
+        # Picked 2026-10-26 by rendering candidates and transcribing them in English: these
+        # came back as the word; Gryffindor, Ravenclaw, "happy" and "trick or treat" did as
+        # written. Defaults until he picks by ear on the page's Pronunciation list.
+        "say_as": {"Slytherin": "Slízerin", "Hufflepuff": "Jófl paf", "Halloween": "Jálouin"},
         "system_prompt": (
             "Eres el Sombrero Seleccionador, un sombrero animatrónico parlante que decide a "
             "qué casa pertenece cada visitante. Respondes en español mexicano, en frases "

@@ -78,11 +78,15 @@ CANDIDATES: list[tuple[str, str]] = [
     ("hum: Emmm", MX + "Emmm… difícil."),
     ("hum: Hum", MX + "Hum… difícil."),
 ]
-for _group in (("Hufflepuff", "Jáfelpaf", "Jáflepaf", "Jófelpof"),
-               ("Gryffindor", "Grífindor", "Grifindór"),
+# The first after each name is the hat's default (PERSONAS["hat"]["say_as"], 2026-10-26: the
+# candidates that transcribed back as the English word).
+for _group in (("Hufflepuff", "Jófl paf", "Jafel paf", "Jáfelpaf", "Jáflepaf", "Jófelpof"),
+               ("Gryffindor", "Grifindór", "Grífindor"),
                ("Ravenclaw", "Réivenclo", "Rávenclo"),
-               ("Slytherin", "Slíderin", "Eslíderin"),
+               ("Slytherin", "Slízerin", "Slíderin", "Eslíderin"),
                ("Hogwarts", "Jógwarts", "Jóguarts")):
     for _w in _group:
         CANDIDATES.append((f"{_group[0]}: {_w}", MX + f"¡Eres de {_w}!" if _group[0] != "Hogwarts"
                            else MX + f"Bienvenido a {_w}."))
+for _w in ("Halloween", "Jálouin", "Jalouín", "Jálowin"):
+    CANDIDATES.append((f"Halloween: {_w}", MX + f"¡Feliz {_w}!"))
