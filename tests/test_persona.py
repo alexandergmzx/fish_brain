@@ -92,5 +92,6 @@ def test_the_hat_spells_its_english_right_and_jorge_hears_a_respelling(monkeypat
     cfg = TTSConfig()
     shown = "¡Hufflepuff! ¡Feliz Halloween! Mis costuras no mienten: ¡Slytherin!"
     spoken = voice_text(shown, cfg.loq_prefix, cfg.loq_hum, cfg.say_as)
-    assert "Jófl paf" in spoken and "Jálouin" in spoken and "Slízerin" in spoken
-    assert "Gryffindor" in voice_text("¡Gryffindor!", cfg.loq_prefix, cfg.loq_hum, cfg.say_as)
+    assert "Jafel paf" in spoken and "Jálowin" in spoken and "Slíderin" in spoken
+    assert "Grifindór" in voice_text("¡Gryffindor!", cfg.loq_prefix, cfg.loq_hum, cfg.say_as)
+    assert "Réivenclo" in voice_text("¡Ravenclaw!", cfg.loq_prefix, cfg.loq_hum, cfg.say_as)
