@@ -779,6 +779,11 @@ class PTTConfig:
     # browser = the page records with the phone's microphone and uploads a WAV
     # (POST /utterance), needs --viz and a secure context on the phone (https).
     capture: str = field(default_factory=lambda: _env("FISH_MIC_CAPTURE", "host"))
+    # How the board records: "sounddevice" (PortAudio, the laptop) or "pw-record" (a PipeWire
+    # subprocess that can always be killed; the board, ADR 0016). A recording that brings no
+    # audio within open_timeout_s is a microphone error, never a hang.
+    backend: str = field(default_factory=lambda: _env("FISH_MIC_BACKEND", "sounddevice"))
+    open_timeout_s: float = field(default_factory=lambda: _env_float("FISH_MIC_OPEN_TIMEOUT_S", 3.0))
     grab: bool = field(default_factory=lambda: _env_bool("FISH_PTT_GRAB", False))
     # Saying salir/quit/exit ends the program (text mode always can).
     voice_quit: bool = field(default_factory=lambda: _env_bool("FISH_VOICE_QUIT", True))

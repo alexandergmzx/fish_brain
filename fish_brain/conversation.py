@@ -394,7 +394,11 @@ class FishConversation:
         a page has its microphone ready. Decided before every wait, so a phone that comes or
         goes needs no restart. Returns the relay callable or None."""
         remotes = [s for s in self.sources if s.name == "remote"]
-        use = bool(remotes) and self.cfg.ptt.capture == "browser" and (
+        # "auto": the board's microphone while it works; once it streams only zeros (or its
+        # source is gone) the remote's presses record on a phone that has its microphone on.
+        capture = self.cfg.ptt.capture
+        use = bool(remotes) and (capture == "browser" or (
+            capture == "auto" and ptt.mic_dead(self.cfg.ptt))) and (
             self.viz is not None and self.viz.mic_pages() > 0)
         for s in remotes:
             s.relay = use

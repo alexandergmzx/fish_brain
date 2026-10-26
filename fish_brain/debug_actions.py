@@ -243,7 +243,7 @@ SWITCHES: dict = {
                        lambda a: float(_fill_delay[0](a)), _fill_delay[1]),
     "max_record_s": ("Recording limit (s)", "number", (3.0, 60.0),
                      lambda a: float(_limit[0](a)), _limit[1]),
-    "mic": ("Microphone", "choice", ("host", "browser"), lambda a: a.cfg.ptt.capture,
+    "mic": ("Microphone", "choice", ("host", "browser", "auto"), lambda a: a.cfg.ptt.capture,
             lambda a, v: setattr(a.cfg.ptt, "capture", v) or ""),
     "show": ("Scripted visit", "choice", ("off", "auto", "script"),
              lambda a: a.cfg.show.mode, _set_show),

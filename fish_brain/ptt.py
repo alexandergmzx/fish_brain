@@ -17,6 +17,8 @@ Two ways to say "talk now":
 from __future__ import annotations
 
 import os
+import subprocess
+import select
 import queue
 import sys
 import tempfile
@@ -140,6 +142,84 @@ def _resolve_input(sd, cfg: PTTConfig):
         return device, sr
 
 
+class _PwRecord:
+    """`pw-record` of one PipeWire source as raw 16-bit mono on stdout. A subprocess, so a
+    microphone that never starts cannot hang the turn loop (2026-10-13): no audio within
+    `open_timeout_s` is a MicError, and the process is always ended on the way out."""
+
+    def __init__(self, cfg: PTTConfig):
+        import shutil
+        exe = shutil.which("pw-record")
+        if exe is None:
+            raise MicError("pw-record not found")
+        self.rate = cfg.samplerate
+        self._proc = subprocess.Popen(
+            [exe, "--target", cfg.source, "--rate", str(cfg.samplerate), "--channels", "1",
+             "--format", "s16", "--raw", "-"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self._fd = self._proc.stdout.fileno()
+        self._deadline = time.monotonic() + cfg.open_timeout_s
+        self._got = False
+        self._buf = b""
+
+    def get(self, timeout: float):
+        ready, _, _ = select.select([self._fd], [], [], timeout)
+        if not ready:
+            if not self._got and time.monotonic() > self._deadline:
+                raise MicError("the microphone sent nothing (pw-record)")
+            if self._proc.poll() is not None:
+                raise MicError("pw-record ended")
+            return None
+        data = os.read(self._fd, 8192)
+        if not data:
+            raise MicError("pw-record ended")
+        self._got = True
+        self._buf += data
+        n = len(self._buf) // 2 * 2
+        out = np.frombuffer(self._buf[:n], dtype="<i2").copy()
+        self._buf = self._buf[n:]
+        return out if out.size else None
+
+    def close(self) -> None:
+        p = self._proc
+        if p.poll() is None:
+            p.terminate()
+            try:
+                p.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+
+
+# Microphone health for FISH_MIC_CAPTURE=auto: takes in a row that were exact zeros.
+_zero_takes = 0
+
+
+def mic_dead(cfg: PTTConfig) -> bool:
+    """The board's microphone streams nothing (two takes of exact zeros in a row), or its
+    PipeWire source is gone: the remote's presses go to a phone microphone instead."""
+    if _zero_takes >= 2:
+        return True
+    if cfg.source and cfg.backend == "pw-record":
+        try:
+            from . import pw
+            sources = pw.cache().sources()
+            if sources and not any(s["name"] == cfg.source for s in sources):
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _note_take(frames) -> None:
+    global _zero_takes
+    if not frames:
+        return
+    if any(f.any() for f in frames):
+        _zero_takes = 0
+    else:
+        _zero_takes += 1
+
+
 def _record_until(stop_predicate, cfg: PTTConfig,
                   on_level: Callable[[float], None] | None = None) -> Path:
     """Record from the mic until `stop_predicate()` returns True.
@@ -147,6 +227,8 @@ def _record_until(stop_predicate, cfg: PTTConfig,
     If `on_level` is given, it's called with the per-chunk RMS (0..1) at ~`_LEVEL_HZ`
     so the web GUI can draw a live level meter while recording.
     """
+    if cfg.backend == "pw-record" and cfg.source:
+        return _record_pw(stop_predicate, cfg, on_level)
     try:
         import sounddevice as sd
         device, samplerate = _resolve_input(sd, cfg)
@@ -205,12 +287,55 @@ def _record_until(stop_predicate, cfg: PTTConfig,
     # Drain anything buffered.
     while not q.empty():
         frames.append(q.get())
+    _note_take(frames)
+    return _save(frames, samplerate)
 
+
+def _save(frames, samplerate) -> Path:
     fd, name = tempfile.mkstemp(suffix=".wav", prefix="fish_in_")
     os.close(fd)
     out = Path(name)
     _write_wav(out, frames, samplerate)
     return out
+
+
+def _record_pw(stop_predicate, cfg: PTTConfig, on_level=None) -> Path:
+    """The same recording through pw-record (see _PwRecord): the release, the dead-stream and
+    pause rules, the level meter."""
+    _info.update(device=f"pw-record {cfg.source}", rate=int(cfg.samplerate), ended="release")
+    src = _PwRecord(cfg)
+    frames: list[np.ndarray] = []
+    heard, last_sound, spoke, last_speech = False, time.monotonic(), False, time.monotonic()
+    last_level, min_dt = 0.0, 1.0 / _LEVEL_HZ
+    try:
+        while not stop_predicate():
+            chunk = src.get(0.1)
+            if chunk is None:
+                continue
+            frames.append(chunk)
+            if cfg.dead_s > 0:
+                if chunk.any():
+                    heard, last_sound = True, time.monotonic()
+                elif heard and time.monotonic() - last_sound >= cfg.dead_s:
+                    _info["ended"] = "dead stream"
+                    break
+            if cfg.pause_s > 0:
+                f = chunk.astype(np.float32) / 32768.0
+                if float(np.sqrt(np.mean(f * f))) >= cfg.quiet_rms:
+                    spoke, last_speech = True, time.monotonic()
+                elif spoke and time.monotonic() - last_speech >= cfg.pause_s:
+                    _info["ended"] = "pause"
+                    break
+            if on_level is not None:
+                now = time.monotonic()
+                if now - last_level >= min_dt:
+                    last_level = now
+                    f = chunk.astype(np.float32) / 32768.0
+                    on_level(float(np.sqrt(np.mean(f * f) + 1e-12)))
+    finally:
+        src.close()
+    _note_take(frames)
+    return _save(frames, cfg.samplerate)
 
 
 def record_for(seconds: float, cfg: PTTConfig,

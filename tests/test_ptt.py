@@ -254,3 +254,49 @@ def test_a_pause_after_speech_ends_the_recording(monkeypatch):
     assert time.monotonic() - t0 < 2.0
     assert 0.05 < ptt.wav_duration_s(path) < 0.4
     path.unlink()
+
+
+def test_pw_record_capture_never_hangs_and_ends_its_process(monkeypatch, tmp_path):
+    """A microphone that sends nothing is a MicError within the open limit (2026-10-13)."""
+    import stat, time as _t
+    from fish_brain import ptt as P
+    from fish_brain.config import PTTConfig
+    fake = tmp_path / "pw-record"
+    fake.write_text("#!/bin/sh\nsleep 30\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setattr("shutil.which", lambda name: str(fake) if name == "pw-record" else None)
+    cfg = PTTConfig()
+    cfg.backend, cfg.source, cfg.open_timeout_s = "pw-record", "mic", 0.5
+    t0 = _t.monotonic()
+    with pytest.raises(P.MicError):
+        _REAL_RECORD_UNTIL(lambda: False, cfg)
+    assert _t.monotonic() - t0 < 3
+
+
+def test_pw_record_capture_records_what_it_reads(monkeypatch, tmp_path):
+    import stat
+    from fish_brain import ptt as P
+    from fish_brain.config import PTTConfig
+    fake = tmp_path / "pw-record"
+    fake.write_text("#!/bin/sh\nhead -c 32000 /dev/urandom\nsleep 30\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setattr("shutil.which", lambda name: str(fake) if name == "pw-record" else None)
+    cfg = PTTConfig()
+    cfg.backend, cfg.source = "pw-record", "mic"
+    end = __import__("time").monotonic() + 0.8
+    wav = _REAL_RECORD_UNTIL(lambda: __import__("time").monotonic() > end, cfg)
+    assert 0.9 <= P.wav_duration_s(wav) <= 1.01      # 32000 bytes = 1 s at 16 kHz
+    wav.unlink()
+
+
+def test_two_silent_takes_of_exact_zeros_make_the_mic_dead(monkeypatch):
+    import numpy as _np
+    from fish_brain import ptt as P
+    from fish_brain.config import PTTConfig
+    monkeypatch.setattr(P, "_zero_takes", 0)
+    P._note_take([_np.zeros(160, dtype=_np.int16)])
+    assert not P.mic_dead(PTTConfig())
+    P._note_take([_np.zeros(160, dtype=_np.int16)])
+    assert P.mic_dead(PTTConfig())
+    P._note_take([_np.ones(160, dtype=_np.int16)])       # one real take: alive again
+    assert not P.mic_dead(PTTConfig())

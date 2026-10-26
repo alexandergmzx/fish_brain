@@ -97,9 +97,9 @@ def main(argv: list[str] | None = None) -> int:
               f"(FISH_TTS_BACKEND: loq or openai)", file=sys.stderr)
         return 78
     cfg.ptt.capture = cfg.ptt.capture.strip().lower()
-    if cfg.ptt.capture not in ("host", "browser"):
+    if cfg.ptt.capture not in ("host", "browser", "auto"):
         print(f"Configuration problem: unknown microphone capture {cfg.ptt.capture!r} "
-              f"(FISH_MIC_CAPTURE: host or browser)", file=sys.stderr)
+              f"(FISH_MIC_CAPTURE: host, browser or auto)", file=sys.stderr)
         return 78
     # A stop request from a service manager should end like Ctrl-C: goodbye, then STOP.
     def _on_sigterm(_signum, _frame):
