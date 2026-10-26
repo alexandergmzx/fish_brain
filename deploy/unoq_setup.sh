@@ -415,10 +415,11 @@ cmd_bench() {
 }
 
 # --- the board's own Wi-Fi (board) ------------------------------------------------------
-# Profile fields measured in docs/results/2026-10-26-board-wifi-modes.md: 5 GHz channel 36 needs
-# no DFS here and leaves 2.4 GHz to Bluetooth; the adapter keeps its own MAC (Loquendo's
-# licence); 10.42.0.1 shared (NetworkManager's dnsmasq hands out addresses); autoconnect off,
-# fish-net raises it.
+# Profile fields measured in docs/results/2026-10-26-board-wifi-modes.md: 2.4 GHz channel 6,
+# because without a known network the regulatory domain falls back to WORLD, where 5 GHz may
+# not start an access point ("Failed to start AP functionality", 2026-10-26); the adapter keeps
+# its own MAC (Loquendo's licence); 10.42.0.1 shared (NetworkManager's dnsmasq hands out
+# addresses); autoconnect off, fish-net raises it.
 cmd_ap() {
     require_board ap
     local ssid="${1:-}" pass="${2:-}" mode="${3:-}" secs="${4:-300}"
@@ -427,7 +428,7 @@ cmd_ap() {
     command -v nmcli >/dev/null || die "nmcli not found"
     nmcli connection delete "$AP_PROFILE" >/dev/null 2>&1 || true
     nmcli connection add type wifi ifname wlan0 con-name "$AP_PROFILE" ssid "$ssid" \
-        802-11-wireless.mode ap 802-11-wireless.band a 802-11-wireless.channel 36 \
+        802-11-wireless.mode ap 802-11-wireless.band bg 802-11-wireless.channel 6 \
         802-11-wireless.cloned-mac-address permanent \
         wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn wifi-sec.pairwise ccmp wifi-sec.group ccmp \
         wifi-sec.psk "$pass" wifi-sec.psk-flags 0 \

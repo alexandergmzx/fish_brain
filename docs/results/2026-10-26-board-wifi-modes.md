@@ -20,3 +20,15 @@ What it means:
   until a licence render passes with that interface present.
 - **Channel:** with `#channels <= 1` an AP beside a client must use the client's channel.
   Channel 36 and 149 need no DFS here.
+
+## N1, first try: 5 GHz channel 36 fails (2026-10-26 02:29 UTC)
+
+`deploy/unoq_setup.sh ap "<SSID>" "<password>" test 300` (run by him), profile on band `a`,
+channel 36. Leaving IZZI reset the regulatory domain to WORLD
+(`CTRL-EVENT-REGDOM-CHANGE init=CORE type=WORLD`), and wpa_supplicant logged `Failed to start AP
+functionality`. NetworkManager: `Hotspot network creation took too long, failing activation`
+after 26 s, then rejoined IZZI by itself. The phone never saw the network. 5 GHz works as a
+client only because IZZI's beacons set the country to MX (`COUNTRY_IE ... alpha2=MX`).
+
+Change: the profile goes to 2.4 GHz channel 6, which WORLD allows. Bluetooth shares 2.4 GHz; the
+speaker is checked against it when it is paired.
