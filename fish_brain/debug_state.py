@@ -10,6 +10,7 @@ when a new field's name looks like a secret and nobody has classified it.
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import re
 import sys
@@ -313,6 +314,74 @@ def _page(hub) -> dict:
             "tls_error": getattr(viz, "tls_error", None) if viz is not None else None}
 
 
+_SHOW_CACHE: dict = {}
+
+
+def _cached(key: str, ttl_s: float, fn):
+    """A value computed at most every `ttl_s` (a phone polls the state every few seconds)."""
+    hit = _SHOW_CACHE.get(key)
+    now = time.monotonic()
+    if hit is not None and now - hit[0] < ttl_s:
+        return hit[1]
+    value = fn()
+    _SHOW_CACHE[key] = (now, value)
+    return value
+
+
+def _net() -> dict:
+    """fish-net's view (netwatch.py writes it) and the pin, read from files."""
+    run = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "fish_brain" / "net.json"
+    state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "fish_brain"
+    out = {"watching": False}
+    try:
+        out.update(json.loads(run.read_text()))
+        out["watching"] = time.time() - float(out.get("t", 0)) < 30
+    except (OSError, ValueError):
+        pass
+    try:
+        out["pin"] = (state / "net-pin").read_text().strip() or "auto"
+    except OSError:
+        out["pin"] = "auto"
+    return out
+
+
+def _show_tab(hub) -> dict:
+    """What the Show tab's go/no-go rows need, in one place (each part cached)."""
+    cfg, convo = hub.cfg, getattr(hub, "convo", None)
+    from . import voice_guard, record
+    out: dict = {"voice": voice_guard.view()}
+    player = getattr(convo, "player", None)
+    view = getattr(player, "view", None)
+    if callable(view):
+        audio = view()
+        sid = audio.get("sink_id")
+        if sid is not None:
+            from . import pw
+            audio["volume"] = _cached(f"vol{sid}", 2.0, lambda: pw.volume(sid))
+        out["audio"] = audio
+    else:
+        out["audio"] = {"routes": [], "route": "default"}
+    out["net"] = _cached("net", 2.0, _net)
+    show = getattr(convo, "show", None)
+    if show is not None:
+        mode, why = show.mode_now()
+        names = [n for n in cfg.canned.phrases if n.startswith("show_")]
+        from . import canned
+        ready = _cached("show_ready", 10.0, lambda: sum(canned.cached(n, cfg) for n in names))
+        out["show"] = {"setting": cfg.show.mode, "now": mode, "why": why, "ready": ready,
+                       "lines": len(names)}
+    else:
+        out["show"] = {"setting": cfg.show.mode, "now": "off", "why": "off", "ready": 0, "lines": 0}
+    out["record"] = getattr(record, "_record", None) is not None
+    soak = Path.home() / "power_soak.csv"
+    try:
+        out["logger"] = time.time() - soak.stat().st_mtime < 30
+    except OSError:
+        out["logger"] = False
+    out["capture"] = cfg.ptt.capture
+    return out
+
+
 def _pron(cfg) -> list[str]:
     """The pronunciation candidates the Voice tab can play (loq only)."""
     from .say_as import CANDIDATES
@@ -329,6 +398,7 @@ def build(hub) -> dict:
     st["mode"] = _section(lambda: _mode(hub))
     st["page"] = _section(lambda: _page(hub))
     st["pron"] = _section(lambda: _pron(cfg))
+    st["show_tab"] = _section(lambda: _show_tab(hub))
     st["remote"] = _section(lambda: _remote(hub))
     st["link"] = _section(lambda: _link(hub))
     st["backends"] = _section(lambda: _backends(hub))

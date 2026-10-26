@@ -236,6 +236,8 @@
           case "draft": if (live) voiceDraft(ev.text || ""); break;
           case "reading": if (live) fish.thinking("model"); break;
           case "ptt": if (live) ptt.event(ev); break;
+          case "play": if (live) phoneSpeaker.play(ev); break;
+          case "play_stop": phoneSpeaker.stop(); break;
         }
         mark("pipe");
         break;
@@ -556,6 +558,127 @@
     refresh(); connect();
   });
 
+  // ---- the Show tab: is the hat ready, and the few things changed during a show ----------------
+  // Rows from /debug/state's show_tab (and the remote, link, service sections). Green, amber or
+  // red, each with what to do in a few words. The controls post to routed actions only.
+  function goRow(name, cls, text, fix) {
+    const r = el("div", "go " + cls);
+    r.appendChild(el("b", "", name));
+    r.appendChild(el("span", "", text));
+    if (fix) r.appendChild(el("span", "fix", fix));
+    return r;
+  }
+  function renderShow() {
+    const st = S.state || {}, t = st.show_tab || {};
+    if (t.error) return;
+    const rows = $("goRows"), out = [];
+    const v = t.voice || {};
+    out.push(goRow("Voz", v.state === "tainted" ? "bad" : "ok",
+      v.state === "tainted" ? "licencia: la voz está mal" : v.state === "clean" ? "limpia" : "sin revisar",
+      v.state === "tainted" ? "reinicia el sombrero" : ""));
+    const a = t.audio || {};
+    const route = a.route || "";
+    out.push(goRow("Bocina", route === "none" ? "bad" : route.startsWith("alsa") || route === "default" || route === "" ? "ok" : "warn",
+      route === "none" ? "ninguna" : route === "phone" ? "el teléfono" : route.startsWith("bluez") ? "Bluetooth"
+        : route.startsWith("alsa") ? "USB" : "la del sistema",
+      route === "none" ? "conecta la bocina o activa el altavoz del teléfono" : (a.cooling || []).length ? "falló: " + a.cooling.join(", ") : ""));
+    const rem = st.remote || {};
+    if (rem.present !== undefined)
+      out.push(goRow("Control", rem.devices ? "ok" : "warn", rem.devices ? "conectado" : "no aparece",
+        rem.devices ? "" : "usa el botón Hablar de esta página"));
+    out.push(goRow("Micrófono", "ok", t.capture === "browser" ? "el del teléfono" : "el del control", ""));
+    const ln = st.link || {};
+    out.push(goRow("Motor", ln.attached ? "ok" : "warn", ln.attached ? (ln.muted ? "silenciado" : "conectado") : "sin motor",
+      (st.service || {}).bench ? "modo banco: deploy/unoq_setup.sh bench off" : ln.attached ? "" : "habla sin moverse"));
+    const n = t.net || {};
+    const ap = n.state === "ap";
+    out.push(goRow("Red", n.watching === false && !n.state ? "warn" : ap ? "warn" : "ok",
+      ap ? "Wi-Fi propio (sin internet)" : n.connection ? n.connection + (n.ip ? " · " + n.ip : "") : "—",
+      ap ? "funciona sin internet: visita con guion" : ""));
+    const sh = t.show || {};
+    out.push(goRow("Visita", sh.setting === "off" ? "warn" : "ok",
+      sh.setting === "off" ? "solo el modelo" : (sh.now === "script" ? "guion" : "modelo") + " (" + sh.why + ")",
+      sh.lines && sh.ready < sh.lines ? "frases listas " + sh.ready + " de " + sh.lines : ""));
+    const svc = st.service || {};
+    out.push(goRow("Arranque", svc.enabled === false ? "bad" : "ok", svc.enabled === false ? "no arranca solo" : "arranca solo",
+      svc.enabled === false ? "systemctl --user enable fish-brain" : ""));
+    out.push(goRow("Registro", t.record && t.logger ? "ok" : "warn",
+      (t.record ? "visitas" : "sin registro") + " · " + (t.logger ? "energía" : "sin registro de energía"), ""));
+    rows.replaceChildren(...out);
+    const bad = out.filter((r) => r.classList.contains("bad")).length;
+    $("showSummary").textContent = bad ? bad + " por revisar" : "listo";
+    if (typeof a.volume === "number" && !volDragging) { $("volSlider").value = Math.round(a.volume * 100); $("volNow").textContent = Math.round(a.volume * 100) + " %"; }
+    for (const b of document.querySelectorAll("[data-show]")) b.setAttribute("aria-pressed", b.dataset.show === sh.setting ? "true" : "false");
+    for (const b of document.querySelectorAll("[data-net]")) b.setAttribute("aria-pressed", b.dataset.net === (n.pin || "auto") ? "true" : "false");
+  }
+  let volDragging = false, volTimer = 0;
+  $("volSlider").addEventListener("input", () => {
+    volDragging = true;
+    $("volNow").textContent = $("volSlider").value + " %";
+    clearTimeout(volTimer);
+    volTimer = setTimeout(async () => {
+      const out = await post("/debug/volume", { value: Number($("volSlider").value) });
+      $("showMsg").textContent = out.ok ? "" : "no se pudo cambiar el volumen";
+      volDragging = false; soon();
+    }, 250);
+  });
+  for (const b of document.querySelectorAll("[data-show]")) {
+    b.addEventListener("click", async () => {
+      const out = await post("/debug/set", { name: "show", value: b.dataset.show });
+      $("showMsg").textContent = out.ok ? (out.note || "") : "rechazado: " + (out.error || out.status);
+      soon();
+    });
+  }
+  for (const b of document.querySelectorAll("[data-net]")) {
+    b.addEventListener("click", async () => {
+      const out = await post("/debug/net", { pin: b.dataset.net });
+      $("showMsg").textContent = out.ok ? (b.dataset.net === "ap" ? "el sombrero levanta su propio Wi-Fi" : "el sombrero busca sus redes conocidas") : "rechazado";
+      soon();
+    });
+  }
+
+  // ---- the phone as the last speaker (ADR 0016) ----------------------------------------------------
+  // Off until a tap unlocks the sound. Then the page tells the board every 10 s that it can play
+  // (/speakerstate); the board sends a `play` event only when its own speakers are gone, the page
+  // fetches the phrase, plays it and says when it started (/speaker/started) so the motors follow.
+  const phoneSpeaker = guard("phone speaker", () => {
+    const btn = $("spkBtn"), state = $("spkState");
+    let actx = null, on = false, beat = 0, src = null;
+    function say(t) { state.textContent = t; }
+    function announce(ready) {
+      api("/speakerstate", { page: PAGE, ready }).catch(() => {});
+    }
+    async function enable() {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      await actx.resume();
+      const buf = actx.createBuffer(1, 1, 22050), s = actx.createBufferSource();   // unlock
+      s.buffer = buf; s.connect(actx.destination); s.start(0);
+      on = true; announce(true); beat = setInterval(() => { if (!document.hidden) announce(true); }, 10000);
+      btn.setAttribute("aria-pressed", "true"); say("listo: suena aquí si las bocinas fallan");
+    }
+    function disable() {
+      on = false; clearInterval(beat); announce(false);
+      btn.setAttribute("aria-pressed", "false"); say("off");
+    }
+    btn.addEventListener("click", () => { on ? disable() : enable().catch(() => say("el navegador no dejó")); });
+    document.addEventListener("visibilitychange", () => { if (on) announce(!document.hidden); });
+    return {
+      async play(ev) {
+        if (!on || !actx) return;
+        try {
+          const r = await fetch(ev.audio, { headers: TOKEN ? { "X-Fish-Token": TOKEN } : {} });
+          const audio = await actx.decodeAudioData(await r.arrayBuffer());
+          if (src) { try { src.stop(); } catch (_) {} }
+          src = actx.createBufferSource(); src.buffer = audio; src.connect(actx.destination);
+          src.start(0);
+          api("/speaker/started", { id: ev.id, in_ms: 0 }).catch(() => {});   // it starts now
+          say("sonando aquí");
+        } catch (e) { say("no pudo sonar"); }
+      },
+      stop() { if (src) { try { src.stop(); } catch (_) {} src = null; } },
+    };
+  }, { play() {}, stop() {} });
+
   // ---- render ----------------------------------------------------------------------------------
   function render() {
     const now = new Set(dirty);                  // what changed, taken before the set is emptied
@@ -574,7 +697,7 @@
     if (d("log") && col("colLog")) run(renderLog);
     if ((d("panels") || d("keys")) && shown("inputs")) run(renderInputs);
     if ((d("panels") || d("motors") || d("tx")) && shown("motors")) run(renderMotors);
-    if (d("panels")) { run(renderVoice); run(renderCloud); run(renderBoard); run(renderConfig); run(renderChecks); run(renderSwitches); }
+    if (d("panels")) { run(renderShow); run(renderVoice); run(renderCloud); run(renderBoard); run(renderConfig); run(renderChecks); run(renderSwitches); }
     if ((d("panels") || d("model")) && shown("model")) run(renderModel);
     if (d("panels") || d("clients")) run(renderClients);
   }
@@ -1767,7 +1890,7 @@
   function showTab(name) {
     let target = null;
     for (const b of $("tabs").children) if (b.dataset.tab === name && (PHONE.matches || !b.dataset.col)) target = b;
-    if (!target) return showTab(PHONE.matches ? "visit" : "checks");
+    if (!target) return showTab(PHONE.matches ? "show" : "checks");
     for (const b of $("tabs").children) b.classList.toggle("on", b === target);
     document.body.dataset.col = target.dataset.col || "colPanels";
     if (target.dataset.panels) {
@@ -1792,8 +1915,8 @@
     }
   }
   place();
-  PHONE.addEventListener("change", () => { place(); showTab(localStorage.getItem("fishDebugTab") || "visit"); });
-  try { showTab(localStorage.getItem("fishDebugTab") || (PHONE.matches ? "visit" : "checks")); } catch (_) { showTab("checks"); }
+  PHONE.addEventListener("change", () => { place(); showTab(localStorage.getItem("fishDebugTab") || "show"); });
+  try { showTab(localStorage.getItem("fishDebugTab") || (PHONE.matches ? "show" : "checks")); } catch (_) { showTab("checks"); }
 
   refresh().then(() => connect());
 })();

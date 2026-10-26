@@ -97,13 +97,19 @@ class SounddevicePlayer(Player):
         self._sd.stop()
 
 
-def make_player(play_audio: bool = True, device: int | str | None = None) -> Player:
+def make_player(play_audio: bool = True, device: int | str | None = None, *,
+                cfg: Config | None = None, viz=None) -> Player:
     """Pick the best available player. `play_audio=False` -> silent.
 
     `device` (a sounddevice index or name substring) picks the speaker; None = default.
+    With FISH_AUDIO_ROUTES set (`cfg.audio.routes`), the phrase goes to the first speaker
+    route that is there (audio_route.py).
     """
     if not play_audio:
         return SilentPlayer()
+    if cfg is not None and cfg.audio.routes:
+        from .audio_route import RoutedPlayer
+        return RoutedPlayer(cfg, viz)
     if isinstance(device, str) and device.strip().isdigit():
         device = int(device)
     try:
@@ -154,7 +160,16 @@ def perform(
         debug.emit("perf", **perf)
         debug.turn_set(perf=perf)
         raise
-    t0 = time.monotonic()
+    # A routed player says when its sound really started, and how late its route sounds
+    # (audio_route.py): the motors follow that, later than the sound if the route needs it.
+    t0 = getattr(player, "started_at", None) or time.monotonic()
+    offset -= getattr(player, "delay_s", 0.0) or 0.0
+    route = getattr(player, "route", None)
+    if route:
+        perf["route"] = route
+    if route == "none":
+        events = []                    # nothing audible: the hat stays still
+        perf["result"] = "no speaker"
     try:
         for t_ms, kind, payload in events:
             target = t0 + t_ms / 1000.0 - offset
@@ -169,7 +184,8 @@ def perform(
             else:
                 channel, body = payload              # type: ignore[misc]
                 link.gesture(channel, body)
-        player.wait()
+        if player.wait() is False:
+            perf["result"] = "stalled"
     finally:
         # Always end the mouth when the utterance ends or is interrupted: on a jaw a full
         # close pulse (it may hold open between pulses, so coasting to 0 isn't enough); on

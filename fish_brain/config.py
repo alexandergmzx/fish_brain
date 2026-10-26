@@ -805,6 +805,17 @@ class ShowConfig:
 
 
 @dataclass
+class AudioConfig:
+    """Speaker routes (audio_route.py, ADR 0016). Empty routes = today's single player."""
+    routes: tuple[str, ...] = field(default_factory=lambda: _env_list("FISH_AUDIO_ROUTES"))
+    # Per-route delay of the sound against the motors, "pattern=ms,..." (measured per route).
+    delay_ms: str = field(default_factory=lambda: _env("FISH_AUDIO_DELAY_MS", ""))
+    retry_s: float = field(default_factory=lambda: _env_float("FISH_AUDIO_RETRY_S", 30.0))
+    stall_s: float = 2.0         # a phrase not finished this long after its length: stalled
+    phone_ack_s: float = 2.5     # the phone must say it started within this
+
+
+@dataclass
 class RecordConfig:
     """The fish's own record (record.py): one fsynced JSON line per event. Empty = off."""
     dir: str = field(default_factory=lambda: _env("FISH_RECORD_DIR", ""))
@@ -832,6 +843,7 @@ class Config:
     visit: VisitConfig = field(default_factory=VisitConfig)
     record: RecordConfig = field(default_factory=RecordConfig)
     show: ShowConfig = field(default_factory=ShowConfig)
+    audio: AudioConfig = field(default_factory=AudioConfig)
 
 
 def load() -> Config:

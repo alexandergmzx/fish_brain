@@ -109,6 +109,27 @@ def _set_visit(a, value: bool) -> str:
     return ""
 
 
+def _set_show(a, value: str) -> str:
+    """The scripted visit: off / auto / script, for the running fish only."""
+    convo = a.convo
+    if getattr(convo, "visit", None) is None:
+        return "no visit for this persona"
+    a.cfg.show.mode = value
+    if value == "off":
+        convo.show = None
+        return "the model's visit only; error lines are said again"
+    if convo.show is None:
+        if not any(n.startswith("show_") for n in a.cfg.canned.phrases):
+            from .show_bank import SHOW_PHRASES
+            a.cfg.canned.phrases.update(SHOW_PHRASES)
+        from .show_run import ShowRun
+        a.cfg.ptt.voice_quit = False
+        a.cfg.ptt.max_record_s = min(a.cfg.ptt.max_record_s, a.cfg.show.max_record_s)
+        a.cfg.stt.long_online = ()
+        convo.show = ShowRun(convo)
+    return ""
+
+
 def _set_mode(a, value: str) -> str:
     if value == "llm":
         missing = _key_missing(a.cfg.llm.api_key_env)
@@ -224,6 +245,8 @@ SWITCHES: dict = {
                      lambda a: float(_limit[0](a)), _limit[1]),
     "mic": ("Microphone", "choice", ("host", "browser"), lambda a: a.cfg.ptt.capture,
             lambda a, v: setattr(a.cfg.ptt, "capture", v) or ""),
+    "show": ("Scripted visit", "choice", ("off", "auto", "script"),
+             lambda a: a.cfg.show.mode, _set_show),
     "motors": ("Motors", "choice", ("on", "muted"),
                lambda a: "muted" if getattr(a.link, "muted", False) else "on", _set_motors),
 }
@@ -815,4 +838,39 @@ class DebugActions:
             return self.motor(body.get("part"))
         if path == "/debug/restart":
             return self.restart(body.get("confirm"))
+        if path == "/debug/volume":
+            return self.volume(body.get("value"))
+        if path == "/debug/net":
+            return self.net(body.get("pin"))
         return 404, {"ok": False, "error": "no such action"}
+
+    def volume(self, value) -> tuple[int, dict]:
+        """The live speaker's volume, 0..100 (no sound is made). The routed speaker's sink,
+        else PipeWire's default sink."""
+        try:
+            v = max(0.0, min(100.0, float(value))) / 100.0
+        except (TypeError, ValueError):
+            return 400, {"ok": False, "error": "value 0 to 100 expected"}
+        from . import pw
+        player = getattr(self.convo, "player", None)
+        view = player.view() if callable(getattr(player, "view", None)) else {}
+        target = view.get("sink_id") or "@DEFAULT_AUDIO_SINK@"
+        ok = pw.set_volume(target, v)
+        self.hub.emit("action", what="volume", result=f"{round(v * 100)} %" if ok else "failed")
+        return (200, {"ok": True, "volume": round(v, 2)}) if ok else (500, {"ok": False, "error": "wpctl failed"})
+
+    def net(self, pin) -> tuple[int, dict]:
+        """Pin the board's own Wi-Fi ("ap") or let fish-net decide ("auto")."""
+        if pin not in ("ap", "auto"):
+            return 400, {"ok": False, "error": "pin: ap or auto"}
+        folder = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "fish_brain"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            if pin == "ap":
+                (folder / "net-pin").write_text("ap\n")
+            else:
+                (folder / "net-pin").unlink(missing_ok=True)
+        except OSError as e:
+            return 500, {"ok": False, "error": type(e).__name__}
+        self.hub.emit("action", what="net", result=pin)
+        return 200, {"ok": True, "pin": pin}

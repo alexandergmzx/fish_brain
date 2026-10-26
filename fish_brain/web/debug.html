@@ -151,7 +151,7 @@
 
         <section class="col" id="colPanels">
             <nav id="tabs">
-                <button data-tab="visit" data-panels="visit">Visit</button>
+                <button data-tab="show" data-panels="show visit">Show</button>
                 <button data-tab="turns" data-col="colTurns" class="phone">Turns</button>
                 <button data-tab="checks" data-panels="checks" class="on">Checks</button>
                 <button data-tab="live" data-panels="inputs motors">Live</button>
@@ -162,6 +162,21 @@
                 <button data-tab="log" data-col="colLog" class="phone">Log</button>
             </nav>
             <div class="scroll" id="panels">
+                <div class="panel" id="p-show" hidden>
+                    <!-- The phone as the console (ADR 0017): is the hat ready, and the few things
+                         the operator changes during a show. Rows come from /debug/state's show_tab. -->
+                    <h3>Ready? <small id="showSummary"></small></h3>
+                    <div id="goRows" class="go-rows"></div>
+                    <h3>Volume <small id="volNow"></small></h3>
+                    <input type="range" id="volSlider" min="0" max="100" step="5" value="50" aria-label="Volume">
+                    <h3>Scripted visit</h3>
+                    <div class="picks" role="group" aria-label="Scripted visit"><button type="button" class="pick" data-show="auto">Auto</button><button type="button" class="pick" data-show="script">Siempre</button><button type="button" class="pick" data-show="off">Apagado</button></div>
+                    <h3>Network</h3>
+                    <div class="picks" role="group" aria-label="Network"><button type="button" class="pick" data-net="auto">Automático</button><button type="button" class="pick" data-net="ap">Wi-Fi propio</button></div>
+                    <h3>Phone speaker <small id="spkState">off</small></h3>
+                    <button type="button" class="pick" id="spkBtn">🔊 Altavoz del teléfono</button>
+                    <span id="showMsg" class="note"></span>
+                </div>
                 <div class="panel" id="p-visit" hidden>
                     <h3>Visit <small id="visitState">no visitor</small></h3>
                     <!-- The hat's visit (visit.py): the cues the hat turns into "visions". A lit chip

@@ -376,3 +376,14 @@ body.still .perch, body.still #tip, body.still #eyes, body.still #tipPose { anim
     #thumbBar button { flex: 1 1 0; min-height: 56px; font-size: 17px; }
     #toast { bottom: calc(84px + env(safe-area-inset-bottom)); max-width: 92vw; }
 }
+
+/* The Show tab: go / no-go rows a thumb can read. */
+.go-rows { display: flex; flex-direction: column; gap: 4px; }
+.go { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 8px; background: rgba(127,127,127,.08); }
+.go b { min-width: 7.5em; }
+.go .fix { color: var(--hoja-tenue); font-size: 13px; }
+.go.ok b::before { content: "● "; color: var(--hoja-bien); }
+.go.warn b::before { content: "● "; color: var(--hoja-aviso); }
+.go.bad b::before { content: "● "; color: var(--hoja-mal); }
+#volSlider { width: 100%; min-height: 40px; }
+.pick[aria-pressed="true"] { background: #6b46c1; color: #fff; }

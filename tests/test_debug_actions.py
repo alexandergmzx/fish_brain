@@ -303,7 +303,7 @@ def test_switches_list_their_value_their_start_and_what_changed(rig):
     sw = _values(rig)
     assert set(sw) == {"mode", "llm_profile", "stt", "stt_model", "tts", "gestures", "reading_look",
                        "voice_quit", "burble", "filler", "visit", "filler_delay_s",
-                       "max_record_s", "mic", "motors"}
+                       "max_record_s", "mic", "show", "motors"}
     assert sw["mode"]["value"] == "llm" and not any(w["changed"] for w in sw.values())
     assert rig.act.set("gestures", False) == (200, {"ok": True, "value": False})
     assert rig.cfg.gesture.enabled is False

@@ -99,7 +99,7 @@ class FishConversation:
         self.link = link
         self.text_input = text_input
         self.echo = echo
-        self.player: Player = make_player(play_audio, cfg.ptt.speaker)
+        self.player: Player = make_player(play_audio, cfg.ptt.speaker, cfg=cfg, viz=viz)
         self.viz = viz
         # Serialized speak path, shared with the on-screen text box (registered into viz by app.py).
         self.speaker = speak_mod.Speaker(link, cfg, player=self.player, viz=viz)

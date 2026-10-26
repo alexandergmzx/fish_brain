@@ -106,6 +106,9 @@ class VizServer:
         self._listening = False               # the turn loop is waiting for input
         self._mic_pages: dict[str, float] = {}   # page id -> when it last said "ready"
         self.tls_error: str | None = None     # "certificate" when https could not start
+        self._speaker_pages: dict[str, float] = {}   # pages that can play the hat's voice
+        self._phone_seq = 0
+        self._phone_waits: dict[int, list] = {}      # play id -> [Event, started (monotonic)]
 
     # --- lifecycle ---
     def start(self) -> None:
@@ -261,6 +264,66 @@ class VizServer:
                 if now - seen > self.MIC_PAGE_TTL_S:
                     del self._mic_pages[key]
             return len(self._mic_pages)
+
+    # --- the phone as the last speaker (audio_route.PhonePlayer, ADR 0016) ---
+    SPEAKER_PAGE_TTL_S = 25.0
+
+    def set_speaker_state(self, page, ready) -> dict:
+        """`POST /speakerstate {"page": id, "ready": bool}`: the page can play the hat's
+        voice (its sound unlocked by a tap; sent again every 10 s) or no longer can."""
+        key = str(page or "").strip()[:64]
+        if not key:
+            raise ValueError("page expected")
+        with self._lock:
+            if ready:
+                self._speaker_pages[key] = time.monotonic()
+            else:
+                self._speaker_pages.pop(key, None)
+        return {"ok": True}
+
+    def speaker_pages(self) -> int:
+        now = time.monotonic()
+        with self._lock:
+            for key, seen in list(self._speaker_pages.items()):
+                if now - seen > self.SPEAKER_PAGE_TTL_S:
+                    del self._speaker_pages[key]
+            return len(self._speaker_pages)
+
+    def phone_play(self, wav, timeout_s: float = 2.5) -> float | None:
+        """Ask the pages to play `wav`; the monotonic time its sound started, or None when no
+        page said so within `timeout_s`."""
+        token = self._store_audio(wav)
+        with self._lock:
+            self._phone_seq += 1
+            pid = self._phone_seq
+            rec = [threading.Event(), None]
+            self._phone_waits[pid] = rec
+        try:
+            self._publish(json.dumps({"type": "play", "id": pid, "audio": f"/audio/{token}"}))
+            if rec[0].wait(timeout_s):
+                return rec[1]
+            return None
+        finally:
+            with self._lock:
+                self._phone_waits.pop(pid, None)
+
+    def speaker_started(self, pid, in_ms) -> dict:
+        """`POST /speaker/started {"id": n, "in_ms": ms}`: the page's sound for play `id`
+        started `in_ms` ago (its own measure from the event to the sound)."""
+        try:
+            pid, in_ms = int(pid), max(0.0, min(5000.0, float(in_ms or 0)))
+        except (TypeError, ValueError):
+            raise ValueError("id and in_ms expected")
+        with self._lock:
+            rec = self._phone_waits.get(pid)
+        if rec is None:
+            return {"ok": False, "late": True}
+        rec[1] = time.monotonic() - in_ms / 1000.0
+        rec[0].set()
+        return {"ok": True}
+
+    def phone_stop(self) -> None:
+        self._publish(json.dumps({"type": "play_stop"}))
 
     def relay_ptt(self, held: bool) -> None:
         """A remote's press or release, handed to the page so it records with the phone's
@@ -803,7 +866,8 @@ def _make_handler(server: "VizServer"):
                 self._post_debug(path, query)
                 return
             if path in ("/mic", "/ptt", "/speak", "/wait", "/badge", "/reading", "/utterance",
-                        "/micstate", "/visit", "/cues", "/show"):
+                        "/micstate", "/visit", "/cues", "/show", "/speakerstate",
+                        "/speaker/started"):
                 if not self._authorized(query):
                     self._send_json({"ok": False, "error": "bad token"}, status=403)
                     return
@@ -838,6 +902,10 @@ def _make_handler(server: "VizServer"):
                     elif path == "/show":
                         status, out = server.show_input(body)
                         self._send_json(out, status=status)
+                    elif path == "/speakerstate":
+                        self._send_json(server.set_speaker_state(body.get("page"), body.get("ready")))
+                    elif path == "/speaker/started":
+                        self._send_json(server.speaker_started(body.get("id"), body.get("in_ms")))
                     else:
                         self._send_json(server.set_wait(body.get("on")))
                 except Exception as e:

@@ -868,3 +868,28 @@ def test_show_taps_need_the_token_are_checked_and_reach_the_loop(server):
     server.set_listening(True)
     assert post(server.url + "/show", {"action": "force", "value": "R"}, AUTH) == (200, {"ok": True})
     assert server.take_inbox() == ShowInput("force", "R")
+
+
+def test_the_phone_speaker_registers_plays_and_acknowledges(server, tmp_path):
+    import threading
+    import wave
+    assert post(server.url + "/speakerstate", {"page": "p1", "ready": True})[0] == 403
+    assert post(server.url + "/speakerstate", {"page": "p1", "ready": True}, AUTH)[0] == 200
+    assert server.speaker_pages() == 1
+    wav = tmp_path / "w.wav"
+    with wave.open(str(wav), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(b"\0\0" * 1600)
+
+    def page():                          # the page: sees the play event, starts, answers
+        time.sleep(0.2)
+        pid = server._phone_seq
+        post(server.url + "/speaker/started", {"id": pid, "in_ms": 50}, AUTH)
+
+    threading.Thread(target=page, daemon=True).start()
+    t0 = time.monotonic()
+    started = server.phone_play(wav, timeout_s=2.0)
+    assert started is not None and t0 < started < time.monotonic()
+    assert server.phone_play(wav, timeout_s=0.2) is None          # nobody answered
+    assert post(server.url + "/speaker/started", {"id": 999, "in_ms": 0}, AUTH)[1] == {"ok": False, "late": True}
+    assert post(server.url + "/speakerstate", {"page": "p1", "ready": False}, AUTH)[0] == 200
+    assert server.speaker_pages() == 0
