@@ -231,3 +231,14 @@ def test_a_wrong_option_from_the_page_is_ignored(make):
     n = len(c.speaker.stages)
     c._handle_item(ShowInput("answer", "trofeo"))          # not an option of A1
     assert len(c.speaker.stages) == n and c.show.v["i"] == 0
+
+
+def test_the_page_view_during_the_verdict_has_no_question(make):
+    c = make()
+    views = []
+    real = c._push_visit
+    c._push_visit = lambda: (views.append(c.show.view()), real())[1]
+    say(c, "hola"); say(c, "fiesta"); say(c, "volcán"); say(c, "mapa")
+    assert c.visit.house == "Gryffindor" and not c.show.open
+    during = [v for v in views if v.get("open") and v.get("qid") is None]
+    assert during and during[-1]["options"] == []

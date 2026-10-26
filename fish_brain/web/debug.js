@@ -1592,6 +1592,7 @@
       const last = sh && sh.last && sh.last.house ? "last verdict: " + sh.last.house + " (" + sh.last.how + ")" : "";
       showLast.textContent = sh && sh.mode && sh.mode !== "off" ? "script " + sh.mode + (last ? " · " + last : "") : "";
       if (!open) return;
+      if (!sh.qid) { showQ.textContent = "Verdict…"; showAnswers.replaceChildren(); showKey = ""; return; }
       showQ.textContent = "Question " + sh.q + " of " + sh.of + " (" + sh.qid + ", " + sh.why + ")";
       const key = sh.n + ":" + sh.qid;
       if (key !== showKey) {

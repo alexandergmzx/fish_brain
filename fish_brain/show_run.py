@@ -87,11 +87,12 @@ class ShowRun:
         v = self.v
         out = {"mode": self.cfg.mode, "open": v is not None, "last": self._last}
         if v is not None:
-            qid = v["qs"][v["i"]]
-            out.update(n=v["n"], set=v["set"], qid=qid, q=v["i"] + 1, of=len(v["qs"]),
-                       why=v["why"],
+            asking = v["i"] < len(v["qs"])     # past the last question: the verdict is on
+            qid = v["qs"][v["i"]] if asking else None
+            out.update(n=v["n"], set=v["set"], qid=qid, q=min(v["i"] + 1, len(v["qs"])),
+                       of=len(v["qs"]), why=v["why"],
                        options=[{"id": o["id"], "label": show_bank.label(o["id"])}
-                                for o in show_bank.question(qid)["options"]],
+                                for o in show_bank.question(qid)["options"]] if asking else [],
                        heard=[str(x) for x in v["heard"][-1]] if v["heard"] else [])
         return out
 
