@@ -409,6 +409,18 @@ class VizServer:
             return 409, {"ok": False, "busy": True}
         return 200, {"ok": True}
 
+    def show_input(self, body: dict) -> tuple[int, dict]:
+        """`POST /show {"action": "answer"|"force"|"skip", "value": ...}`: the operator's tap
+        for the scripted visit, handed to the turn loop like "Nuevo visitante"."""
+        from .show_run import ShowInput
+        action, value = body.get("action"), body.get("value") or ""
+        if action not in ("answer", "force", "skip") or not isinstance(value, str) \
+                or len(value) > 20:
+            return 400, {"ok": False, "error": "bad show input"}
+        if not self.offer(ShowInput(action, value)):
+            return 409, {"ok": False, "busy": True}
+        return 200, {"ok": True}
+
     def set_cues(self, cues) -> tuple[int, dict]:
         """`POST /cues {"cues": {...}}`: the sheet's whole set of lit cues."""
         visit = self._visit
@@ -791,7 +803,7 @@ def _make_handler(server: "VizServer"):
                 self._post_debug(path, query)
                 return
             if path in ("/mic", "/ptt", "/speak", "/wait", "/badge", "/reading", "/utterance",
-                        "/micstate", "/visit", "/cues"):
+                        "/micstate", "/visit", "/cues", "/show"):
                 if not self._authorized(query):
                     self._send_json({"ok": False, "error": "bad token"}, status=403)
                     return
@@ -822,6 +834,9 @@ def _make_handler(server: "VizServer"):
                         self._send_json(out, status=status)
                     elif path == "/cues":
                         status, out = server.set_cues(body.get("cues"))
+                        self._send_json(out, status=status)
+                    elif path == "/show":
+                        status, out = server.show_input(body)
                         self._send_json(out, status=status)
                     else:
                         self._send_json(server.set_wait(body.get("on")))

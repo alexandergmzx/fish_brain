@@ -204,3 +204,30 @@ def test_the_show_lines_join_the_canned_set_only_with_the_show_on(monkeypatch):
 def test_off_is_todays_behaviour(make):
     c = make("off")
     assert c.show is None
+
+
+def test_the_operators_taps_answer_force_and_skip(make):
+    from fish_brain.show_run import ShowInput
+    c = make()
+    say(c, "hola")
+    view = c.show.view()
+    assert view["open"] and view["qid"] == "A1"
+    assert [o["label"] for o in view["options"]] == ["Fiesta", "Acertijo"]
+    c._handle_item(ShowInput("answer", "acertijo"))
+    assert c.speaker.stages[-1] == ["show_re_A1_acertijo", "show_q_A2"]
+    c._handle_item(ShowInput("skip"))
+    assert c.speaker.stages[-1][0].startswith("show_bridge_") and c.speaker.stages[-1][-1] == "show_q_A3"
+    c._handle_item(ShowInput("force", "H"))
+    assert c.visit.house == "Hufflepuff" and not c.show.open
+    assert c.show.view()["last"] == {"n": 1, "house": "Hufflepuff", "how": "operator"}
+    c._handle_item(ShowInput("answer", "fiesta"))          # no visit open: ignored
+    assert c.visit.house == "Hufflepuff"
+
+
+def test_a_wrong_option_from_the_page_is_ignored(make):
+    from fish_brain.show_run import ShowInput
+    c = make()
+    say(c, "hola")
+    n = len(c.speaker.stages)
+    c._handle_item(ShowInput("answer", "trofeo"))          # not an option of A1
+    assert len(c.speaker.stages) == n and c.show.v["i"] == 0

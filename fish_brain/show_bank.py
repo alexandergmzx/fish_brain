@@ -307,6 +307,14 @@ POOLS: dict[str, list[str]] = {
 }
 
 
+# How an option is written on the operator's buttons (the id without its accents otherwise).
+LABELS = {"volcan": "Volcán", "jardin": "Jardín", "dragon": "Dragón", "brujula": "Brújula"}
+
+
+def label(option_id: str) -> str:
+    return LABELS.get(option_id, option_id.capitalize())
+
+
 def question(qid: str) -> dict:
     for qs in SETS.values():
         for q in qs:

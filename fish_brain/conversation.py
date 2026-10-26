@@ -424,6 +424,13 @@ class FishConversation:
             return self._utterance_turn(item)
         if isinstance(item, NewVisit):
             return self._new_visit_turn(item)
+        from .show_run import ShowInput
+        if isinstance(item, ShowInput):
+            if self.show is None:
+                print("[turn] an operator answer, but the show is off", flush=True)
+                return True
+            debug.turn_set(trigger="operator", show=f"{item.action} {item.value}")
+            return self.show.operator(item)
         print(f"[turn] unknown input item {type(item).__name__}", flush=True)
         return True
 
@@ -773,7 +780,10 @@ class FishConversation:
     def _push_visit(self) -> None:
         push = getattr(self.viz, "push_visit", None)
         if push is not None and self.visit is not None:
-            push(**self.visit.view())
+            view = self.visit.view()
+            if self.show is not None:
+                view["show"] = self.show.view()
+            push(**view)
 
     def _new_visit(self, first: str = "", *, forget: bool = True) -> None:
         """A new visitor, on the loop's thread: the model forgets the last one and gets the

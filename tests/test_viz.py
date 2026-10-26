@@ -857,3 +857,14 @@ def test_a_first_debug_stream_with_tail_replays_only_the_last_records(server, db
                                want=b"line 49")
     text = head.decode()
     assert status == 200 and "line 49" in text and "line 45" in text and "line 44" not in text
+
+
+def test_show_taps_need_the_token_are_checked_and_reach_the_loop(server):
+    from fish_brain.show_run import ShowInput
+    assert post(server.url + "/show", {"action": "answer", "value": "fiesta"})[0] == 403
+    assert post(server.url + "/show", {"action": "dance"}, AUTH)[0] == 400
+    assert post(server.url + "/show", {"action": "answer", "value": "x" * 50}, AUTH)[0] == 400
+    assert post(server.url + "/show", {"action": "skip"}, AUTH) == (409, {"ok": False, "busy": True})
+    server.set_listening(True)
+    assert post(server.url + "/show", {"action": "force", "value": "R"}, AUTH) == (200, {"ok": True})
+    assert server.take_inbox() == ShowInput("force", "R")

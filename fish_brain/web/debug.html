@@ -173,6 +173,14 @@
                         <div class="cue-group" role="group" aria-label="Impresión"><span>Impresión</span><button type="button" class="cue" data-cue="impresion" data-val="tímido" aria-pressed="false">Tímido</button><button type="button" class="cue" data-cue="impresion" data-val="sonriente" aria-pressed="false">Sonriente</button><button type="button" class="cue" data-cue="impresion" data-val="curioso" aria-pressed="false">Curioso</button></div>
                         <input type="text" id="cueLleva" data-cue="lleva" maxlength="60" placeholder="Lleva… (playera de dinosaurios)" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
                         <input type="text" id="cueNota" data-cue="nota" maxlength="60" placeholder="Nota (trae un kit de robótica)" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+                        <!-- The scripted visit (FISH_SHOW): the open question's answers, a house now,
+                             or the next question. Shown only while a scripted visit is open. -->
+                        <div class="c-show" id="showRow" hidden>
+                            <div class="cue-group" role="group" aria-label="Respuesta"><span id="showQ">Pregunta</span><span id="showAnswers" class="picks"></span></div>
+                            <div class="cue-group" role="group" aria-label="Forzar casa"><span>Forzar casa</span><button type="button" class="pick" data-house="G">Gryffindor</button><button type="button" class="pick" data-house="H">Hufflepuff</button><button type="button" class="pick" data-house="R">Ravenclaw</button><button type="button" class="pick" data-house="S">Slytherin</button><button type="button" class="pick" id="showSkip">Saltar pregunta</button></div>
+                            <span id="showHeard" class="note"></span>
+                        </div>
+                        <span id="showLast" class="note"></span>
                         <span id="visitSent" class="note"></span>
                         <span id="visitMsg" class="note"></span>
                     </div>

@@ -1450,8 +1450,42 @@
       for (const t of texts) { const v = t.value.trim(); if (v) out[t.dataset.cue] = v; }
       return out;
     }
+    // The scripted visit: answer buttons for the open question, a house now, skip.
+    const showRow = $("showRow"), showAnswers = $("showAnswers"), showQ = $("showQ");
+    const showHeard = $("showHeard"), showLast = $("showLast");
+    let showKey = "";
+    async function showTap(action, value) {
+      const out = await post("/show", { action, value: value || "" });
+      if (!out.ok) say(out.status === 409 ? "The hat is busy: try again in a moment"
+                     : out.status === 0 ? "No connection" : "Refused", "bad-text");
+    }
+    for (const b of showRow.querySelectorAll(".pick[data-house]")) {
+      b.addEventListener("click", () => showTap("force", b.dataset.house));
+    }
+    $("showSkip").addEventListener("click", () => showTap("skip"));
+    function showView(sh) {
+      const open = !!(sh && sh.open);
+      showRow.hidden = !open;
+      const last = sh && sh.last && sh.last.house ? "last verdict: " + sh.last.house + " (" + sh.last.how + ")" : "";
+      showLast.textContent = sh && sh.mode && sh.mode !== "off" ? "script " + sh.mode + (last ? " · " + last : "") : "";
+      if (!open) return;
+      showQ.textContent = "Question " + sh.q + " of " + sh.of + " (" + sh.qid + ", " + sh.why + ")";
+      const key = sh.n + ":" + sh.qid;
+      if (key !== showKey) {
+        showKey = key;
+        showAnswers.replaceChildren();
+        for (const o of sh.options || []) {
+          const b = document.createElement("button");
+          b.type = "button"; b.className = "pick"; b.textContent = o.label;
+          b.addEventListener("click", () => showTap("answer", o.id));
+          showAnswers.appendChild(b);
+        }
+      }
+      showHeard.textContent = sh.heard && sh.heard.length ? "heard: " + sh.heard.slice(1).join(" · ") : "";
+    }
     function view(v) {
       if (!v) return;
+      showView(v.show);
       if (v.n !== lastN) {
         lastN = v.n;
         if (wantN !== null && v.n >= wantN) { wantN = null; clearTimeout(btnTimer); btn.disabled = false; }

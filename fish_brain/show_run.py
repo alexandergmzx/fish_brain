@@ -13,8 +13,18 @@ from __future__ import annotations
 
 import time
 
+from dataclasses import dataclass
+
 from . import canned, cloud, debug, show, show_bank, voice_guard
 from .show import ShowState
+
+
+@dataclass
+class ShowInput:
+    """The operator's tap on the page (POST /show), an input item for the turn loop:
+    `answer` an option of the open question, `force` a house now, `skip` to the next question."""
+    action: str
+    value: str = ""
 
 
 class ShowRun:
@@ -27,6 +37,7 @@ class ShowRun:
         self.v: dict | None = None            # the open scripted visit
         self._model_failed_at: float | None = None
         self.force: str | None = None          # the operator's "Forzar casa" for this visit
+        self._last: dict = {}                    # the last verdict, for the page
 
     # ---- which visit ----------------------------------------------------------------------
     def mode_now(self) -> tuple[str, str]:
@@ -67,7 +78,38 @@ class ShowRun:
         said = self.c.speaker.say_sequence(names)
         if not said:
             print(f"[show] the speaker was busy: {names} not said", flush=True)
+        self.c._push_visit()                     # the page shows the question now open
         return said
+
+    def view(self) -> dict:
+        """For the operator's sheet: the open question and its options, what was heard last,
+        why the script runs. Never sent to /status."""
+        v = self.v
+        out = {"mode": self.cfg.mode, "open": v is not None, "last": self._last}
+        if v is not None:
+            qid = v["qs"][v["i"]]
+            out.update(n=v["n"], set=v["set"], qid=qid, q=v["i"] + 1, of=len(v["qs"]),
+                       why=v["why"],
+                       options=[{"id": o["id"], "label": show_bank.label(o["id"])}
+                                for o in show_bank.question(qid)["options"]],
+                       heard=[str(x) for x in v["heard"][-1]] if v["heard"] else [])
+        return out
+
+    def operator(self, item: ShowInput) -> bool:
+        """The operator's tap. Ignored when no scripted visit is open."""
+        if self.v is None:
+            print(f"[show] operator {item.action} {item.value}: no scripted visit open", flush=True)
+            return True
+        print(f"[show] operator {item.action} {item.value}", flush=True)
+        if item.action == "answer":
+            return self.operator_answer(item.value)
+        if item.action == "force" and item.value in show_bank.HOUSES:
+            self.force = item.value
+            return self._verdict([])
+        if item.action == "skip":
+            self.v["tries"] = 1                  # no second ask: the bridge and the next one
+            return self.no_answer()
+        return True
 
     # ---- a visit --------------------------------------------------------------------------
     def start(self, why: str, *, at_question: int = 0, greet: bool = True,
@@ -183,11 +225,12 @@ class ShowRun:
                    house=name, how=how, why=v["why"], heard=[list(h) for h in v["heard"]],
                    clips=clips, seconds=round(time.monotonic() - v["t0"], 1))
         debug.turn_set(show=f"#{v['n']} {name} ({how})", outcome="show: verdict")
+        self._last = {"n": v["n"], "house": name, "how": how}
         self._say(clips)
+        self.v = None
         if visit is not None:
             visit.delivered(name, None, self.c._clock())
-            self.c._push_visit()
-        self.v = None
+        self.c._push_visit()
         return True
 
     def close_quietly(self) -> None:
