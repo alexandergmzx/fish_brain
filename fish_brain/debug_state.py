@@ -379,6 +379,10 @@ def _show_tab(hub) -> dict:
     except OSError:
         out["logger"] = False
     out["capture"] = cfg.ptt.capture
+    from . import ptt
+    out["mic_dead"] = ptt.mic_dead(cfg.ptt)
+    viz = getattr(hub, "viz", None)
+    out["phone_mics"] = viz.mic_pages() if viz is not None else 0
     return out
 
 

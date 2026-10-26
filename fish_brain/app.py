@@ -17,6 +17,16 @@ from .conversation import FishConversation
 from .serial_link import open_link
 
 
+class _DeafTranscriber:
+    """Hears nothing (the show's stand-in when speech-to-text cannot start)."""
+
+    def transcribe(self, path) -> str:
+        return ""
+
+    def ensure_loaded(self) -> None:
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="fish-brain", description="Conversational Billy Bass")
     parser.add_argument("--dry-run", action="store_true",
@@ -292,7 +302,16 @@ def main(argv: list[str] | None = None) -> int:
                 convo = FishConversation(cfg, link, text_input=args.text,
                                          play_audio=not args.no_audio, viz=viz, echo=args.echo)
                 if not args.text:
-                    _ = convo.stt                   # a wrong backend or model is a setup error
+                    try:
+                        _ = convo.stt               # a wrong backend or model is a setup error
+                    except (ValueError, RuntimeError) as e:
+                        if convo.show is None:
+                            raise
+                        # The show must go on: the script and the page's buttons run the
+                        # visit, every answer counts as not heard (ADR 0015).
+                        print(f"[show] speech-to-text unavailable ({e}): visits by the "
+                              "page's buttons only", file=sys.stderr, flush=True)
+                        convo._stt = _DeafTranscriber()
                     convo.warm_stt()                # so the first turn does not pay the load
             except (ValueError, RuntimeError) as e:
                 print(f"Configuration problem: {e}", file=sys.stderr)

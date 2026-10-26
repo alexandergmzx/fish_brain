@@ -586,7 +586,12 @@
     if (rem.present !== undefined)
       out.push(goRow("Control", rem.devices ? "ok" : "warn", rem.devices ? "conectado" : "no aparece",
         rem.devices ? "" : "usa el botón Hablar de esta página"));
-    out.push(goRow("Micrófono", "ok", t.capture === "browser" ? "el del teléfono" : "el del control", ""));
+    const phoneMicOn = (t.phone_mics || 0) > 0;
+    const micDead = t.capture !== "browser" && t.mic_dead;
+    out.push(goRow("Micrófono", micDead && !phoneMicOn ? "bad" : micDead ? "warn" : "ok",
+      t.capture === "browser" ? "el del teléfono" : micDead ? (phoneMicOn ? "el del teléfono (el del control no manda sonido)" : "el del control no manda sonido")
+        : "el del control" + (phoneMicOn ? " · teléfono de reserva" : ""),
+      micDead && !phoneMicOn ? "activa el micrófono del teléfono (pestaña Voice)" : ""));
     const ln = st.link || {};
     out.push(goRow("Motor", ln.attached ? "ok" : "warn", ln.attached ? (ln.muted ? "silenciado" : "conectado") : "sin motor",
       (st.service || {}).bench ? "modo banco: deploy/unoq_setup.sh bench off" : ln.attached ? "" : "habla sin moverse"));
