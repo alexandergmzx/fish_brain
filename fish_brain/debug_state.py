@@ -299,8 +299,12 @@ def _page(hub) -> dict:
     viz, cfg = getattr(hub, "viz", None), hub.cfg
     visit = getattr(viz, "_visit", None) if viz is not None else None
     tls = getattr(viz, "_tls_httpd", None) if viz is not None else None
+    show = getattr(getattr(hub, "convo", None), "show", None)
+    view = visit.view() if visit is not None else None
+    if view is not None and show is not None:
+        view["show"] = show.view()             # the scripted visit's buttons after a reload
     return {"visit_enabled": visit is not None and bool(cfg.visit.enabled),
-            "visit": visit.view() if visit is not None else None,
+            "visit": view,
             "reading": getattr(viz, "_reader", None) is not None,
             "reading_look": bool(cfg.reading.look),
             "max_record_s": float(cfg.ptt.max_record_s),
