@@ -22,3 +22,4 @@ Format: **Status** (proposed, accepted, replaced by NNNN) · **Date** · **Conte
 | [0012](0012-the-fish-always-comes-up-and-stops.md) | A bad certificate leaves the page on http; the page before the voice; a watcher sends STOP when the main thread is stuck; motor tests never stop the fish (bench mode) | proposed | 2026-10-26 |
 | [0013](0013-the-loquendo-licence-guard.md) | `wlan0` scans with its own MAC; a start-up probe catches Loquendo's licence warning, restarts the voice on a fresh wineserver, else no live render; the warning is never cached | proposed | 2026-10-26 |
 | [0014](0014-evidence-that-survives-a-pulled-plug.md) | A journald drop-in, the fish's own fsynced record, and his power logger from every boot | proposed | 2026-10-26 |
+| [0015](0015-the-scripted-visit.md) | `FISH_SHOW`: a scripted visit with no model and no live voice: the cross questions, a deterministic house, re-ask then move on, operator buttons, no error line | proposed | 2026-10-26 |

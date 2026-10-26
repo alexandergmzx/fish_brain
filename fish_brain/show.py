@@ -35,6 +35,7 @@ YES_NO = frozenset("si no simon nel sip nop claro sale orale ok okey".split())
 NOT_SURE = ("no se", "nose", "ninguno", "ninguna", "cualquiera", "me da igual", "los dos",
             "las dos", "ambos", "ambas", "todos", "todas")
 NEGATIONS = frozenset("no ni nunca menos tampoco".split())
+GLUED = ("una", "un", "el", "la", "mi")
 ORDINALS = {"primero": 0, "primera": 0, "uno": 0, "segundo": 1, "segunda": 1, "dos": 1,
             "tercero": 2, "tercera": 2, "tres": 2, "cuarto": 3, "cuarta": 3, "cuatro": 3}
 LAST = frozenset({"ultimo", "ultima"})
@@ -96,6 +97,13 @@ def match_option(q: dict, text: str) -> Heard:
         if w in ORDINALS and ORDINALS[w] < len(options) and len(content) <= 2:
             return Heard(options[ORDINALS[w]]["id"], "option", 1.0, "ordinal")
     keys = [phon_key(w) for w in content]
+    # An article run into the word by the transcript ("unbolkan" for "un volcán"): the word
+    # without it is tried too, after the others so it never joins a real two-word synonym.
+    for w in content:
+        for art in GLUED:
+            if w.startswith(art) and len(w) - len(art) >= 4:
+                keys.append(phon_key(w[len(art):]))
+                break
     scores = []
     for o in options:
         best = 0.0

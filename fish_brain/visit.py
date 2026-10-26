@@ -32,7 +32,8 @@ HOUSES = ("Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin")
 _HOUSE_PREFIXES = (("gryf", "Gryffindor"), ("grif", "Gryffindor"), ("huf", "Hufflepuff"),
                    ("jaf", "Hufflepuff"), ("rav", "Ravenclaw"), ("reiv", "Ravenclaw"),
                    ("slyt", "Slytherin"), ("slit", "Slytherin"), ("sliz", "Slytherin"),
-                   ("slid", "Slytherin"))
+                   ("slid", "Slytherin"), ("eslit", "Slytherin"), ("eslid", "Slytherin"),
+                   ("esliz", "Slytherin"))
 
 # The operator's cues (the sheet's chips): key -> allowed values. Keys are ASCII for the page;
 # the tag uses the labels.

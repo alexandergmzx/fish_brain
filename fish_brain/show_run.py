@@ -1,7 +1,7 @@
 """The scripted visit in the turn loop (FISH_SHOW, ADR 0015): no model, no live voice.
 
     greeting + Q1 -> reaction + Q2 -> reaction + Q3 -> [two houses] + suspense + reason +
-    house + future + fair line + farewell
+    house + future + season line + farewell
 
 Each stage is a list of canned phrases said back to back (`Speaker.say_sequence`), only from
 WAVs rendered ahead. What the visitor said is matched against the question's options
@@ -217,7 +217,7 @@ class ShowRun:
                 clips.append(self._pick("tie"))
             clips.append(self._pick("suspense"))
         clips += [self._pick(f"reason_{house}"), self._pick(f"house_{house}"),
-                  self._pick(f"future_{house}"), self._pick("fair"), self._pick("farewell")]
+                  self._pick(f"future_{house}"), self._pick("season"), self._pick("farewell")]
         name = show_bank.HOUSES[house]
         print(f"[show] visit #{v['n']} house={name} by={how} answers={v['answers']} "
               f"cues={cues} seed={self.state.seed[:6]}", flush=True)

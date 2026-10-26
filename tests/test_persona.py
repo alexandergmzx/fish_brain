@@ -76,7 +76,7 @@ def test_the_visit_is_the_hats_only(monkeypatch):
 def test_the_hats_future_bank_is_full_and_clean(monkeypatch):
     monkeypatch.setenv("FISH_PERSONA", "hat")
     bank = VisitConfig().future
-    for kind in ("lugar", "cosa", "lluvia", "antojo", "acción", "carta"):
+    for kind in ("lugar", "cosa", "noche", "antojo", "acción", "carta"):
         assert len(bank[kind]) >= 5, kind
     words = " ".join(" ".join(v) for v in bank.values() if isinstance(v, list)).lower()
     for bad in ("pájaro", "chile", "plátano", "huevo", "muerte", "calavera", "diablito", "borracho",

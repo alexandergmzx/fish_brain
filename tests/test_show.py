@@ -146,8 +146,8 @@ def test_bags_deal_every_line_before_repeating_and_persist(tmp_path):
 def test_the_same_seed_gives_the_same_lines(tmp_path):
     a = ShowState(tmp_path / "a.json", seed="same")
     b = ShowState(tmp_path / "b.json", seed="same")
-    names = show_bank.pool_names("fair")
-    assert [a.pick("fair", names) for _ in range(20)] == [b.pick("fair", names) for _ in range(20)]
+    names = show_bank.pool_names("season")
+    assert [a.pick("season", names) for _ in range(20)] == [b.pick("season", names) for _ in range(20)]
 
 
 def test_a_corrupt_state_file_starts_fresh(tmp_path):
@@ -177,3 +177,38 @@ def test_the_bank_is_well_formed():
         assert not text.lstrip().startswith("-")          # loq would read it as an option
         assert "difícil" not in text.lower()              # not the book's line
     assert len(show_bank.SHOW_PHRASES) >= 130
+
+
+ENGLISH = {"halloween", "happy", "trick", "or", "treat",
+           "gryffindor", "hufflepuff", "ravenclaw", "slytherin"}
+
+
+def test_the_lines_are_for_the_season_and_their_english_is_spelled_right():
+    import re
+    from fish_brain.visit import _fold
+    spanish_only = re.compile(r"[a-zñ]+")
+    texts = list(show_bank.SHOW_PHRASES.values())
+    joined = " ".join(_fold(t) for t in texts)
+    assert "feria" not in joined and "cenart" not in joined
+    for house in ("Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"):
+        assert any(house in t for t in texts)               # spelled exactly so somewhere
+    for bad in ("grifindor", "slitherin", "hufflepuf ", "ravenclow", "halowen", "haloween"):
+        assert bad not in joined
+    english = {w for t in texts for w in spanish_only.findall(_fold(t))
+               if w in ENGLISH}
+    assert english <= ENGLISH and "halloween" in english
+    assert show_bank.pool_names("season") and "fair" not in show_bank.POOLS
+
+
+def test_an_article_run_into_the_word_still_matches():
+    assert match_option(show_bank.question("A2"), "Unbolkan.").option == "volcan"
+    assert match_option(show_bank.question("A2"), "elvolcan").option == "volcan"
+
+
+def test_the_trick_or_treat_answer_counts_for_the_neighbourhood_option():
+    assert match_option(show_bank.question("C1"), "trick or treat").option == "puertas"
+    assert match_option(show_bank.question("C1"), "¡dulce o truco!").option == "puertas"
+
+
+def test_canarys_spelling_of_slytherin_is_a_veto():
+    assert houses_in("No quiero esliterín.") == (None, {"S"})
