@@ -118,6 +118,8 @@ def _set(new: str, cfg: TTSConfig) -> None:
         detail = f"{_last_s:.2f} s, clean {cfg.loq_probe_s:.2f} s" if _last_s is not None \
             else "no probe"
         print(f"[voice] {new.upper()} ({detail})", flush=True)
+        from . import record
+        record.write("voice", {"state": new, "probe_s": _last_s, "clean_s": cfg.loq_probe_s})
     _state = new
 
 

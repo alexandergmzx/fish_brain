@@ -109,8 +109,14 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError:
         pass                                            # not the main thread
     # If the main thread is stuck in a C call when the stop signal comes, STOP still goes out.
-    from . import shutdown, voice_guard
+    from . import record, shutdown, voice_guard
     shutdown.install(cfg.serial.stop_grace_s)
+    if record.open_record(cfg.record) is not None:
+        from . import debug_state
+        record.write("start", {"argv": sys.argv[1:], "version": debug_state.version(),
+                               "persona": os.environ.get("FISH_PERSONA", ""),
+                               "stt": cfg.stt.backend, "llm": cfg.llm.profile,
+                               "tts": cfg.tts.backend, "link": cfg.serial.port})
 
     # The debug hub (docs/debug.md), before anything else prints: the /debug page shows the
     # start-up lines too. Never in the way: a fault here must not stop the fish from starting.
@@ -328,6 +334,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"No push-to-talk input: {e}", file=sys.stderr)
                 return 78
     finally:
+        # A record whose last line is not "end" was cut by a pulled plug or a hard exit.
+        record.write("end", {})
+        record.flush()
         if viz is not None:
             viz.stop()
         if hub is not None:

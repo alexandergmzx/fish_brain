@@ -769,6 +769,15 @@ class PTTConfig:
 
 
 @dataclass
+class RecordConfig:
+    """The fish's own record (record.py): one fsynced JSON line per event. Empty = off."""
+    dir: str = field(default_factory=lambda: _env("FISH_RECORD_DIR", ""))
+    keep: int = field(default_factory=lambda: _env_int("FISH_RECORD_KEEP", 30))      # files
+    max_mb: int = field(default_factory=lambda: _env_int("FISH_RECORD_MAX_MB", 100))
+    beat_s: float = field(default_factory=lambda: _env_float("FISH_RECORD_BEAT_S", 60.0))
+
+
+@dataclass
 class Config:
     serial: SerialConfig = field(default_factory=SerialConfig)
     mouth: MouthConfig = field(default_factory=MouthConfig)
@@ -785,6 +794,7 @@ class Config:
     viz: VizConfig = field(default_factory=VizConfig)
     reading: ReadingConfig = field(default_factory=ReadingConfig)
     visit: VisitConfig = field(default_factory=VisitConfig)
+    record: RecordConfig = field(default_factory=RecordConfig)
 
 
 def load() -> Config:

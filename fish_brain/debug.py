@@ -35,6 +35,8 @@ from pathlib import Path
 
 LOG_LINES = 2000          # the ring of printed lines
 BOOT_LINES = 200          # the first lines of the process, never evicted (the start-up summary)
+# The kinds that also go to the fish's record on disk (record.py); "log", "tx", "level" do not.
+_RECORD_KINDS = frozenset({"turn", "action", "press", "visitor", "page"})
 LINE_MAX = 2000           # characters kept of one line
 PARTIAL_MAX = 4096        # a line with no newline is cut here
 RECORDING_MAX = 6 * 1024 * 1024    # bytes: 45 s at 48 kHz mono 16-bit is 4.3 MB
@@ -121,7 +123,7 @@ class DebugHub:
             # only in the forms a token is written in.
             self._token_forms = (f"token={token}", f"X-Fish-Token: {token}")
         for name, value in os.environ.items():
-            if name.endswith("_API_KEY") and len(value) >= 8:
+            if name.endswith(("_API_KEY", "_TOKEN", "_PASSWORD")) and len(value) >= 8:
                 found.append(value)
         self._secrets = sorted(set(found), key=len, reverse=True)
 
@@ -166,6 +168,9 @@ class DebugHub:
                     self._boot_log.append(rec)
         finally:
             self._local.busy = was
+        if kind in _RECORD_KINDS:                 # to disk too, outside the lock (record.py)
+            from . import record
+            record.write(kind, rec)
         return rec
 
     def since(self, seq: int, limit: int = 200) -> list[dict]:

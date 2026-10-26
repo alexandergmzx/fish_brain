@@ -62,13 +62,18 @@ class Watcher:
             if self._signalled.is_set() or not any(b in _STOP_SIGNALS for b in data):
                 continue
             self._signalled.set()
+            from . import record
+            record.write("stop", {"signal": signal.Signals(data[0]).name
+                                  if data[0] in _STOP_SIGNALS else data[0]})
             threading.Thread(target=self._after_signal, name="stop-grace",
                              daemon=True).start()
 
     def _after_signal(self) -> None:
         t0 = time.monotonic()
+        from . import record
         if not self._reached.wait(self.reach_s):
             self.forced = True
+            record.write("stop", {"forced": True})
             print("[stop] the main thread is stuck: STOP sent from the watcher",
                   file=sys.stderr, flush=True)
             self._emergency()
@@ -77,6 +82,8 @@ class Watcher:
         time.sleep(max(0.0, self.grace_s - (time.monotonic() - t0)))
         print("[stop] still running after the grace: STOP and exit", file=sys.stderr, flush=True)
         self._emergency()
+        record.write("stop", {"exit": "grace"})
+        record.flush()
         self._exit(1)
 
     def _emergency(self) -> None:
