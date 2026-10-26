@@ -299,3 +299,31 @@ def test_the_state_tells_the_page_about_the_visit_and_the_reader(make_hub):
     page = hub.state()["page"]
     assert page["visit_enabled"] and page["visit"]["first"] == "Ana" and page["reading"]
     assert page["tls_port"] is None and page["capture"] == hub.cfg.ptt.capture
+
+
+def test_service_says_whether_the_unit_is_enabled_and_on_the_bench(tmp_path, monkeypatch):
+    """The fair's first failure: the fish left disabled after a motor test."""
+    monkeypatch.setenv("HOME", "/home/arduino")
+    (tmp_path / "proc/self").mkdir(parents=True)
+    (tmp_path / "proc/self/cgroup").write_text("0::/user.slice/user@1000.service/app.slice/fish-brain.service\n")
+    units = tmp_path / "home/arduino/.config/systemd/user"
+    units.mkdir(parents=True)
+    s = debug_state.service(str(tmp_path))
+    assert s["enabled"] is False and s["bench"] is False
+    (units / "default.target.wants").mkdir()
+    (units / "default.target.wants/fish-brain.service").write_text("")
+    (units / "fish-brain.service.d").mkdir()
+    (units / "fish-brain.service.d/80-bench.conf").write_text("")
+    s = debug_state.service(str(tmp_path))
+    assert s["enabled"] is True and s["bench"] is True
+
+
+def test_hints_name_a_disabled_fish_and_the_bench():
+    class Hub:
+        cfg = __import__("fish_brain.config", fromlist=["Config"]).Config()
+
+        def recent(self, *_):
+            return []
+    out = debug_state.hints({"service": {"supervised": True, "enabled": False, "bench": True}}, Hub())
+    texts = " ".join(h["text"] for h in out)
+    assert "not enabled" in texts and "BENCH" in texts

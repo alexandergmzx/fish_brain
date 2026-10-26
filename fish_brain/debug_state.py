@@ -138,8 +138,17 @@ def service(root: str = "/") -> dict:
     """Whether this process is a systemd service (then a restart can be left to its unit)."""
     cgroup = _read(Path(root) / "proc/self/cgroup").splitlines()
     leaf = cgroup[-1].rsplit("/", 1)[-1] if cgroup else ""
-    return {"supervised": leaf.endswith(".service"), "unit": leaf if leaf.endswith(".service") else "",
-            "pid": os.getpid(), "python": sys.version.split()[0]}
+    unit = leaf if leaf.endswith(".service") else ""
+    out = {"supervised": bool(unit), "unit": unit,
+           "pid": os.getpid(), "python": sys.version.split()[0]}
+    if unit:
+        # A user unit is enabled when its default.target link exists: a file check, no call
+        # to systemctl. At the 2026-10-17 fair the fish had been left disabled for hours.
+        home = Path(root) / os.path.expanduser("~").lstrip("/")
+        user_units = home / ".config/systemd/user"
+        out["enabled"] = (user_units / "default.target.wants" / unit).exists()
+        out["bench"] = (user_units / f"{unit}.d" / "80-bench.conf").exists()
+    return out
 
 
 def version(repo: Path | None = None) -> dict:
@@ -376,6 +385,13 @@ def hints(st: dict, hub) -> list[dict]:
         add("warn", "inputs", f"The last recording is near silence (rms {rec['rms']}).",
             "check which source is selected against the default one")
 
+    svc = st.get("service") or {}
+    if svc.get("supervised") and svc.get("enabled") is False:
+        add("bad", "board", "fish-brain is not enabled: after the next reboot there is no fish.",
+            "systemctl --user enable fish-brain (for motor tests: deploy/unoq_setup.sh bench on)")
+    if svc.get("bench"):
+        add("warn", "motors", "BENCH: the fish runs with no motors (deploy/unoq_setup.sh bench on).",
+            "deploy/unoq_setup.sh bench off before a show")
     if (st.get("page") or {}).get("tls_error"):
         add("bad", "switches", "No https: the certificate could not be loaded, so the phone's "
             "microphone and screen lock are off. The page still works over http.",

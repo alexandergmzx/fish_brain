@@ -10,6 +10,7 @@
 #   deploy/unoq_setup.sh kiosk on|off|pause|resume|status   board: the fish page on its own display
 #   deploy/unoq_setup.sh tls [--force] [--local] [ip ...]   self-signed certificate for the phone page
 #   deploy/unoq_setup.sh stt                  board: fetch the Canary speech-to-text model
+#   deploy/unoq_setup.sh bench on|off|status  board: the fish keeps running with motors off
 #   deploy/unoq_setup.sh status               board: what is running, who has the port
 #
 # This script never calls sudo. Steps that need root are printed for the owner to run.
@@ -23,6 +24,7 @@ BOARD="${FISH_BOARD:-arduino@segunda.local}"
 BOARD_DIR="${FISH_BOARD_DIR:-fish_brain}"
 ME="$(id -un)"
 UNIT=fish-brain.service
+POWERLOG_UNIT=fish-powerlog.service
 STAMP="$REPO/.venv/.fish_install_ok"
 
 APT_REQUIRED=(python3-venv python3-pip python3-dev gcc linux-libc-dev libportaudio2)
@@ -345,10 +347,56 @@ cmd_service() {
         user_systemd start "$UNIT"
         ok "started"
     fi
+    step "Power logger (his E4/E5/E9 logger, from every boot)"
+    if [[ "$REPO" == "$HOME/fish_brain" ]]; then
+        cp "$DEPLOY/$POWERLOG_UNIT" "$tmp"
+    else
+        sed "s|%h/fish_brain|$REPO|g" "$DEPLOY/$POWERLOG_UNIT" > "$tmp"
+    fi
+    install -m 644 "$tmp" "$dir/$POWERLOG_UNIT"
+    rm -f "$tmp"
+    user_systemd daemon-reload
+    user_systemd enable --now "$POWERLOG_UNIT"
+    ok "$POWERLOG_UNIT: ~/power_soak.csv"
+
     sleep 3
     user_systemd --no-pager --lines=15 status "$UNIT" || true
     say
     say "Logs:  journalctl --user -u fish-brain -f"
+}
+
+# --- bench (board) ----------------------------------------------------------------------
+# At the 2026-10-17 fair the fish had been stopped and disabled for a motor test and was still
+# off hours later. The bench mode never stops it: a drop-in points it at a port that does not
+# exist, so it talks without motors and /dev/ttyHS1 stays free for tools/fw_check.py.
+BENCH_DROPIN="$HOME/.config/systemd/user/$UNIT.d/80-bench.conf"
+
+cmd_bench() {
+    require_board bench
+    case "${1:-status}" in
+        on)
+            mkdir -p "$(dirname "$BENCH_DROPIN")"
+            printf '%s\n' "# deploy/unoq_setup.sh bench on: motors off; remove with 'bench off'" \
+                "[Service]" "Environment=FISH_SERIAL_PORT=/dev/null-no-motors" \
+                "Environment=FISH_SERIAL_REQUIRED=false" > "$BENCH_DROPIN"
+            user_systemd daemon-reload
+            user_systemd restart "$UNIT"
+            ok "bench ON: fish-brain runs with no motors; /dev/ttyHS1 is free for the tools"
+            say "  It stays on across reboots until: deploy/unoq_setup.sh bench off"
+            ;;
+        off)
+            rm -f "$BENCH_DROPIN"
+            user_systemd daemon-reload
+            user_systemd restart "$UNIT"
+            ok "bench OFF: fish-brain drives the motors again"
+            ;;
+        status)
+            if [[ -f "$BENCH_DROPIN" ]]; then say "bench: ON (no motors)"; else say "bench: off"; fi
+            say "fish-brain: $(user_systemd is-enabled "$UNIT" 2>/dev/null || echo not-installed)," \
+                "$(user_systemd is-active "$UNIT" 2>/dev/null)"
+            ;;
+        *) die "usage: deploy/unoq_setup.sh bench on|off|status" ;;
+    esac
 }
 
 # --- router (board) ---------------------------------------------------------------------
@@ -797,7 +845,8 @@ main() {
         kiosk)   cmd_kiosk "$@" ;;
         tls)     cmd_tls "$@" ;;
         stt)     cmd_stt "$@" ;;
-        status)  cmd_status "$@"; cmd_kiosk status ;;
+        bench)   cmd_bench "$@" ;;
+        status)  cmd_status "$@"; cmd_bench status; cmd_kiosk status ;;
         ""|-h|--help|help) usage ;;
         *) usage >&2; die "unknown subcommand: $cmd" ;;
     esac
