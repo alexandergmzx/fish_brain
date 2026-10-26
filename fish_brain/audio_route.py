@@ -222,8 +222,12 @@ class RoutedPlayer(Player):
 
     def view(self) -> dict:
         sinks = self.cache.sinks()
-        live = next((s for s in sinks if s["name"] == self.node), None)
-        return {"routes": list(self.cfg.routes), "route": self.route, "node": self.node,
+        route, node = self.route, self.node
+        if not route:                           # nothing played yet: the route the next takes
+            nxt = next(iter(self._candidates()), None)
+            route, node = (nxt[0], nxt[1]) if nxt else ("none", "")
+        live = next((s for s in sinks if s["name"] == node), None)
+        return {"routes": list(self.cfg.routes), "route": route, "node": node,
                 "sink_id": live["id"] if live else None,
                 "cooling": sorted(r for r, t in self._cool.items() if t > self._clock()),
                 "sinks": [s["name"] for s in sinks],
