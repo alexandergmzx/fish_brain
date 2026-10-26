@@ -36,7 +36,7 @@ from pathlib import Path
 LOG_LINES = 2000          # the ring of printed lines
 BOOT_LINES = 200          # the first lines of the process, never evicted (the start-up summary)
 # The kinds that also go to the fish's record on disk (record.py); "log", "tx", "level" do not.
-_RECORD_KINDS = frozenset({"turn", "action", "press", "visitor", "page"})
+_RECORD_KINDS = frozenset({"turn", "action", "press", "visitor", "page", "show"})
 LINE_MAX = 2000           # characters kept of one line
 PARTIAL_MAX = 4096        # a line with no newline is cut here
 RECORDING_MAX = 6 * 1024 * 1024    # bytes: 45 s at 48 kHz mono 16-bit is 4.3 MB

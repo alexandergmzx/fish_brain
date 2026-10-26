@@ -260,6 +260,20 @@ PERSONAS: dict[str, dict] = {
 }
 
 
+def _show_mode() -> str:
+    mode = _env("FISH_SHOW", "off").strip().lower()
+    return mode if mode in ("off", "auto", "script") else "off"
+
+
+def _show_phrases() -> dict[str, str]:
+    """The scripted visit's lines (show_bank.py), only with FISH_SHOW on and a persona with a
+    visit: off, the canned set is exactly as before."""
+    if _show_mode() == "off" or not _persona().get("visit"):
+        return {}
+    from .show_bank import SHOW_PHRASES
+    return dict(SHOW_PHRASES)
+
+
 def _persona() -> dict:
     name = _env("FISH_PERSONA", "fish")
     if name not in PERSONAS:
@@ -616,7 +630,8 @@ class CannedConfig:
     # over it (FISH_PERSONA). A changed text is a new WAV in the cache: render it on the
     # machine that speaks (`--prerender-canned`, or `deploy/unoq_setup.sh install`).
     phrases: dict[str, str] = field(
-        default_factory=lambda: {**_FISH_PHRASES, **_persona().get("phrases", {})})
+        default_factory=lambda: {**_FISH_PHRASES, **_persona().get("phrases", {}),
+                                 **_show_phrases()})
 
 
 @dataclass
@@ -769,6 +784,23 @@ class PTTConfig:
 
 
 @dataclass
+class ShowConfig:
+    """The scripted visit (show.py, show_run.py, ADR 0015). `off` = today's visit (the laptop).
+    `script` = always the script. `auto` = the script whenever the model cannot be trusted
+    now: offline, a key missing, the voice tainted, or a model failure in the last `back_s`.
+    With the show on, no error line is ever said to a visitor."""
+    mode: str = field(default_factory=_show_mode)
+    state: str = field(default_factory=lambda: _env(
+        "FISH_SHOW_STATE", str(Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
+                               / "fish_brain" / "show.json")))
+    seed: str = field(default_factory=lambda: _env("FISH_SHOW_SEED", ""))
+    reprompts: int = 2           # per visit: a question asked again at most this often
+    back_s: float = 120.0        # after a model failure, visits stay scripted this long
+    max_record_s: float = 5.5    # answers stay under Canary's limit (stt.canary_long_s)
+    idle_s: float = 90.0         # a pause this long mid-visit means a new visitor
+
+
+@dataclass
 class RecordConfig:
     """The fish's own record (record.py): one fsynced JSON line per event. Empty = off."""
     dir: str = field(default_factory=lambda: _env("FISH_RECORD_DIR", ""))
@@ -795,6 +827,7 @@ class Config:
     reading: ReadingConfig = field(default_factory=ReadingConfig)
     visit: VisitConfig = field(default_factory=VisitConfig)
     record: RecordConfig = field(default_factory=RecordConfig)
+    show: ShowConfig = field(default_factory=ShowConfig)
 
 
 def load() -> Config:

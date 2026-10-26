@@ -134,6 +134,26 @@ class Speaker:
         finally:
             self._lock.release()
 
+    def say_sequence(self, names: list[str], *, wait_s: float = 5.0) -> bool:
+        """Play canned phrases back to back under one hold of the lock (the scripted visit's
+        stage), only from WAVs that exist. Waits up to `wait_s` for a phrase still playing
+        (a filler) instead of dropping the stage. False when it never got the speaker."""
+        names = [n for n in names if n]
+        if not names or not self._lock.acquire(timeout=wait_s):
+            return False
+        try:
+            from . import canned
+            if self.viz is not None:
+                text = " ".join(self.cfg.canned.phrases.get(n, "") for n in names).strip()
+                if text:
+                    self.viz.push_transcript(text, "fish")   # canned.play shows no bubble
+            for name in names:
+                canned.play(name, self.link, self.cfg, player=self.player, viz=self.viz,
+                            render=False)
+            return True
+        finally:
+            self._lock.release()
+
     def play_sound(self, wav: str | Path, *, tail_chain: str | None = None,
                    flap: tuple[int, int] | None = None) -> float | None:
         """Play a sound that is not speech (the burble) under the same lock: at most one tail

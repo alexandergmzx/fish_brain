@@ -36,7 +36,7 @@ import traceback
 from collections import deque
 from pathlib import Path
 
-from . import cloud, debug, ptt, shutdown, speak as speak_mod
+from . import cloud, debug, ptt, show, shutdown, speak as speak_mod
 from .conductor import Player, make_player
 from .config import Config
 from .serial_link import BaseLink
@@ -124,6 +124,17 @@ class FishConversation:
             from .visit import Visit
             self.visit = Visit(cfg.visit.stages, cfg.visit.idle_s, clock=clock, future=cfg.visit.future)
         self._heard_at: float | None = None   # when the visitor started talking, this turn
+        # The scripted visit (FISH_SHOW, show_run.py): only for a persona with a visit. With
+        # it on, nothing about an error is said to a visitor, "salir" does not quit, and an
+        # answer stays under Canary's limit so it never takes the slow local route.
+        self.show = None
+        if cfg.show.mode != "off" and self.visit is not None:
+            from .show_run import ShowRun
+            cfg.ptt.voice_quit = False
+            cfg.ptt.max_record_s = min(cfg.ptt.max_record_s, cfg.show.max_record_s)
+            cfg.stt.long_online = ()
+            self.visit.idle_s = max(self.visit.idle_s, cfg.show.idle_s)
+            self.show = ShowRun(self)
         # Button-like push-to-talk sources (browser button, remote). Empty -> keyboard.
         self.button = None
         self.sources: list[ptt.ButtonSource] = []
@@ -586,6 +597,8 @@ class FishConversation:
     def _finish_turn(self, user: str, times: dict[str, float]) -> bool:
         """The rest of a turn once the user's text is known (typed, transcribed here, or
         transcribed from an uploaded recording): quit words, the LLM or the echo, speaking."""
+        if self.show is not None and self._show_turn(user, times):
+            return True
         if user.lower().strip(" .!¡") in _QUIT_WORDS and (
                 self.text_input or self.cfg.ptt.voice_quit):
             return False
@@ -604,6 +617,10 @@ class FishConversation:
             reply = user
         elif self._visit_on():
             visit_turn = self._visit_ask(user, times)
+            if self.show is not None and not visit_turn["ok"]:
+                # The model failed: the fallback line is never said; the script goes on.
+                debug.turn_set(outcome="show: hand-over")
+                return self.show.hand_over(visit_turn["stage"], "model error")
             reply = visit_turn["spoken"]
         else:
             t0 = time.monotonic()
@@ -663,27 +680,42 @@ class FishConversation:
                   f"{self.cfg.filler.turn_timeout_s:.0f}s, {len(w['used'])} fillers said",
                   flush=True)
             self._wait = None
+            if self.show is not None:
+                self._show_fault(f"timeout: {e.stage}")
+                return True
             self._say_timeout(e.stage)
             return True
         except cloud.CloudUnavailable as e:
             debug.turn_close("offline", e)
             print(f"[turn] sin señal: {e}", flush=True)
-            self._apologize(self.cfg.canned.no_signal)
+            if self.show is not None:
+                self._show_fault("offline")
+            else:
+                self._apologize(self.cfg.canned.no_signal)
         except cloud.CloudMisconfigured as e:
             debug.turn_close("misconfigured", e)
             print(f"[turn] cloud setup problem: {e}", flush=True)
-            self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
+            if self.show is not None:
+                self._show_fault("misconfigured")
+            else:
+                self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
             time.sleep(2.0)
         except ptt.MicError as e:
             debug.turn_close("mic error", e)
             print(f"[turn] {e}", flush=True)
-            self._apologize(self.cfg.canned.no_mic, min_gap_s=30.0)
+            if self.show is not None:
+                self._show_fault("mic")
+            else:
+                self._apologize(self.cfg.canned.no_mic, min_gap_s=30.0)
             time.sleep(2.0)
         except Exception as e:
             debug.turn_close("error", e)
             print(f"[turn] error {type(e).__name__}: {e}", flush=True)
             traceback.print_exc()
-            self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
+            if self.show is not None:
+                self._show_fault(type(e).__name__)
+            else:
+                self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
         finally:
             self._wait = None                      # the welcome and the like are no turn's
             if self.visit is not None:
@@ -692,6 +724,47 @@ class FishConversation:
         self._errors += 1
         time.sleep(5.0 if self._errors >= 5 else 1.0)
         return True
+
+    # --- the scripted visit (show_run.py) ---------------------------------------------
+    def _show_turn(self, user: str, times: dict[str, float]) -> bool:
+        """The show's part of a turn. True when the show took it (an answer for the open
+        scripted visit, or a new scripted visit); False lets the model's visit run."""
+        sh = self.show
+        at = self._heard_at if self._heard_at is not None else self._clock()
+        if sh.open and self.visit.needs_new(at):
+            print("[show] the open visit went quiet: a new visitor", flush=True)
+            sh.v = None
+        if sh.open:
+            sh.answer(user)
+            self._note_fill(times)
+            return True
+        if not user:
+            self._note_fill(times)
+            return True                            # nothing heard and no visit: keep listening
+        mode, why = sh.mode_now()
+        if mode != "script":
+            return False
+        sh.start(why)
+        pref, _vetoes = show.houses_in(user)       # "quiero Ravenclaw" from the first words
+        if pref:
+            sh.answer(user)
+        self._note_fill(times)
+        return True
+
+    def _show_fault(self, kind: str) -> None:
+        """A turn failed with the show on: never an error line. An open scripted visit counts
+        it as no answer and goes on; a model visit hands over to the script; else silence."""
+        try:
+            sh = self.show
+            if sh.open:
+                sh.no_answer()
+            elif self.visit is not None and self.visit.open and not self.visit.done:
+                sh.hand_over(self.visit.stage, kind)
+            else:
+                print(f"[show] {kind}: nothing said (no visit open)", flush=True)
+        except Exception as e:                      # the show must never be the problem
+            print(f"[show] fault while handling {kind}: {type(e).__name__}: {e}", flush=True)
+            self.show.v = None
 
     # --- the hat's visit (visit.py) -------------------------------------------------
     def _visit_on(self) -> bool:
@@ -823,6 +896,12 @@ class FishConversation:
         if v.open and v.started_at is not None and v.started_at >= item.at:
             return True
         debug.turn_set(trigger="visit")
+        if self.show is not None:
+            mode, why = self.show.mode_now()
+            if mode == "script":
+                self.show.start(why)
+                debug.turn_set(outcome="show: greeting")
+                return True
         on = self._visit_on()
         if on:
             self._new_visit()
@@ -885,9 +964,12 @@ class FishConversation:
 
     def run(self) -> None:
         print("Conversation ready. (Ctrl-C or 'salir' to quit.)", flush=True)
-        if self._should_welcome():
-            self._apologize(self.cfg.canned.welcome)   # guarded: a dead speaker must not end us
-        self._say_address()
+        # With the show on, the hat stays quiet until a visitor comes: no welcome, no spoken
+        # address (rendered live), no goodbye (at a show a stop is usually a restart).
+        if self.show is None:
+            if self._should_welcome():
+                self._apologize(self.cfg.canned.welcome)   # guarded: a dead speaker must not end us
+            self._say_address()
         clean = False
         try:
             while True:
@@ -904,5 +986,6 @@ class FishConversation:
             if self.button is not None:
                 self.button.close()
             # Say goodbye when asked to stop, not when something broke on the way out.
-            if clean and self.cfg.canned.enabled and self.cfg.canned.goodbye:
+            if (clean and self.show is None and self.cfg.canned.enabled
+                    and self.cfg.canned.goodbye):
                 self._apologize(self.cfg.canned.goodbye)
