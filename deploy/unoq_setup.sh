@@ -443,6 +443,8 @@ cmd_ap() {
     if [[ "$mode" == test ]]; then
         # The way back is armed before the Wi-Fi drops: ssh over the home network ends here.
         user_systemd stop "$NET_UNIT" 2>/dev/null || true
+        user_systemd stop fish-ap-test-end.timer fish-ap-test-end.service 2>/dev/null || true
+        user_systemd reset-failed fish-ap-test-end.service 2>/dev/null || true
         systemd-run --user --on-active="$secs" --unit=fish-ap-test-end \
             sh -c "nmcli connection down $AP_PROFILE; systemctl --user start $NET_UNIT" >/dev/null
         say "  Switching to $ssid now for $secs s; then back to the known networks."
