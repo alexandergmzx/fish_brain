@@ -44,7 +44,7 @@ data when warranted.
 | The reading (la lectura) | Built (ADR 0007, proposed): badge photo on the phone → `gpt-6-luna` through the board (4.3 to 6.7 s, 1163 image tokens, surnames split, accents restored: `docs/results/2026-10-11-reading-badge.md`) → the fish asks "¿Tú eres X?" → the answer is a turn. Not yet tried with a real badge or on the phone |
 | Motors on the UNO Q (L298N), Billy Bass #2 calibration | Not started. Before wiring: 10 k pull-downs on D6, D3, D5 and on D7, D8 (D8 is pulled high in reset) |
 | Fair | **2026-10-17/18: failed** (the hub enumerated nothing at the venue; the fish had been left disabled; the laptop fallback was untested): `docs/results/2026-10-25-fair-postmortem.md`. No next show date |
-| Board + phone only (`docs/BRAINTIP.md` Phase 7) | Phase 1 on the board 2026-10-26 (licence guard, page on http without a certificate, STOP watcher, bench mode, the fish's record, his power logger). The scripted visit (`FISH_SHOW=auto` on the board, ADR 0015): 21 visits with no error line, 0 wrong accepts (`docs/results/2026-10-26-hat-offline-visit.md`). Lines for the Halloween season, rendered clean; Jorge's respellings for Slytherin, Hufflepuff, Halloween are defaults until he listens. Next: his 2-minute pronunciation listen, then a 2-minute visit with the remote |
+| Board + phone only (`docs/BRAINTIP.md` Phase 7) | On the board 2026-10-26: Phase 1 (licence guard, STOP watcher, bench mode, records); the scripted visit for the Halloween season (`FISH_SHOW=auto`, ADR 0015); the Show tab on the phone (ADR 0017); speaker routes USB → Bluetooth → phone and a `pw-record` capture (ADR 0016, `docs/results/2026-10-26-phone-console-and-audio-routes.md`). **Motors off since the router 0.11 upgrade** until `arduino` joins `arduino-router`. Next: his checks (pronunciation, a visit, the phone speaker and mic, a USB pull) |
 
 Ask before starting the next Braintip phase. Until the fair, prefer work that closes the fair
 path over polishing one module. The phase list lives in `docs/BRAINTIP.md`; keep this table
@@ -423,6 +423,10 @@ Machine and tool facts only, each dated.
 - **Loquendo speech does not tell speech models apart** (2026-10-12): 1.5 to 8 % word errors
   for nine candidates; the owner's voice spread them from 18 to 40 %.
 
+- **Router 0.11 needs the `arduino-router` group** (2026-10-26): `apt dist-upgrade` brought
+  0.10.0 → 0.11.0, the socket became `root:arduino-router` 0660, and the fish could no longer
+  ask the router to release the port (motors silently off). Fix: `usermod -aG arduino-router
+  arduino`, reboot.
 - **`systemctl mask` fails for the router**: its units are real files in `/etc/systemd/system`.
 - **Stopping the router resets the MCU and leaves it in the boot animation**: the loader
   waits for GPIO line 70, which the router raises.
