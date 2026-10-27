@@ -1,5 +1,5 @@
 """netwatch.Decider: when the board raises and drops its own Wi-Fi."""
-from fish_brain.netwatch import AP, CLIENT, TRYING, Decider, Settings, settings_from
+from fish_brain.netwatch import AP, CLIENT, TRYING, Decider, Settings, settings_from, tdls_off
 
 S = Settings(ap_profile="fish-ap")
 
@@ -73,3 +73,23 @@ def test_settings_read_the_env_with_defaults():
                        "FISH_NET_LOSS_S": "bad"})
     assert s.ap_profile == "fish-ap" and s.client_wait_s == 30 and s.loss_s == 30.0
     assert settings_from({}).ap_profile == ""
+
+
+def test_tdls_is_off_by_default_and_the_env_keeps_it():
+    assert settings_from({}).tdls_off is True
+    assert settings_from({"FISH_NET_TDLS_OFF": "false"}).tdls_off is False
+    assert settings_from({"FISH_NET_TDLS_OFF": "0"}).tdls_off is False
+    assert settings_from({"FISH_NET_TDLS_OFF": "yes"}).tdls_off is True
+
+
+def test_tdls_off_asks_the_supplicant_once_and_returns_its_word():
+    seen = []
+
+    def fake(cmd, timeout=15.0):
+        seen.append(cmd)
+        return "OK\n"
+
+    assert tdls_off("wlan0", run=fake) == "OK"
+    assert len(seen) == 1 and seen[0][0].endswith("wpa_cli")
+    assert seen[0][1:] == ["-i", "wlan0", "set", "tdls_disabled", "1"]
+    assert tdls_off("wlan0", run=lambda cmd, timeout=15.0: "") == ""   # no wpa_cli, no socket

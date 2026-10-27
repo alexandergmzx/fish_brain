@@ -10,10 +10,17 @@ it. This watcher (a user unit, standard library only, run by /usr/bin/python3) k
   NetworkManager tries the known networks for FISH_NET_TRY_S; nothing joined, back up. The
   idle tries back off (60, 120, 300 s, ...). Never while a phone is connected.
 - A pin (`$XDG_STATE_HOME/fish_brain/net-pin` containing `ap`) keeps the access point up.
+- Each time a client network comes up it tells the supplicant to ignore TDLS
+  (`wpa_cli -i wlan0 set tdls_disabled 1`; `FISH_NET_TDLS_OFF=false` keeps TDLS): a phone on
+  the same access point asks the board for a direct link every 10 to 30 s, the board's driver
+  cannot key it, and the phone's page loses its connection while each attempt fails
+  (2026-10-27, `docs/results/2026-10-27-home-wifi-drops.md`). The flag lives in the
+  supplicant's interface and is set again after every reconnection.
 
-It only runs `nmcli connection up|down <profile>` and read-only queries; it never adds or
-changes a profile. Its state goes to `$XDG_RUNTIME_DIR/fish_brain/net.json` for the page.
-No profile configured: it says so and exits 0 (the laptop never runs it).
+It only runs `nmcli connection up|down <profile>`, that one `wpa_cli set`, and read-only
+queries; it never adds or changes a profile. Its state goes to
+`$XDG_RUNTIME_DIR/fish_brain/net.json` for the page. No profile configured: it says so and
+exits 0 (the laptop never runs it).
 """
 from __future__ import annotations
 
@@ -38,6 +45,7 @@ class Settings:
     try_s: float = 40.0
     settle_s: float = 20.0        # after "up": how long the profile may take to come up
     backoff_s: tuple = (60.0, 120.0, 300.0)
+    tdls_off: bool = True         # tell the supplicant to ignore TDLS on every client link
 
 
 @dataclass
@@ -149,7 +157,9 @@ def settings_from(env: dict) -> Settings:
                     client_wait_s=num("FISH_NET_CLIENT_WAIT_S", 45.0),
                     loss_s=num("FISH_NET_LOSS_S", 30.0),
                     ap_idle_s=num("FISH_NET_AP_IDLE_S", 60.0),
-                    try_s=num("FISH_NET_TRY_S", 40.0))
+                    try_s=num("FISH_NET_TRY_S", 40.0),
+                    tdls_off=(env.get("FISH_NET_TDLS_OFF", "") or "true").strip().lower()
+                    not in ("0", "false", "no", "off"))
 
 
 def _run(cmd: list[str], timeout: float = 15.0) -> str:
@@ -171,6 +181,14 @@ def stations(iface: str) -> int:
     iw = next((p for p in ("/usr/sbin/iw", "/sbin/iw") if os.path.exists(p)), "iw")
     return sum(1 for l in _run([iw, "dev", iface, "station", "dump"], 5).splitlines()
                if l.startswith("Station "))
+
+
+def tdls_off(iface: str, run=None) -> str:
+    """Tell wpa_supplicant to discard every TDLS frame on `iface`; returns its reply ("OK",
+    "FAIL") or "" when wpa_cli is missing or its socket is not ours (the `netdev` group)."""
+    run = run or _run
+    cli = next((p for p in ("/usr/sbin/wpa_cli", "/sbin/wpa_cli") if os.path.exists(p)), "wpa_cli")
+    return run([cli, "-i", iface, "set", "tdls_disabled", "1"], 5).strip()
 
 
 def address(iface: str) -> str:
@@ -227,6 +245,8 @@ def main() -> int:
             _run(["nmcli", "connection", act, s.ap_profile], 30)
         elif d.state != before:
             print(f"[net] {before} -> {d.state}" + (f" ({active})" if active else ""), flush=True)
+        if s.tdls_off and d.state == CLIENT and before != CLIENT:
+            print(f"[net] tdls off on {s.iface}: {tdls_off(s.iface) or 'no answer'}", flush=True)
         _publish(d, active, n, s.iface)
         time.sleep(2.0)
 

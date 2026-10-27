@@ -119,6 +119,25 @@ sudo systemctl restart systemd-journald
 journalctl --disk-usage
 ```
 
+## The home Wi-Fi (no sudo: this image runs NetworkManager with `auth-polkit=false`)
+
+Two access points serve the home network on the same 5 GHz channel and the board bounced
+between them, a few seconds offline each time
+([`docs/results/2026-10-27-home-wifi-drops.md`](../docs/results/2026-10-27-home-wifi-drops.md)).
+Since 2026-10-27 the profile is held on the main router; `fish-net` raises the board's own
+Wi-Fi if that router is gone.
+
+```bash
+nmcli connection modify IZZI_5053.5 802-11-wireless.bssid 90:5E:44:99:7F:90
+nmcli connection up IZZI_5053.5          # about 10 s without Wi-Fi; the fish keeps running
+# undo: nmcli connection modify IZZI_5053.5 802-11-wireless.bssid ""
+```
+
+A phone on the same access point asks the board for a TDLS direct link, the board's driver
+cannot key it, and the page says "no connection" while each attempt fails. `fish-net` tells the
+supplicant to ignore TDLS after every client link (`wpa_cli -i wlan0 set tdls_disabled 1`;
+`FISH_NET_TDLS_OFF=false` keeps TDLS). The journal shows `[net] tdls off on wlan0: OK`.
+
 ## The router: release or off
 
 `arduino-router` owns `/dev/ttyHS1`, the UART to the STM32. fish_brain needs that port for the

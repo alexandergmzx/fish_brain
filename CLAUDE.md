@@ -359,6 +359,7 @@ their own. The steps are in the README.
 | No phrase while it thinks | `FISH_FILLER`; the phrases must be rendered (`--prerender-canned`, the canned check on `/debug`): a missing one is skipped |
 | "no te entendí" every time | The level meter in the page; the selected source (`wpctl status`); `silence_rms`. With the phone's microphone: the `[utt]` line (rate, seconds, bytes) and the ring on the target; `?mic=host` brings the board microphone back |
 | No "Activar micrófono" button on the phone | The page is not a secure context: plain http, or the certificate warning not accepted; the hold still records with the board microphone |
+| The phone's page says "no connection" while the desktop reaches the board | The phone and the board on one access point asking each other for a TDLS link: `journalctl -b \| grep TDLS`, and `fish-net` must have printed `tdls off on wlan0: OK`. Or the board between two access points: `journalctl -b -k \| grep -E "change mode\|BEACON-LOSS"`, `/usr/sbin/wpa_cli -i wlan0 status` for the BSSID (`docs/results/2026-10-27-home-wifi-drops.md`) |
 | The badge is never read | The `[reading]` lines: `offline`, `misconfigured` (no profile with image input and a key; each skipped one is named once), `unavailable … trying luna` (Claude failed, luna took over); the line that answers ends `profile=`; type the name in the field |
 | The fortune never starts | The `[fortune]` line: `lines not ready` (its question clips are still rendering, about 10 min at the first boot, estimate; Fortune is greyed and the canned check on `/debug` counts them), `visit open` (a house act is at its questions: finish it or force a house). `503 no fortune` from `POST /fortune` means the persona has no visit |
 | Remote does nothing | `python -m fish_brain.evdev_button --list` and `--watch`; the start-up line `ptt=`. No burble and no line in the journal after `Unable to create stream: Timeout`: the fish is stuck on the microphone (2026-10-13), restart it |
@@ -486,6 +487,16 @@ Machine and tool facts only, each dated.
 - **The kiosk browser is the whole cost of the display** (2026-10-11): with it closed the board
   idles at under 2 % CPU, Xorg at 0.4 %, and the hottest zone drops from 68 C to 48 C in four
   minutes; the LightDM session and the supervisor are below the noise.
+- **The home network's two access points share channel 149 and the board bounced between
+  them** (2026-10-27): 14 "appears to change mode (expected VHT, found HT)" disconnects from the
+  main router and 10 beacon losses on the weaker extender in one day, a few seconds offline
+  each. The profile is held on the main router's BSSID since 2026-10-27 (`deploy/README.md`);
+  `nmcli connection modify` needs no sudo on this image (`auth-polkit=false`).
+- **A phone on the same access point asks the board for a TDLS direct link, `ath10k_snoc`
+  cannot key it, and the phone's page says "no connection" while each attempt fails**
+  (2026-10-27, every 10 to 30 s). `wpa_cli -i wlan0 set tdls_disabled 1` makes the supplicant
+  discard the frames; its socket is open to `netdev`, so `fish-net` sets it after every client
+  link (`docs/results/2026-10-27-home-wifi-drops.md`).
 
 **This desktop and the assistant's environment**
 
