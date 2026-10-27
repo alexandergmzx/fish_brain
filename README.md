@@ -207,7 +207,8 @@ daemon is warm (`loq --start`), about 8 s without the daemon. The board's exampl
 uses it (`FISH_TTS_BACKEND=loq`, `FISH_LOQ_BIN` with the full path, because a service does
 not have `~/.local/bin` on its path). `FISH_TTS_BACKEND=openai` is the alternative.
 
-Speech-to-text on the board is local and uses Canary (`FISH_STT_BACKEND=canary`), because
+Speech-to-text on the board is online first with Canary on the board behind it
+(`FISH_STT_BACKEND=canary`, below). Canary rather than faster-whisper, because
 faster-whisper spends its time on a fixed 30 s window whatever the length of the recording.
 Measured on the board ([candidates](docs/results/2026-10-12-unoq-stt-candidates.md),
 [the first measurement](docs/results/2026-10-10-unoq-local-stt.md)):
@@ -219,7 +220,9 @@ Measured on the board ([candidates](docs/results/2026-10-12-unoq-stt-candidates.
 | `local`, `base`, `FISH_STT_WINDOW_S=10` | about 2 s | 38 to 40 % |
 | `canary` | about 2.5 s | 22 % |
 
-Since 2026-10-27 (his word: `gpt-transcribe` while connected) every recording goes first to
+Since 2026-10-27 ([ADR 0020](docs/adr/0020-online-first-speech-and-the-uncut-hold.md); his word:
+`gpt-transcribe` while connected, after Canary wrote "Herria por mi novela" for "ir por mi
+novia" in a board turn that day) every recording goes first to
 the services in `FISH_STT_ONLINE` (the board's: `openai`) while the board is online, and
 Canary hears it when that service is offline, refuses, has no key or takes over 4 s
 (`ONLINE_TIMEOUT_S`, an estimate). A service that fails rests 60 s (for the run when its key

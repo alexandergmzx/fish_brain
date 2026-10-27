@@ -38,7 +38,7 @@ line.
    characters) and the rules teach the moves: the echo, the rainbow, the hit boost, a miss
    turned into the future. For this question only the recording cap rises from 5.5 s to 10 s
    (`dream_record_s`) while the long speech route is online; offline it stays and the re-ask
-   lists themes. *Amended 2026-10-27 ([0020](0020-online-first-and-the-uncut-hold.md)): no
+   lists themes. *Amended 2026-10-27 ([0020](0020-online-first-speech-and-the-uncut-hold.md)): no
    cap is lifted or restored; every answer, the dream's too, is capped by `FISH_PTT_MAX_S`
    alone.* Every keyword (the themes', the cup's, the cards' aliases) is written as
    `visit._fold` leaves a word, without accents and with ñ as n, and a stem ends in `*`.

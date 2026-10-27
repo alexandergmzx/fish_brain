@@ -25,7 +25,7 @@ aloud at 06:30. Commit `69c2e1a`; the parser fixes below are `f87d5d8`.
 |---|---|---|
 | Questions | fecha, sueno, carta, taza, animal | same |
 | fecha: "Veintitrés de octubre." | heard `XII de octubre.` twice → no sign | same |
-| sueno: "Soñé que se me caían los dientes…" | theme `dientes` (the dream's cap lifted to 10 s, the long route to Groq) | same |
+| sueno: "Soñé que se me caían los dientes…" | theme `dientes` (the dream's cap lifted to 10 s; "the long route to Groq" was a print, see the correction below) | same |
 | carta: "La muerte." | card 13 | same |
 | taza: "Una estrella." | heard `uña extraída.` twice → no shape | same |
 | animal: "Un gato negro." | `gato` | same |
@@ -38,6 +38,12 @@ boda de tu prima: se abre paso una nueva seguridad, y hasta el miedo se pone sus
 La Muerte anuncia un cierre elegante y un comienzo con buen pulso. Tu gato negro te traerá
 fortuna en la fiesta: pronto…" (clean; it named a sign it did not have, which the rules forbid:
 one line to tighten).
+
+Correction, 2026-10-27 (ADR 0020): the sueno row's "the long route to Groq" was the act's own
+print, not the route taken. Canary's transcriber had been built while the show had emptied
+`FISH_STT_LONG`, and nothing rebuilt it when the act restored the list: the long route was
+empty and the dream went to the local model on the 10 s window. The text heard and the theme
+stand; no time for that recording is in this file.
 
 ## What changed because of this run
 

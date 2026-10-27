@@ -34,6 +34,11 @@ local window when none answers. For this week's tests that list is `groq` (free 
 a second). `gpt-transcribe` makes the fewest word errors (4 % against Groq's 10 % and
 Canary's 21 %) and is held for the fair, whose routing is not decided.
 
+Amendment, 2026-10-27 ([0020](0020-online-first-speech-and-the-uncut-hold.md)): with
+Canary, every recording goes first to the services in `FISH_STT_ONLINE` (the board's: `openai`,
+`gpt-transcribe`) while online, and Canary hears it offline or when none answers within 4 s
+(estimate); `FISH_STT_LONG` stays the second chance for recordings over 6 s.
+
 ## Consequences
 
 - With a cloud STT backend the recording leaves the machine; before, only text did.

@@ -355,6 +355,7 @@ real certificate; keep Loquendo and fix the licence race; no show date, measurem
 | 7 | The phone as the console; the everything-fails drill | the Show tab on the board 2026-10-26 (ADR 0017); the drill open |
 | 8 | The fortune act for adults (ADR 0019): the birth date → the sign, the open dream, a tarot card, the cup, the animal, the moon and a magic word; the reading from the clips or from the model; the place as a setting; the adult register | built 2026-10-27 (`fortune.py`, `fortune_bank.py`, `fortune_run.py`, about 140 `fortune_*` clips); his look open; the house act's lines keep the kid register until his pass |
 | 9 | Three tabs on the phone: Visit (the acts; the place and the fortune's deck and cup below them, moved from Settings 2026-10-27), Status (default), Settings (mode, hardware, volume, phone speaker, network); the badge photo off the page (ADR 0017 amended, ADR 0007 superseded on the page) | built 2026-10-27; his look open |
+| 10 | The visitor's whole sentence heard (ADR 0020): every recording to `gpt-transcribe` first while online, Canary offline; no act clamps the hold (`FISH_PTT_MAX_S` alone); a hold ends after 10 s of silence on the board and on the phone | built 2026-10-27; the board measurements (the online route in a real turn, the fall-back with data cut, the silence end, a 30 s hold) not measured yet |
 
 ## Proposed config / env (not implemented yet)
 
