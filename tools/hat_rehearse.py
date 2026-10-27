@@ -3,7 +3,7 @@
 or motors.
 
     .venv/bin/python tools/hat_rehearse.py tools/hat_visitors.txt
-    .venv/bin/python tools/hat_rehearse.py --profiles luna,groq tools/hat_visitors.txt
+    .venv/bin/python tools/hat_rehearse.py --profiles claude,luna tools/hat_visitors.txt
     .venv/bin/python tools/hat_rehearse.py --only 3 tools/hat_visitors.txt     # one visitor
 
 Runs each scripted visitor through the same steps as the turn loop (fish_brain/visit.py):
@@ -374,7 +374,7 @@ def _median(xs: list) -> str:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("script", type=Path)
-    ap.add_argument("--profiles", default="luna", help="comma-separated LLM profiles (default luna)")
+    ap.add_argument("--profiles", default="claude", help="comma-separated LLM profiles (default claude)")
     ap.add_argument("--only", type=int, help="run only visitor N (from 1)")
     args = ap.parse_args(argv)
 

@@ -159,8 +159,8 @@ def test_the_claude_profiles_are_anthropic_and_never_carry_a_sampling_setting():
         assert (cfg.provider, cfg.model, cfg.api_key_env) == ("anthropic", model, "ANTHROPIC_API_KEY")
         assert cfg.temperature is None and cfg.vision is True
         assert cfg.base_url == "https://api.anthropic.com"
-    assert LLMConfig(profile="claude").max_completion_tokens == 600
-    assert LLMConfig(profile="claude").thinking == "disabled"
+    assert LLMConfig(profile="claude").max_completion_tokens == 2000
+    assert LLMConfig(profile="claude").thinking == "adaptive"
     assert LLMConfig(profile="claude-sonnet").thinking == "between_tools"
 
 
@@ -191,10 +191,10 @@ def test_the_model_and_effort_overrides_reach_only_the_active_profile(monkeypatc
 def test_the_request_is_the_persona_the_history_and_the_turn(convo):
     assert convo.reply("hola") == "Hola."
     (call,) = convo._client.calls
-    assert call["model"] == "claude-haiku-5-5" and call["max_tokens"] == 600
+    assert call["model"] == "claude-haiku-5-5" and call["max_tokens"] == 2000
     assert call["system"] == [{"type": "text", "text": convo.cfg.system_prompt}]
     assert call["messages"] == [{"role": "user", "content": "hola"}]
-    assert call["thinking"] == {"type": "disabled"}
+    assert call["thinking"] == {"type": "adaptive"}
     assert call["output_config"] == {"effort": "low"}
     assert not {"temperature", "top_p", "top_k"} & set(call)
 
@@ -346,7 +346,7 @@ def test_the_call_is_recorded_for_the_debug_page_in_the_openai_shape(hub, convo)
     assert [m["role"] for m in rec["messages"]] == ["system", "system", "user"]
     assert rec["reply"] == "Hola." and rec["finish"] == "stop" and rec["stop_reason"] == "end_turn"
     assert rec["tokens"] == {"prompt": 10, "completion": 5} and rec["model"] == "claude-haiku-5-5"
-    assert rec["params"] == {"max_tokens": 600, "thinking": {"type": "disabled"},
+    assert rec["params"] == {"max_tokens": 2000, "thinking": {"type": "adaptive"},
                              "output_config": {"effort": "low"}}
 
 
@@ -491,7 +491,7 @@ def test_the_badge_request_is_an_image_a_question_and_the_schema(vision):
     fmt = call["output_config"]["format"]
     assert fmt["type"] == "json_schema" and set(fmt) == {"type", "schema"}          # no name, no strict
     assert fmt["schema"] == claude.anthropic_schema(reading.BADGE_SCHEMA)
-    assert call["output_config"]["effort"] == "low" and call["thinking"] == {"type": "disabled"}
+    assert call["output_config"]["effort"] == "low" and call["thinking"] == {"type": "adaptive"}
     assert not {"temperature", "top_p", "top_k"} & set(call)
     assert json.loads(answer.text) == GOOD and answer.usage.prompt_tokens == 777
     assert vision.asked_for == [("ANTHROPIC_API_KEY", "https://api.anthropic.com")]   # the key and host
@@ -679,10 +679,10 @@ def test_the_chat_request_on_the_wire_has_one_credential_the_right_host_and_no_s
     assert req.headers["authorization"] == "Bearer sk-ant-test-0000" and "x-api-key" not in req.headers
     assert req.headers["anthropic-version"] == "2026-10-21"
     body = json.loads(req.content)
-    assert body["model"] == "claude-haiku-5-5" and body["max_tokens"] == 600
+    assert body["model"] == "claude-haiku-5-5" and body["max_tokens"] == 2000
     assert [b["text"] for b in body["system"]] == [c.cfg.system_prompt, "Reglas."]
     assert body["messages"] == [{"role": "user", "content": "hola"}]
-    assert body["thinking"] == {"type": "disabled"} and body["output_config"] == {"effort": "low"}
+    assert body["thinking"] == {"type": "adaptive"} and body["output_config"] == {"effort": "low"}
     assert not {"temperature", "top_p", "top_k"} & set(body)
 
 

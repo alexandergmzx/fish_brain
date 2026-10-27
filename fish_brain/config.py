@@ -600,11 +600,11 @@ LLM_PROFILES: dict[str, dict] = {
         "base_url": "https://api.anthropic.com",    # explicit: ANTHROPIC_BASE_URL never redirects the key
         "api_key_env": "ANTHROPIC_API_KEY",
         "model": "claude-haiku-5-5",
-        "reasoning_effort": "low",              # output_config.effort
-        "thinking": "disabled",                 # accepted by Haiku 5.5 at effort high or below
+        "reasoning_effort": "low",              # output_config.effort: thinking kept low
+        "thinking": "adaptive",                 # his pick 2026-10-27: Haiku, thinking low
         "extra_body": {},
         "temperature": None,
-        "max_completion_tokens": 600,           # (estimate) room for the reply if thinking comes back
+        "max_completion_tokens": 2000,          # thinking shares the cap: at 600 every visit reply came back empty
         "vision": True,
         "price_in": 0.10, "price_out": 0.50,
     },
