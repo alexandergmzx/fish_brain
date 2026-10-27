@@ -228,7 +228,7 @@ is missing or rejected) and the journal says so once: `[stt] openai unavailable 
 `/debug` → Switches → "Speech-to-text online first" (`openai`, `groq`, `off`) takes effect
 at the next recording without a rebuild.
 
-| Route on his 0-3 s takes ([results](docs/results/2026-10-13-unoq-stt-his-takes.md)) | Median time | Word errors |
+| Route on his takes ([results](docs/results/2026-10-13-unoq-stt-his-takes.md)) | Median time, takes of 0-3 s | Word errors, takes up to 8 s |
 |---|---|---|
 | `openai` (`gpt-transcribe`) | 0.62 s | 4.5 % |
 | `groq` (turbo) | 0.40 s | 13.0 % |
