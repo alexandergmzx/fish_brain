@@ -10,10 +10,12 @@ when a new field's name looks like a secret and nobody has classified it.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 import os
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -37,8 +39,10 @@ def unclassified_fields(cfg) -> list[tuple[str, str]]:
     return out
 
 
+@functools.lru_cache(maxsize=1)
 def _env_names() -> dict[tuple[str, str], str]:
-    """(section class, field) -> the FISH_* variable that sets it, read from config.py."""
+    """(section class, field) -> the FISH_* variable that sets it, read from config.py once
+    (the file does not change under a running fish; a code change shows as a restart hint)."""
     names: dict[tuple[str, str], str] = {}
     cls = ""
     src = (Path(__file__).parent / "config.py").read_text(encoding="utf-8")
@@ -243,13 +247,20 @@ def _backends(hub) -> dict:
     return out
 
 
+def _rendered_names(cache_dir) -> frozenset:
+    """The phrase names with a rendering in the cache (`<name>-<digest>.wav`): one listdir."""
+    try:
+        files = os.listdir(cache_dir)
+    except OSError:
+        return frozenset()
+    return frozenset(f.rsplit("-", 1)[0] for f in files if f.endswith(".wav") and "-" in f)
+
+
 def _canned(hub) -> list[dict]:
     cfg = hub.cfg
-    rows = []
-    for name in cfg.canned.phrases:
-        files = sorted(cfg.canned.cache_dir.glob(f"{name}-*.wav"))
-        rows.append({"name": name, "rendered": bool(files)})
-    return rows
+    d = cfg.canned.cache_dir
+    have = _cached(f"canned:{d}", 10.0, lambda: _rendered_names(d))
+    return [{"name": name, "rendered": name in have} for name in cfg.canned.phrases]
 
 
 def _clients(hub) -> dict:
@@ -329,6 +340,38 @@ def _page(hub) -> dict:
 
 
 _SHOW_CACHE: dict = {}
+VOLUME_TTL_S = 5.0
+_vol: dict = {}                 # sink id -> {"t", "value", "busy"}
+_vol_lock = threading.Lock()
+
+
+def volume(sid, now: float | None = None, read=None):
+    """The sink's volume from a cache refreshed in the background when older than
+    VOLUME_TTL_S: a request never waits on `wpctl` (None until the first answer)."""
+    now = time.monotonic() if now is None else now
+    with _vol_lock:
+        hit = _vol.setdefault(sid, {"t": None, "value": None, "busy": False})
+        if (hit["t"] is None or now - hit["t"] > VOLUME_TTL_S) and not hit["busy"]:
+            hit["busy"] = True
+            if read is None:
+                from . import pw
+                read = pw.volume
+
+            def work():
+                try:
+                    value = read(sid)
+                except Exception:
+                    value = None
+                with _vol_lock:
+                    hit.update(value=value, t=time.monotonic(), busy=False)
+            threading.Thread(target=work, name="debug-volume", daemon=True).start()
+        return hit["value"]
+
+
+def seed_volume(sid, value: float) -> None:
+    """After a successful set: the slider shows the new value before the next read."""
+    with _vol_lock:
+        _vol[sid] = {"t": time.monotonic(), "value": round(float(value), 2), "busy": False}
 
 
 def _cached(key: str, ttl_s: float, fn):
@@ -371,7 +414,7 @@ def _show_tab(hub) -> dict:
         sid = audio.get("sink_id")
         if sid is not None:
             from . import pw
-            audio["volume"] = _cached(f"vol{sid}", 2.0, lambda: pw.volume(sid))
+            audio["volume"] = volume(sid)
         out["audio"] = audio
     else:
         out["audio"] = {"routes": [], "route": "default"}
@@ -416,36 +459,126 @@ def _pron(cfg) -> list[str]:
     return [label for label, _ in CANDIDATES] if cfg.tts.backend == "loq" else []
 
 
+def _dict(value) -> dict:
+    """A section as a dict: a failed one (`{"error": …}`) or a missing one reads as empty."""
+    return value if isinstance(value, dict) and "error" not in value else {}
+
+
+def _facts(hub, st: dict):
+    """The device table's inputs (devices.Facts), read once per build: mostly from the
+    sections already built, plus the ALSA cards and the microphone's health."""
+    from . import cloud, devices, hw
+    from .config import STT_PROFILES
+    cfg, convo = hub.cfg, getattr(hub, "convo", None)
+    viz = getattr(hub, "viz", None)
+    sysinfo, tab = _dict(st.get("system")), _dict(st.get("show_tab"))
+    audio, net = _dict(tab.get("audio")), _dict(tab.get("net"))
+    remote, link = _dict(st.get("remote")), _dict(st.get("link"))
+    flags, svc, be = _dict(st.get("flags")), _dict(st.get("service")), _dict(st.get("backends"))
+    from . import debug_checks
+    cards = debug_checks.sound_cards()
+    # The board microphone's health: its PipeWire source and the zero takes (ptt.mic_dead).
+    from . import ptt
+    zeroed = getattr(ptt, "_zero_takes", 0) >= 2
+    source_present = None
+    if cfg.ptt.source and cfg.ptt.backend == "pw-record":
+        try:
+            from . import pw
+            sources = pw.cache().sources()
+            if sources:
+                source_present = any(s["name"] == cfg.ptt.source for s in sources)
+        except Exception:
+            pass
+    turns = hub.recent("turn", 1) if hasattr(hub, "recent") else []
+    last_play = ((turns[-1].get("perf") or {}).get("result") or "") if turns else ""
+    show = getattr(convo, "show", None)
+    echo = bool(be.get("echo", flags.get("echo")))
+    covered = echo or (show is not None and cfg.show.mode in ("auto", "script"))
+    offline_ok = covered and cfg.stt.backend not in STT_PROFILES and cfg.tts.backend != "openai"
+    rec = st.get("rec") if isinstance(st.get("rec"), dict) else {}
+    return devices.Facts(
+        usb_role=sysinfo.get("usb_role", ""),
+        usb_products=[u.get("product", "") for u in sysinfo.get("usb") or ()],
+        marks=frozenset(hw.marks().failed),
+        bench=bool(svc.get("bench")),
+        no_audio=bool(flags.get("no_audio")),
+        player=be.get("player", "") if be.get("player") != "none" else "",
+        audio_routes=list(audio.get("routes") or ()),
+        audio_route=audio.get("route", "default") or "default",
+        audio_next=audio.get("next", audio.get("route", "default")) or "default",
+        sinks=list(audio.get("sinks") or ()),
+        cooling=list(audio.get("cooling") or ()),
+        playback_cards=sum(1 for c in cards if c["playback"]) if cards else None,
+        capture_cards=sum(1 for c in cards if c["capture"]) if cards else None,
+        last_play=last_play,
+        capture=getattr(cfg.ptt, "_capture_configured", cfg.ptt.capture),
+        mic_source=cfg.ptt.source or "",
+        mic_source_present=source_present,
+        mic_zeroed=zeroed,
+        last_rec={k: rec.get(k) for k in ("rms", "zero_frac", "samples", "origin") if k in rec},
+        silence_rms=float(cfg.ptt.silence_rms),
+        mic_pages=viz.mic_pages() if viz is not None and hasattr(viz, "mic_pages") else 0,
+        speaker_pages=viz.speaker_pages() if viz is not None and hasattr(viz, "speaker_pages") else 0,
+        remote_device=cfg.ptt.evdev_device or "",
+        remote_devices=len(remote.get("devices") or ()) if remote.get("present") else None,
+        remote_alive=remote.get("thread_alive") if remote.get("present") else None,
+        remote_keys=str(remote.get("keys", "")),
+        link=link,
+        online=cloud.is_online(),
+        net_state=str(net.get("state", "")),
+        net_connection=str(net.get("connection", "") or ""),
+        offline_ok=offline_ok)
+
+
+def _devices(hub, st: dict) -> list[dict]:
+    from . import devices
+    return devices.build(_facts(hub, st))
+
+
 def build(hub) -> dict:
     cfg = hub.cfg
     st = {"ok": True, "boot": hub.boot, "now": round(time.time(), 3),
           "started": round(hub.started, 3), "seq": hub.seq, "hub_errors": hub.errors,
           "host": os.uname().nodename}
-    st["flags"] = _section(lambda: _flags(hub))
-    st["version"] = _section(lambda: {**version(), "changed_since_start": hub.code_changed()})
-    st["mode"] = _section(lambda: _mode(hub))
-    st["page"] = _section(lambda: _page(hub))
-    st["pron"] = _section(lambda: _pron(cfg))
-    st["show_tab"] = _section(lambda: _show_tab(hub))
-    st["remote"] = _section(lambda: _remote(hub))
-    st["link"] = _section(lambda: _link(hub))
-    st["backends"] = _section(lambda: _backends(hub))
-    st["canned"] = _section(lambda: _canned(hub))
-    st["clients"] = _section(lambda: _clients(hub))
-    st["system"] = _section(system)
-    st["service"] = _section(service)
-    st["rec"] = _section(hub.recording_stats)
-    st["config"] = _section(lambda: config_view(cfg))
+    timing: dict = {}
+
+    def sec(name, fn):
+        t0 = time.perf_counter()
+        st[name] = _section(fn)
+        timing[name] = round((time.perf_counter() - t0) * 1000, 1)
+
+    t_all = time.perf_counter()
+    sec("flags", lambda: _flags(hub))
+    sec("version", lambda: {**version(), "changed_since_start": hub.code_changed()})
+    sec("mode", lambda: _mode(hub))
+    sec("page", lambda: _page(hub))
+    sec("pron", lambda: _pron(cfg))
+    sec("show_tab", lambda: _show_tab(hub))
+    sec("remote", lambda: _remote(hub))
+    sec("link", lambda: _link(hub))
+    sec("backends", lambda: _backends(hub))
+    sec("canned", lambda: _canned(hub))
+    sec("clients", lambda: _clients(hub))
+    sec("system", system)
+    sec("service", service)
+    sec("rec", hub.recording_stats)
+    sec("config", lambda: config_view(cfg))
     st["token"] = bool(cfg.viz.token)
     if hub.actions is not None:
-        st["motor_lines"] = _section(hub.actions.planned_lines)
-        st["switches"] = _section(hub.actions.switches)
-    st["model"] = _section(lambda: _model(hub))
-    st["checks"] = _section(lambda: _checks(st, hub))
+        sec("motor_lines", hub.actions.planned_lines)
+        sec("switches", hub.actions.switches)
+    sec("model", lambda: _model(hub))
+    sec("devices", lambda: _devices(hub, st))
+    if isinstance(st["devices"], list):
+        from . import devices
+        st["summary"] = devices.summary(st["devices"])
+    sec("checks", lambda: _checks(st, hub))
     if isinstance(st["checks"], list):
         from . import debug_checks
         st["checks_summary"] = debug_checks.summary(st["checks"])
-    st["hints"] = _section(lambda: hints(st, hub))
+    sec("hints", lambda: hints(st, hub))
+    timing["total"] = round((time.perf_counter() - t_all) * 1000, 1)
+    st["timing"] = timing
     return st
 
 

@@ -175,3 +175,21 @@ def test_motors_run_later_by_the_route_delay(routed, tmp_path, monkeypatch):
     monkeypatch.setattr(link, "mouth_pulse", lambda pwm, ms: sent.append(time.monotonic()))
     conductor.perform(wav, [(0, 200, 50)], [], link, cfg, player=p)
     assert sent[0] - p.started_at >= 0.18
+
+
+def test_view_next_is_the_route_the_next_phrase_takes(routed, monkeypatch, tmp_path):
+    from fish_brain import hw
+    marks = hw.Marks(tmp_path / "hw.json")
+    monkeypatch.setattr(hw, "_marks", marks)
+    p, wav = routed(["alsa_output.usb-Jieli_x", "bluez_output.AA_BB"], viz=Viz(pages=1))
+    assert p.view()["next"] == "alsa_output.usb-*"
+    p.play(wav)
+    marks.failed = {"speaker"}                       # a mark shows at once, before a phrase
+    v = p.view()
+    assert v["route"] == "alsa_output.usb-*" and v["next"] == "bluez_output.*"
+    marks.failed = set()
+    FakePw.fail = {"alsa_output.usb-Jieli_x"}
+    p.play(wav)                                       # the USB route cools
+    assert p.view()["next"] == "bluez_output.*"
+    p2, _ = routed([], viz=Viz(pages=0))
+    assert p2.view()["next"] == "none"

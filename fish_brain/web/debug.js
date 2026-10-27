@@ -615,6 +615,10 @@
       return;
     }
     const hw = t.hw || {}, out = [];
+    // The USB rows first, from the device table (ADR 0021); hidden where they do not apply.
+    for (const d of Array.isArray(st.devices) ? st.devices : [])
+      if ((d.id === "usb_port" || d.id === "usb_devices") && d.level && d.level !== "off")
+        out.push(goRow(d.label, d.level, d.state + (d.reason ? " · " + d.reason : ""), d.fix || ""));
     const v = t.voice || {};
     out.push(goRow("Voice", v.state === "tainted" ? "bad" : "ok",
       v.state === "tainted" ? "licence warning" : v.state === "clean" ? "clean" : "not probed",

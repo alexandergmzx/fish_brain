@@ -949,6 +949,9 @@ class DebugActions:
         view = player.view() if callable(getattr(player, "view", None)) else {}
         target = view.get("sink_id") or "@DEFAULT_AUDIO_SINK@"
         ok = pw.set_volume(target, v)
+        if ok and view.get("sink_id") is not None:
+            from . import debug_state
+            debug_state.seed_volume(view["sink_id"], v)
         self.hub.emit("action", what="volume", result=f"{round(v * 100)} %" if ok else "failed")
         return (200, {"ok": True, "volume": round(v, 2)}) if ok else (500, {"ok": False, "error": "wpctl failed"})
 

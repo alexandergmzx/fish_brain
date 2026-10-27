@@ -369,3 +369,58 @@ def test_hints_name_a_disabled_fish_and_the_bench():
     out = debug_state.hints({"service": {"supervised": True, "enabled": False, "bench": True}}, Hub())
     texts = " ".join(h["text"] for h in out)
     assert "not enabled" in texts and "BENCH" in texts
+
+
+def test_state_carries_the_device_table_its_summary_and_the_timings(make_hub, monkeypatch, tmp_path):
+    from fish_brain import devices, hw
+    monkeypatch.setattr(hw, "_marks", hw.Marks(tmp_path / "hw.json"))
+    hub = make_hub()
+    st = hub.state()
+    assert [d["id"] for d in st["devices"]] == list(devices.IDS)
+    assert st["summary"]["level"] in ("ok", "warn", "bad") and "text" in st["summary"]
+    assert {"show_tab", "devices", "checks", "hints", "total"} <= set(st["timing"])
+    assert all(isinstance(v, float) for v in st["timing"].values())
+    assert "hw" in st["show_tab"] and "capture" in st["page"]      # the old keys stay beside it
+    # The board's role reaches the USB rows; a failing system section hides them.
+    monkeypatch.setattr(debug_state, "system", lambda: {"usb_role": "host [device]", "usb": []})
+    rows = devices.by_id(hub.state()["devices"])
+    assert rows["usb_port"]["level"] == "bad" and rows["usb_devices"]["level"] == "warn"
+    monkeypatch.setattr(debug_state, "system", lambda: 1 / 0)
+    rows = devices.by_id(hub.state()["devices"])
+    assert rows["usb_port"]["level"] == "off"
+
+
+def test_the_canned_rows_read_the_cache_once(make_hub, monkeypatch, tmp_path):
+    hub = make_hub()
+    hub.cfg.canned.cache_dir = tmp_path
+    (tmp_path / "welcome-abc123.wav").write_bytes(b"")
+    calls = []
+    real = os.listdir
+    monkeypatch.setattr(debug_state.os, "listdir", lambda d: calls.append(d) or real(d))
+    rows = {r["name"]: r["rendered"] for r in debug_state._canned(hub)}
+    assert rows["welcome"] is True and rows["goodbye"] is False
+    debug_state._canned(hub)
+    assert len(calls) == 1                            # cached for 10 s
+
+
+def test_the_volume_is_read_in_the_background_and_seeded_after_a_set():
+    import threading
+    gate = threading.Event()
+    calls = []
+
+    def read(sid):
+        calls.append(sid)
+        gate.wait(2)
+        return 0.7
+    sid = "test-sink-volume"
+    debug_state._vol.pop(sid, None)
+    assert debug_state.volume(sid, read=read) is None   # never waits on wpctl
+    assert debug_state.volume(sid, read=read) is None and len(calls) <= 1   # one read at a time
+    gate.set()
+    for _ in range(100):
+        if debug_state._vol[sid]["value"] is not None:
+            break
+        threading.Event().wait(0.01)
+    assert debug_state.volume(sid, read=read) == 0.7 and calls == [sid]
+    debug_state.seed_volume(sid, 0.3)
+    assert debug_state.volume(sid, read=read) == 0.3

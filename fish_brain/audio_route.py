@@ -226,11 +226,14 @@ class RoutedPlayer(Player):
     def view(self) -> dict:
         sinks = self.cache.sinks()
         route, node = self.route, self.node
+        # `next`: the route the next phrase takes now (a mark or a cooling shows at once);
+        # `route` keeps meaning the last one played.
+        nxt = next(iter(self._candidates()), None)
         if not route:                           # nothing played yet: the route the next takes
-            nxt = next(iter(self._candidates()), None)
             route, node = (nxt[0], nxt[1]) if nxt else ("none", "")
         live = next((s for s in sinks if s["name"] == node), None)
         return {"routes": list(self.cfg.routes), "route": route, "node": node,
+                "next": nxt[0] if nxt else "none",
                 "sink_id": live["id"] if live else None,
                 "cooling": sorted(r for r, t in self._cool.items() if t > self._clock()),
                 "sinks": [s["name"] for s in sinks],
