@@ -337,7 +337,11 @@ def test_clean_reading():
     assert clean_reading(good) == "Escorpio, de agua. Soñaste con dientes… ¿y la luna? Tu palabra mágica es Zumbalí."
     assert clean_reading("") is None and clean_reading(None) is None
     assert clean_reading("Vas al hospital.") is None
-    assert clean_reading("Uno. Dos. Tres. Cuatro. Cinco. Seis. Siete.") is None
+    assert clean_reading("Uno. Dos. Tres. Cuatro. Cinco. Seis. Siete.") == "Uno. Dos. Tres. Cuatro. Cinco. Siete."
+    long = " ".join(["Una frase larga de diez palabras para llenar el espacio aqui."] * 9) + " Tu palabra mágica es Zumbalí."
+    cut = clean_reading(long)
+    assert cut.endswith("Tu palabra mágica es Zumbalí.") and len(cut.split()) <= 90 and cut.startswith("Una frase")
+    assert clean_reading("Vas al hospital. " * 3 + "Tu palabra es Zumbalí.") is None     # banned: never trimmed away
     assert clean_reading("palabra " * 91) is None
     assert clean_reading("Cuatro frases.  Con   espacios. De sobra. Y fin.") == "Cuatro frases. Con espacios. De sobra. Y fin."
 

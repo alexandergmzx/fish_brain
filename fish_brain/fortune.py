@@ -835,8 +835,29 @@ def reading_problems(text: str) -> list[str]:
     return out
 
 
+def trim_reading(text: str) -> str:
+    """A reading over 6 sentences or 90 words cut to fit: its first sentences in order, as many
+    as fit with the last one (the moon and the magic word), which is always kept. A reading
+    that fits, or one that cannot be cut (one long sentence), comes back as it was."""
+    parts = [p.strip() for p in re.findall(r"[^.!?…]+[.!?…]+(?:\s+|$)|[^.!?…]+$", text or "")
+             if p.strip()]
+    if len(parts) < 2 or (len(parts) <= MAX_READING_SENTENCES
+                          and len(text.split()) <= MAX_READING_WORDS):
+        return text
+    last = parts[-1]
+    kept, words = [], len(last.split())
+    for p in parts[:-1]:
+        n = len(p.split())
+        if len(kept) + 2 > MAX_READING_SENTENCES or words + n > MAX_READING_WORDS:
+            break
+        kept.append(p)
+        words += n
+    return " ".join(kept + [last]) if kept else text
+
+
 def clean_reading(reply: str) -> str | None:
-    """The model's reading fit to be said: any bracket tag removed, whitespace collapsed; None
-    when it carries a banned word, more than 6 sentences or more than 90 words."""
-    text = strip_notes(reply or "")
+    """The model's reading fit to be said: any bracket tag removed, whitespace collapsed, a
+    long one trimmed (trim_reading); None when it carries a banned word or still does not fit
+    in 6 sentences and 90 words."""
+    text = trim_reading(strip_notes(reply or ""))
     return None if reading_problems(text) else text
