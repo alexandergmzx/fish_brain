@@ -4,7 +4,11 @@
 `run(st, hub)` returns rows `{group, name, status, detail, fix}` with status `pass`, `fail`,
 `warn` or `skip` (not applicable on this machine). Everything is read from the state the
 debug view already built, from plain files under /proc and /sys, and from a cache of what
-the sound server says. That cache is filled by a one-shot thread started when a debug page
+the sound server says. The rows about a part's presence (the USB port and devices, the
+remote's devices, the link, the internet) take their status from the device table
+(`st["devices"]`, ADR 0021) through `devices.check_status`, so a check never disagrees with
+the Status tab; the file facts (the port node, the router's socket, the sound rows) stay
+here. That cache is filled by a one-shot thread started when a debug page
 asks and the cache is older than `SOUND_TTL_S`: no request ever waits on `wpctl` or `pactl`.
 """
 from __future__ import annotations
@@ -158,8 +162,15 @@ def user_groups() -> set[str]:
 
 # ---- the rows -----------------------------------------------------------------------------------
 
-def run(st: dict, hub, root: str = "/", snd="ask") -> list[dict]:
+def run(st: dict, hub, root: str = "/", snd="ask", cards=None) -> list[dict]:
+    """`snd` and `cards` are passed in when the caller already read them (one read per
+    state build); "ask" and None read them here."""
+    from . import devices
     cfg = hub.cfg
+    dev = devices.by_id(st["devices"]) if isinstance(st.get("devices"), list) else {}
+
+    def level(part):
+        return (dev.get(part) or {}).get("level", "off")
     rows: list[dict] = []
 
     def row(group, name, status, detail="", fix=""):
@@ -177,19 +188,18 @@ def run(st: dict, hub, root: str = "/", snd="ask") -> list[dict]:
 
     # -- power and USB
     role = sysinfo.get("usb_role", "")
-    if role:
-        row("Power and USB", "The port is the USB host", ok("[host]" in role), role,
-            "change the USB-C cable: with some the board stays a USB device")
-    else:
-        row("Power and USB", "The port is the USB host", "skip", "no type-C port here")
+    row("Power and USB", "The port is the USB host", devices.check_status(level("usb_port")),
+        role or "no type-C port here",
+        "change the USB-C cable: with some the board stays a USB device")
     usb = sysinfo.get("usb") or []
-    row("Power and USB", "Devices on USB", "pass" if usb else "warn",
+    row("Power and USB", "Devices on USB", devices.check_status(level("usb_devices")),
         ", ".join(u["product"] for u in usb) or "none seen", "check the hub and its power")
 
     # -- speaker
     if snd == "ask":
         snd = sound()
-    cards = sound_cards(root)
+    if cards is None:
+        cards = sound_cards(root)
     play = [c for c in cards if c["playback"]]
     usb_play = [c for c in play if c["usb"]]
     row("Speaker", "A playback sound card is present", ok(play) if not board else ok(usb_play),
@@ -229,7 +239,8 @@ def run(st: dict, hub, root: str = "/", snd="ask") -> list[dict]:
 
     # -- microphone
     cap = [c for c in cards if c["capture"]]
-    phone = be.get("capture") == "browser"
+    mic = dev.get("mic") or {}
+    phone = mic.get("recorder") == "browser"          # a phone records the next hold
     row("Microphone", "A capture sound card is present", ok(cap) if not phone else ("pass" if cap else "warn"),
         ", ".join(f"{c['name'] or c['id']}{' (USB)' if c['usb'] else ''}" for c in cap) or "none",
         "plug the microphone (the remote's dongle) into the hub")
@@ -255,7 +266,7 @@ def run(st: dict, hub, root: str = "/", snd="ask") -> list[dict]:
             else "near silence: wrong source or too far away")
     else:
         row("Microphone", "The last recording has signal", "skip", "no recording yet")
-    if phone:
+    if phone or cfg.ptt.capture == "browser":
         tls = bool(cfg.viz.tls_cert and cfg.viz.tls_key)
         row("Microphone", "Phones can record (HTTPS)", ok(tls), "on" if tls else "off",
             "FISH_MIC_CAPTURE=browser needs FISH_VIZ_TLS_CERT and FISH_VIZ_TLS_KEY")
@@ -264,7 +275,9 @@ def run(st: dict, hub, root: str = "/", snd="ask") -> list[dict]:
     remote = st.get("remote") or {}
     if cfg.ptt.evdev_device:
         devs = remote.get("devices") or []
-        row("Remote", "Devices read", ok(devs), f"{len(devs)}: " + ", ".join(
+        rem = dev.get("remote") or {}
+        row("Remote", "Devices read", devices.check_status(rem.get("level", "off")) if rem
+            else ok(devs), f"{len(devs)}: " + ", ".join(
             d["path"].rsplit("/", 1)[-1] for d in devs) if devs else "none",
             "dongle unplugged, asleep or unreadable: press a key on it, check the hub")
         nodes = input_nodes(root)
@@ -289,11 +302,15 @@ def run(st: dict, hub, root: str = "/", snd="ask") -> list[dict]:
         row("Link", "The port exists", ok(exists),
             f"{port}" + (f" mode {oct(p.stat().st_mode)[-3:]}" if exists else " missing"),
             "the MCU's serial node is gone: cable, or the board did not boot its MCU side")
-        row("Link", "Attached", ok(link.get("attached")), link.get("desc", ""),
+        # Not attached or not answering: the motors row's level says how much it matters
+        # (bad on its own, warn when the bench or a mark already set the motors aside).
+        motors = level("motors") if "motors" in dev else "bad"
+        row("Link", "Attached", "pass" if link.get("attached") else devices.check_status(motors),
+            link.get("desc", ""),
             "the fish talks without motors and retries; see the [link] lines in the log")
         seen = link.get("mcu_alive") is True or link.get("rx_bytes", 0) > 0
-        row("Link", "The MCU answers", "fail" if link.get("health") != "ok" else
-            "pass" if seen else "warn",
+        row("Link", "The MCU answers", devices.check_status(motors) if link.get("health") != "ok"
+            else "pass" if seen else "warn",
             f"health {link.get('health')}, {link.get('rx_bytes', 0)} bytes back"
             + ("" if seen else " (nothing sent yet: press Ping in the Motors tab)"),
             "LED4 must blink green; try Ping in the Motors tab")
@@ -323,8 +340,13 @@ def run(st: dict, hub, root: str = "/", snd="ask") -> list[dict]:
         if needed:
             row("Voice and cloud", f"{name} is set", ok(present), "present" if present else "MISSING",
                 "put it in .env, then restart")
-    row("Voice and cloud", "Internet", ok(be.get("online") is not False),
-        "online" if be.get("online") is not False else "OFFLINE", "the hotspot's mobile data")
+    net = dev.get("internet")
+    if net:
+        row("Voice and cloud", "Internet", devices.check_status(net["level"]), net["state"],
+            net["fix"] or "the hotspot's mobile data")
+    else:
+        row("Voice and cloud", "Internet", ok(be.get("online") is not False),
+            "online" if be.get("online") is not False else "OFFLINE", "the hotspot's mobile data")
 
     # -- service
     row("Service", "Runs as a systemd service", "pass" if svc.get("supervised") else "skip",

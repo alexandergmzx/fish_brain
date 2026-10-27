@@ -211,7 +211,7 @@ def _remote(hub) -> dict:
 def _backends(hub) -> dict:
     cfg, convo = hub.cfg, hub.convo
     out = {"stt": cfg.stt.backend, "tts": cfg.tts.backend, "llm_profile": cfg.llm.profile,
-           "llm_model": cfg.llm.model, "capture": cfg.ptt.capture,
+           "llm_model": cfg.llm.model,
            "mic_source": cfg.ptt.source, "mic_device": _plain(cfg.ptt.device),
            "speaker": _plain(cfg.ptt.speaker)}
     if convo is not None:
@@ -268,8 +268,7 @@ def _clients(hub) -> dict:
     out = {"debug_pages": hub.viewers(), "dropped": hub.counters["page_dropped"],
            "evicted": hub.counters["page_evicted"]}
     if viz is not None:
-        out.update({"pages": len(viz._subscribers), "max": viz.MAX_SUBSCRIBERS,
-                    "mic_pages": viz.mic_pages()})
+        out.update({"pages": len(viz._subscribers), "max": viz.MAX_SUBSCRIBERS})
     return out
 
 
@@ -301,9 +300,9 @@ def _model(hub) -> dict:
             "badge_prompt": cfg.reading.badge_prompt}
 
 
-def _checks(st: dict, hub) -> list:
+def _checks(st: dict, hub, snd="ask", cards=None) -> list:
     from . import debug_checks
-    return debug_checks.run(st, hub)
+    return debug_checks.run(st, hub, snd=snd, cards=cards)
 
 
 def _flags(hub) -> dict:
@@ -334,7 +333,6 @@ def _page(hub) -> dict:
             # The silence end (0 = off) and its level: the phone's microphone follows them.
             "silence_end_s": float(cfg.ptt.silence_end_s),
             "quiet_rms": float(cfg.ptt.quiet_rms),
-            "capture": cfg.ptt.capture,
             "tls_port": cfg.viz.tls_port if tls is not None else None,
             "tls_error": getattr(viz, "tls_error", None) if viz is not None else None}
 
@@ -443,13 +441,6 @@ def _show_tab(hub) -> dict:
         out["logger"] = time.time() - soak.stat().st_mtime < 30
     except OSError:
         out["logger"] = False
-    from . import hw
-    out["hw"] = hw.marks().view()
-    out["capture"] = cfg.ptt.capture
-    from . import ptt
-    out["mic_dead"] = ptt.mic_dead(cfg.ptt)
-    viz = getattr(hub, "viz", None)
-    out["phone_mics"] = viz.mic_pages() if viz is not None else 0
     return out
 
 
@@ -464,9 +455,10 @@ def _dict(value) -> dict:
     return value if isinstance(value, dict) and "error" not in value else {}
 
 
-def _facts(hub, st: dict):
+def _facts(hub, st: dict, cards=None):
     """The device table's inputs (devices.Facts), read once per build: mostly from the
-    sections already built, plus the ALSA cards and the microphone's health."""
+    sections already built, plus the ALSA cards (read by `build`, shared with the checks)
+    and the microphone's health."""
     from . import cloud, devices, hw
     from .config import STT_PROFILES
     cfg, convo = hub.cfg, getattr(hub, "convo", None)
@@ -475,8 +467,9 @@ def _facts(hub, st: dict):
     audio, net = _dict(tab.get("audio")), _dict(tab.get("net"))
     remote, link = _dict(st.get("remote")), _dict(st.get("link"))
     flags, svc, be = _dict(st.get("flags")), _dict(st.get("service")), _dict(st.get("backends"))
-    from . import debug_checks
-    cards = debug_checks.sound_cards()
+    if cards is None:
+        from . import debug_checks
+        cards = debug_checks.sound_cards()
     # The board microphone's health: its PipeWire source and the zero takes (ptt.mic_dead).
     from . import ptt
     zeroed = ptt.mic_zeroed()
@@ -522,9 +515,9 @@ def _facts(hub, st: dict):
         offline_ok=offline_ok)
 
 
-def _devices(hub, st: dict) -> list[dict]:
+def _devices(hub, st: dict, cards=None) -> list[dict]:
     from . import devices
-    return devices.build(_facts(hub, st))
+    return devices.build(_facts(hub, st, cards))
 
 
 def build(hub) -> dict:
@@ -560,13 +553,24 @@ def build(hub) -> dict:
         sec("motor_lines", hub.actions.planned_lines)
         sec("switches", hub.actions.switches)
     sec("model", lambda: _model(hub))
-    sec("devices", lambda: _devices(hub, st))
+    # The ALSA cards and the sound server's cached answer, read once for the table and the checks.
+    from . import debug_checks
+    t0 = time.perf_counter()
+    try:
+        cards = debug_checks.sound_cards()
+    except Exception:
+        cards = None
+    try:
+        snd = debug_checks.sound()
+    except Exception:
+        snd = None
+    timing["sound"] = round((time.perf_counter() - t0) * 1000, 1)
+    sec("devices", lambda: _devices(hub, st, cards))
     if isinstance(st["devices"], list):
         from . import devices
         st["summary"] = devices.summary(st["devices"])
-    sec("checks", lambda: _checks(st, hub))
+    sec("checks", lambda: _checks(st, hub, snd, cards))
     if isinstance(st["checks"], list):
-        from . import debug_checks
         st["checks_summary"] = debug_checks.summary(st["checks"])
     sec("hints", lambda: hints(st, hub))
     timing["total"] = round((time.perf_counter() - t_all) * 1000, 1)
@@ -596,9 +600,6 @@ def hints(st: dict, hub) -> list[dict]:
                 f"{p['key']} arrived {n} time(s) from '{p['name']}' while the fish listens for "
                 f"{keys}: the remote sends another key for that button.",
                 f"FISH_PTT_KEY={keys.replace('+', ',')},{p['key']} in .env, then restart")
-    if remote.get("present") and not remote.get("devices"):
-        add("bad", "inputs", "No remote: its dongle is unplugged, asleep or unreadable.",
-            "press a key on it; check the hub; the user must be in the input group")
     taps = [p for p in hub.recent("press", 6) if p.get("configured")][-3:]
     if len(taps) == 3 and all(p["held_s"] < 0.2 for p in taps):
         add("warn", "inputs", f"{taps[-1]['key']} only taps ({taps[-1]['held_s']} s each): "
@@ -640,14 +641,11 @@ def hints(st: dict, hub) -> list[dict]:
     if link.get("muted"):
         add("warn", "switches", "The motors are muted: every motor line is dropped.",
             "Switches tab: Motors → on (armed)")
-    if link.get("health") == "off":
-        add("bad", "motors", f"Voice only: the motor link is not attached ({link.get('desc')}).",
-            "check the port and the router; it retries by itself")
-    elif link.get("health") == "silent":
-        add("bad", "motors", f"The MCU is silent: {link.get('unanswered', '?')} lines "
-            "unanswered.", "LED4 must blink green; look at the bytes back in Motors")
-    if be.get("online") is False:
-        add("bad", "cloud", "No internet: cloud stages will fail.", "check the hotspot's data")
+    # Presence and failure of the parts: one hint per bad row of the device table (ADR 0021).
+    from . import devices
+    table = st.get("devices")
+    if isinstance(table, list):
+        out.extend(devices.hints_for(table))
     for name, present in (be.get("keys") or {}).items():
         if not present and not (name != "OPENAI_API_KEY" and be.get("echo")
                                 and name not in (be.get("stt_keys") or ())):
@@ -673,8 +671,4 @@ def hints(st: dict, hub) -> list[dict]:
         if r["status"] == "fail" and r["group"] in ("Speaker", "Microphone") \
                 and r["name"] != "The last recording has signal":
             add("bad", "checks", f"{r['group']}: {r['name']} — {r['detail']}.", r["fix"])
-    svc = st.get("system") or {}
-    if svc.get("usb_role") and "[host]" not in svc["usb_role"]:
-        add("bad", "board", "The board is a USB device, not a host: nothing on the hub is seen.",
-            "change the USB-C cable")
     return out

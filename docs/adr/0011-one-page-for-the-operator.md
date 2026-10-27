@@ -67,6 +67,11 @@ visitor screen) and ADR 0009 (the debug view is no longer desktop-only; it is th
   on any other network.
 - The page polls `/debug/state` (33 KB, 75 ms on the board) every 5 s while shown, every 20 s
   when hidden; the sound checks behind it run on the same cadence.
+  *Amended 2026-10-27:* by then the state was 59 KB and 1.1 to 1.3 s on the board
+  ([results](../results/2026-10-27-fortune-on-the-board.md)). It now carries the device table,
+  its summary and its own `timing` ([0021](0021-one-device-table.md)); the page reads parts only
+  from the table, and a stale state keeps its rows, dimmed, under "No answer from the hat for
+  N s". The size and time after that change are not measured yet.
 - Over plain http the page works, but the screen may sleep and there is no phone microphone;
   the band says so and links to the https address.
 - `/face`, `fish.js`, `fish.css` and `index.html` are kept until after the fair; the browser

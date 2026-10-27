@@ -32,6 +32,10 @@ failed playback still animated the phone, what the MCU answered was thrown away.
    microphone check, a speaker test with a phrase that is already rendered (never a
    synthesis, nothing to the motors), and, **armed on the page for 60 s**, motor test pulses
    and a restart of the service.
+   *Amended 2026-10-27 ([0021](0021-one-device-table.md)):* the checks about a part's presence
+   (the USB host role and devices, the remote's devices, the link attached and the MCU
+   answering, internet) and the hints about a failed part take their status from the device
+   table, one hint per bad row; the checks no longer decide presence on their own.
 6. A motor test takes no number from the page. Its lines are built from the configuration and
    validated before they are sent: `MOUTH`, `NECK` or `TAIL` with one or two `<pwm> <ms>`
    pairs, 1.5 s at most, never a single integer (a held drive). The mouth test is the open
@@ -84,5 +88,9 @@ a phrase's close pulse included; `STOP` goes out when muting.
   journal, and the page says so. History does not survive a restart.
 - Cost on the board is not measured yet (`docs/results/` when it is): each hook is one append
   under one lock; the board is sampled every five seconds only while a debug page is open.
+  *Amended 2026-10-27:* `GET /debug/state` took 1.1 to 1.3 s on the board that day
+  ([results](../results/2026-10-27-fortune-on-the-board.md)); since
+  [0021](0021-one-device-table.md) the state carries its own cost (`timing`, milliseconds per
+  section) and the slow reads are cached; the time after that change is not measured yet.
 - The assistant tests on the mock link only and never calls the motor test, the speaker test
   or the restart against the board or the laptop fish. The first real pulse is the owner's.

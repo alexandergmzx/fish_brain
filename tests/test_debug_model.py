@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fish_brain import cloud, debug, debug_checks, llm, reading, stt, tts
+from fish_brain import cloud, debug, debug_checks, devices, llm, reading, stt, tts
 from fish_brain.config import Config, LLMConfig, STTConfig
 
 from test_reading import GOOD, JPEG, FakeClient as BadgeClient, wire
@@ -181,11 +181,17 @@ SND = {"tool": "wpctl", "answered": True, "age_s": 1.0,
        "sources": ["alsa_input.remote"]}
 
 
-def rows(hub, root, snd, **st):
+def rows(hub, root, snd, facts=None, **st):
+    """The checks over a state with its device table (ADR 0021): the table is derived from
+    the same system and link facts unless `facts` says otherwise."""
     base = {"system": {"usb_role": "[host] device", "usb": [{"id": "x", "product": "Hub"}]},
             "backends": {"player": "SounddevicePlayer", "online": True, "keys": {}},
             "flags": {}, "service": {}, "link": {"mock": True}, "remote": {}, "canned": []}
     base.update(st)
+    f = {"usb_role": base["system"].get("usb_role", ""),
+         "usb_products": [u.get("product", "") for u in base["system"].get("usb") or ()],
+         "link": base["link"], "player": "SounddevicePlayer", **(facts or {})}
+    base["devices"] = devices.build(devices.Facts(**f))
     return {(r["group"], r["name"]): r for r in debug_checks.run(base, hub, root, snd)}
 
 
@@ -249,3 +255,46 @@ def test_a_hanging_sound_server_never_holds_a_request(monkeypatch):
             break
         time.sleep(0.01)
     assert debug_checks.sound()["answered"] is True
+
+
+def test_the_presence_checks_follow_the_device_table(hub, tmp_path):
+    root = board_root(tmp_path)
+    hub.cfg.ptt.evdev_device = "name:XING WEI"
+    one = {"keys": "KEY_ENTER", "devices": [{"path": "/dev/input/event3", "name": "R"}]}
+    r = rows(hub, root, SND, facts={"remote_device": "name:XING WEI", "remote_devices": 1,
+                                    "remote_alive": True}, remote=one)
+    assert r[("Remote", "Devices read")]["status"] == "pass"
+    # A marked remote is set aside, not failed: the page's hold remains.
+    r = rows(hub, root, SND, facts={"remote_device": "name:XING WEI", "remote_devices": 1,
+                                    "marks": frozenset({"remote"})}, remote=one)
+    assert r[("Remote", "Devices read")]["status"] == "warn"
+    r = rows(hub, root, SND, facts={"remote_device": "name:XING WEI", "remote_devices": 0},
+             remote={"devices": []})
+    assert r[("Remote", "Devices read")]["status"] == "warn"
+    # A detached link fails; on the bench it is a warning.
+    off = {"kind": "router", "health": "off", "attached": False, "desc": "router: no port"}
+    assert rows(hub, root, SND, link=off)[("Link", "Attached")]["status"] == "fail"
+    bench = rows(hub, root, SND, facts={"bench": True}, link=off)
+    assert bench[("Link", "Attached")]["status"] == "warn"
+    assert bench[("Link", "The MCU answers")]["status"] == "warn"
+    # Offline: bad with a cloud stage in the turn path, a warning when the script covers it.
+    net = rows(hub, root, SND, facts={"online": False})[("Voice and cloud", "Internet")]
+    assert net["status"] == "fail" and net["detail"].startswith("offline")
+    net = rows(hub, root, SND, facts={"online": False, "offline_ok": True})
+    assert net[("Voice and cloud", "Internet")]["status"] == "warn"
+    # The laptop: no type-C port, so the USB rows do not apply.
+    lap = rows(hub, root, SND, system={})
+    assert lap[("Power and USB", "The port is the USB host")]["status"] == "skip"
+    assert lap[("Power and USB", "Devices on USB")]["status"] == "skip"
+
+
+def test_the_capture_card_check_is_lenient_when_a_phone_records(hub, tmp_path):
+    root = str(tmp_path / "empty")
+    (tmp_path / "empty/proc/asound").mkdir(parents=True)
+    (tmp_path / "empty/proc/asound/cards").write_text("")
+    r = rows(hub, root, SND)
+    assert r[("Microphone", "A capture sound card is present")]["status"] == "fail"
+    hub.cfg.ptt.capture = "browser"
+    r = rows(hub, root, SND, facts={"capture": "browser", "mic_pages": 1})
+    assert r[("Microphone", "A capture sound card is present")]["status"] == "warn"
+    assert ("Microphone", "Phones can record (HTTPS)") in r

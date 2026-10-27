@@ -22,6 +22,14 @@ on 2026-10-13 a microphone that never started froze the fish.
    a microphone error, never a hang. `FISH_MIC_CAPTURE=auto`: after two takes of exact zeros
    (or the source gone) the remote's presses record on a phone that has its microphone on.
 
+*Amended 2026-10-27 ([0021](0021-one-device-table.md)):* the route a phrase takes (point 1)
+and who records the next hold (point 4) are decided by the device table's functions,
+`devices.speaker_routes` (cooling skipped, a marked USB speaker skipped, `phone` only with an
+armed page) and `devices.recorder` (a phone with `browser`, with the microphone marked, or with
+`auto` and the board's microphone out; the board when no phone is ready). The marks are read
+there; the configured capture is never rewritten. The Status tab's speaker, microphone and
+phone rows show the same decision (`audio.next`, `mic.recorder`).
+
 ## Alternatives
 
 **sounddevice with time limits:** a stuck PortAudio call cannot be cleared inside the process.

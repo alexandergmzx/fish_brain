@@ -1363,6 +1363,9 @@
       ["systemd service", svc.supervised ? svc.unit : "no (started by hand: nothing would restart it)"],
       ["code", ((st.version || {}).branch || "") + " " + ((st.version || {}).commit || "") + ((st.version || {}).changed_since_start ? "  — CHANGED ON DISK SINCE START" : ""), (st.version || {}).changed_since_start ? "bad-text" : ""],
       ["faults swallowed by the debug hooks", st.hub_errors ?? 0, st.hub_errors ? "bad-text" : ""],
+      // What this state cost to build (ms per section, the slowest first): ADR 0021's measure.
+      ["state built in", st.timing && st.timing.total !== undefined ? st.timing.total + " ms · " + Object.entries(st.timing)
+        .filter(([k]) => k !== "total").sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => k + " " + v).join(", ") : ""],
     ]);
     const armed = performance.now() < S.armedUntil;
     $("restartBtn").disabled = !armed || !svc.supervised;

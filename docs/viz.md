@@ -216,7 +216,13 @@ EOF (`--text`), or Ctrl-C quit.
   the page records the turn with the phone's own microphone and uploads it; the board's
   microphone is no longer opened for a turn. It needs `--viz` (the program exits 78
   without it) and a secure context on the phone: the HTTPS listener (`FISH_VIZ_TLS_*`), or
-  `localhost` on the laptop. `/status.mic_capture` tells the page which mode is on.
+  `localhost` on the laptop. `/status.mic_capture` tells the page which mode is configured
+  (the old face reads it). Who records the next hold is decided in one place on the host,
+  `devices.recorder(capture, mic marked, board microphone out, mic pages)` (ADR 0021): a phone
+  is wanted with `browser`, with the microphone marked failed on the operator's Settings tab,
+  or with `auto` once the board's microphone is out (its source gone or two takes of exact
+  zeros); with no page ready the board records. The operator's page reads the answer from
+  `/debug/state` (`devices` → `mic.recorder`, `phone_mic`), never from the configuration.
 - **The gate**: a button `Activar micrófono` (`#micGate`: above the talk target on the main surface in every view, because it comes
   back whenever the phone slept) appears only in browser mode and only when
   `window.isSecureContext` and `navigator.mediaDevices` exist. Its `click` handler (a tap
@@ -275,8 +281,8 @@ EOF (`--text`), or Ctrl-C quit.
   every 20 s as a keep-alive; `ready: false` when the microphone is dropped, on
   `visibilitychange` hidden and on `pagehide` (a beacon, so the query form of the token).
   The host keeps the ready pages with their last time (`VizServer.mic_pages()`; an entry
-  older than 45 s is dropped; `/status.mic_pages`). Before every wait the turn loop checks
-  `mic_pages() > 0`: if so the remote's source is marked `relay` and `ptt.record_multi`
+  older than 45 s is dropped; `/status.mic_pages`). Before every wait the turn loop asks
+  `devices.recorder` (above); when a phone records, the remote's source is marked `relay` and `ptt.record_multi`
   only polls it, handing each edge to `viz.relay_ptt`, which publishes
   `{"type": "ptt", "held": true, "source": "remote"}` and `{"type": "ptt", "held": false,
   "source": "remote"}`; the board's microphone is never opened for it. The page, with its
@@ -305,6 +311,34 @@ EOF (`--text`), or Ctrl-C quit.
   sign that cannot be pressed (`html.notalk`), with "¡Pregúntame algo! / Mantén apretado OK en
   el control y habla" as its idle text; the state words still show on it. `?talk=1` keeps the
   hold-to-talk button on a device that has no remote at hand (the laptop as a spare).
+
+## The phone as the last speaker (2026-10-26, [ADR 0016](adr/0016-speaker-and-microphone-routes.md))
+
+With `phone` among `FISH_AUDIO_ROUTES` (the board: `alsa_output.usb-*,bluez_output.*,phone`) the
+operator's page can play the hat's voice when no sink is left. Both routes below are on the
+page server's guarded list (the token rule, JSON bodies); neither reaches `/status` or `/face`.
+
+- **`POST /speakerstate {"page": <id>, "ready": true|false}`**: the page can play (its sound
+  unlocked by a tap on "Use this phone as a speaker") or no longer can. `ready: true` after the
+  tap and every 10 s while the page is visible; `ready: false` when the switch is turned off and
+  `ready` follows visibility. The host keeps the armed pages with their last time
+  (`VizServer.speaker_pages()`; an entry older than 25 s is dropped). `200 {ok}`; `400` without
+  a page id.
+- **The `play` event**: `{"type": "play", "id": <n>, "audio": "/audio/<token>"}`, published by
+  `VizServer.phone_play` when the route chosen for a phrase is `phone` (`devices.speaker_routes`:
+  a cooling route and a marked USB speaker skipped, `phone` only with an armed page). The page
+  fetches the WAV with its token, decodes it and starts it at once. `{"type": "play_stop"}` stops
+  it (the host's `PhonePlayer.stop`).
+- **`POST /speaker/started {"id": <n>, "in_ms": <ms>}`**: the page's sound for play `id` started
+  `in_ms` ago (0 today: it answers as it starts; clamped to 0..5000). The host takes that time
+  as the phrase's start, so the motors follow the phone's sound. `200 {ok}`; `{"ok": false,
+  "late": true}` when the host stopped waiting (2.5 s: the route then counts as failed, cools
+  for `FISH_AUDIO_RETRY_S` and the same phrase goes to the next route); `400` without a number.
+- **On the operator's page**: the Settings tab's phone-speaker line reads the device table's
+  `phone_speaker` row (`pages`, `in_use`: "on: the hat speaks through a phone now", "off here ·
+  2 phones armed", a warning when no other speaker is left and none is armed). Marking the USB
+  speaker failed arms this phone's speaker; clearing the mark disarms it only when that tap armed
+  it (ADR 0021).
 
 ## The visit and the fortune on the operator's page (2026-10-27)
 

@@ -35,6 +35,12 @@ The switches still reset at a restart (only the network pin is a file).
   visit, the hat repeats the visitor (echo) instead of an error line.
 - Measured on the board, 2026-10-26: with the USB speaker marked failed, one scripted visit
   played all 18 phrases on a stand-in phone page.
+- *Amended 2026-10-27 ([0021](0021-one-device-table.md)):* a mark is read where each decision is
+  made (the device table's functions), not by rewriting the configuration; a marked remote's
+  presses are ignored. The go / no-go rows are the table's rows (the USB port and devices first,
+  on the board), with "Ready, with a warning: …" for an amber one. A tap on a mark waits for the
+  board's answer; clearing it turns the phone's speaker or microphone off only when that tap
+  turned it on; `#hwNote` names what is detected failed but not marked.
 
 ## Amendment, 2026-10-27: three tabs
 

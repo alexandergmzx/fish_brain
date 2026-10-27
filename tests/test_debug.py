@@ -326,7 +326,7 @@ def test_the_state_tells_the_page_about_the_visit_and_the_reader(make_hub):
     hub.cfg.visit.enabled = True
     page = hub.state()["page"]
     assert page["visit_enabled"] and page["visit"]["first"] == "Ana" and page["reading"]
-    assert page["tls_port"] is None and page["capture"] == hub.cfg.ptt.capture
+    assert page["tls_port"] is None and "capture" not in page       # the device table's mic says it
     assert page["silence_end_s"] == 0.0 and page["quiet_rms"] == 0.04     # off on the laptop
     hub.cfg.ptt.silence_end_s = 10.0
     assert hub.state()["page"]["silence_end_s"] == 10.0
@@ -380,7 +380,12 @@ def test_state_carries_the_device_table_its_summary_and_the_timings(make_hub, mo
     assert st["summary"]["level"] in ("ok", "warn", "bad") and "text" in st["summary"]
     assert {"show_tab", "devices", "checks", "hints", "total"} <= set(st["timing"])
     assert all(isinstance(v, float) for v in st["timing"].values())
-    assert "hw" in st["show_tab"] and "capture" in st["page"]      # the old keys stay beside it
+    # The old keys are gone: the page reads the table (ADR 0021).
+    assert not {"hw", "mic_dead", "phone_mics", "capture"} & set(st["show_tab"])
+    assert "capture" not in st["page"] and "capture" not in st["backends"]
+    assert "mic_pages" not in st["clients"]
+    mic = devices.by_id(st["devices"])["mic"]
+    assert mic["capture"] == hub.cfg.ptt.capture and mic["recorder"] == "host"
     # The board's role reaches the USB rows; a failing system section hides them.
     monkeypatch.setattr(debug_state, "system", lambda: {"usb_role": "host [device]", "usb": []})
     rows = devices.by_id(hub.state()["devices"])
@@ -424,3 +429,27 @@ def test_the_volume_is_read_in_the_background_and_seeded_after_a_set():
     assert debug_state.volume(sid, read=read) == 0.7 and calls == [sid]
     debug_state.seed_volume(sid, 0.3)
     assert debug_state.volume(sid, read=read) == 0.3
+
+
+def test_hints_for_the_parts_come_from_the_table_once(make_hub, monkeypatch, tmp_path):
+    """A bad row gives one hint on its tab; the old per-part hints are gone."""
+    from fish_brain import hw
+    monkeypatch.setattr(hw, "_marks", hw.Marks(tmp_path / "hw.json"))
+    monkeypatch.setattr(debug_state, "system", lambda: {"usb_role": "host [device]", "usb": []})
+    hub = make_hub()
+    hints = hub.state()["hints"]
+    usb = [h for h in hints if h["text"].startswith("USB port")]
+    assert len(usb) == 1 and usb[0]["panel"] == "board" and usb[0]["level"] == "bad"
+    assert usb[0]["fix"] and "not a host" not in repr(hints)
+    checks = {(r["group"], r["name"]): r for r in hub.state()["checks"]}
+    assert checks[("Power and USB", "The port is the USB host")]["status"] == "fail"
+    assert checks[("Power and USB", "Devices on USB")]["status"] == "warn"
+
+
+def test_the_sound_cards_are_read_once_per_state(make_hub, monkeypatch):
+    from fish_brain import debug_checks
+    calls = []
+    monkeypatch.setattr(debug_checks, "sound_cards", lambda *a, **k: calls.append(1) or [])
+    hub = make_hub()
+    st = hub.state()
+    assert len(calls) == 1 and isinstance(st["checks"], list) and "sound" in st["timing"]
