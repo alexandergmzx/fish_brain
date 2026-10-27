@@ -841,7 +841,8 @@ cmd_stt() {
     say "  FISH_STT_BACKEND=canary"
     say "  FISH_STT_MODEL_DIR=$dir"
     say "  then: systemctl --user restart fish-brain"
-    say "  FISH_STT_LONG=groq          (optional: recordings over 6 s go online first)"
+    say "  FISH_STT_ONLINE=openai      (optional: every recording goes online first, Canary when offline)"
+    say "  FISH_STT_LONG=groq          (optional: recordings over 6 s go here next)"
     say "  A recording over 6 s goes to faster-whisper (FISH_STT_MODEL) when nothing online"
     say "  answers, so keep that model fetched: $PY -m fish_brain.app --stt local --prefetch-stt"
 }

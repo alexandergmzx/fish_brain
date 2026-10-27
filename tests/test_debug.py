@@ -197,6 +197,33 @@ def test_state_never_carries_a_secret_and_survives_a_failing_section(make_hub, m
     assert rows[("stt", "backend")]["env"] == "FISH_STT_BACKEND"
 
 
+def test_backends_name_the_speech_routes_keys_and_last_route_without_building(make_hub,
+                                                                             monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    hub = make_hub()
+    hub.cfg.stt.backend, hub.cfg.stt.online_first, hub.cfg.stt.long_online = (
+        "canary", ("openai",), ("groq",))
+
+    class Convo:
+        echo, sources, _llm, player, button = True, [], None, None, None
+        _stt = type("T", (), {"last": {"service": "openai", "route": "online first",
+                                       "seconds": 0.9}})()
+
+        def ptt_summary(self): return "web"
+
+        @property
+        def stt(self): raise AssertionError("the state never builds a transcriber")
+    hub.attach(convo=Convo())
+    be = hub.state()["backends"]
+    assert be["stt_online"] == ["openai"] and be["stt_long"] == ["groq"]
+    assert be["stt_keys"] == ["GROQ_API_KEY", "OPENAI_API_KEY"]
+    assert be["stt_last"] == {"service": "openai", "route": "online first", "seconds": 0.9}
+    assert be["keys"]["GROQ_API_KEY"] is False
+    hub.cfg.stt.backend = "local"                     # the lists are canary's alone
+    be = hub.state()["backends"]
+    assert be["stt_online"] == [] and be["stt_keys"] == []
+
+
 def test_every_secret_looking_config_field_is_classified():
     """A new field whose name smells of a secret must be put in NOT_SHOWN or REVIEWED."""
     assert debug_state.unclassified_fields(Config()) == []

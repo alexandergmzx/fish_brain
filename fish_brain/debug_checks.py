@@ -317,7 +317,8 @@ def run(st: dict, hub, root: str = "/", snd="ask") -> list[dict]:
         row("Voice and cloud", "Canned phrases rendered", "pass" if done == len(canned) else "warn",
             f"{done} of {len(canned)}", "they render at start; with a cloud voice that needs the key and the internet")
     for name, present in (be.get("keys") or {}).items():
-        needed = (name == "OPENAI_API_KEY" and (cfg.tts.backend == "openai" or cfg.stt.backend == "openai")) \
+        needed = (name == "OPENAI_API_KEY" and cfg.tts.backend == "openai") \
+            or name in (be.get("stt_keys") or ()) \
             or (name == cfg.llm.api_key_env and not be.get("echo"))
         if needed:
             row("Voice and cloud", f"{name} is set", ok(present), "present" if present else "MISSING",

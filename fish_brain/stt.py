@@ -227,13 +227,24 @@ class Transcriber:
         return _finish(sent, t0, text)
 
 
+# The longest a service Canary calls may take to answer before the clip goes on to the next
+# route (estimate, 2026-10-27: gpt-transcribe answered in 0.6 to 1.5 s on his takes, so 4 s
+# leaves room; a fall-back then costs at most this plus Canary inside the 12 s turn budget).
+ONLINE_TIMEOUT_S = 4.0
+
+
 class CanaryTranscriber:
     """NVIDIA Canary-180m-flash through sherpa-onnx, on this machine: the language is told,
     not guessed, and the time follows the clip (about 2.5 s for a 4 s turn on the UNO Q,
     where `small` takes 20). Its library and its model are only needed when this backend is
-    chosen. It is for short phrases: its time grows faster than the clip, so a recording
-    over `canary_long_s` goes to the services in `long_online` while the machine is online,
-    and to the local model on a short window when none of them answers."""
+    chosen.
+
+    Every recording goes first to the services in `online_first` while the machine is
+    online; Canary hears it when none of them answers. A recording over `canary_long_s`
+    then goes to the services in `long_online` (a name already tried is not asked twice),
+    and to the local model on a short window when none of them answers: Canary's time grows
+    faster than the clip. Both lists are read from `cfg` at every call, so a switch or an act
+    that changes them is followed at once; one client per service is kept."""
 
     FILES = ("encoder", "decoder")
 
@@ -243,13 +254,16 @@ class CanaryTranscriber:
         self._recognizer = None
         self._lock = threading.Lock()
         self._long = Transcriber(cfg)            # the long recordings, when nothing online answers
-        unknown = [name for name in cfg.long_online if name not in STT_PROFILES]
-        if unknown:
-            raise ValueError(f"FISH_STT_LONG: unknown service {unknown[0]!r} "
-                             f"(choices: {', '.join(STT_PROFILES)})")
-        self._online = [(name, CloudTranscriber(replace(cfg, backend=name, cloud_model="")))
-                        for name in cfg.long_online]
+        for env, names in (("FISH_STT_ONLINE", cfg.online_first), ("FISH_STT_LONG", cfg.long_online)):
+            unknown = [name for name in names if name not in STT_PROFILES]
+            if unknown:
+                raise ValueError(f"{env}: unknown service {unknown[0]!r} "
+                                 f"(choices: {', '.join(STT_PROFILES)})")
+        self._services: dict[str, CloudTranscriber] = {}
         self._rest_until: dict[str, float] = {}  # a service that failed is left alone a while
+        # The last recording's route and seconds, for the debug page: the service's name,
+        # "canary" or "local".
+        self.last: dict | None = None
         if not cfg.model_dir:
             raise ValueError("STT backend 'canary' needs FISH_STT_MODEL_DIR (the folder with "
                              "the model: deploy/unoq_setup.sh stt)")
@@ -263,6 +277,19 @@ class CanaryTranscriber:
             raise RuntimeError("STT backend 'canary' needs the sherpa-onnx package "
                                "(pip install 'fish_brain[unoq]')")
 
+    def _service(self, name: str) -> CloudTranscriber:
+        """The transcriber for one online service, built once: its own model (an override
+        meant for another backend does not leak in) and the short read limit."""
+        online = self._services.get(name)
+        if online is None:
+            online = CloudTranscriber(replace(self.cfg, backend=name, cloud_model=""),
+                                      timeout_s=ONLINE_TIMEOUT_S)
+            self._services[name] = online
+        return online
+
+    def _routes(self) -> list[str]:
+        return list(dict.fromkeys([*self.cfg.online_first, *self.cfg.long_online]))
+
     def _ensure_model(self):
         with self._lock:
             if self._recognizer is None:
@@ -275,13 +302,15 @@ class CanaryTranscriber:
 
     def ensure_loaded(self) -> None:
         """Both models: Canary, then the local one a long recording needs; and the online
-        services' clients, whose first use otherwise costs the first long turn several
-        seconds of imports."""
+        services' clients, whose first use otherwise costs the first turn several seconds
+        of imports."""
         self._ensure_model()
         self._long.ensure_loaded()
-        for _name, online in self._online:
+        for name in self._routes():
             try:
-                cloud.client(online.profile["base_url"], online.profile["api_key_env"])
+                online = self._service(name)
+                cloud.client(online.profile["base_url"], online.profile["api_key_env"],
+                             timeout_s=online.timeout_s)
             except Exception:                    # no key, no SDK: the turn that needs it says so
                 pass
 
@@ -300,51 +329,75 @@ class CanaryTranscriber:
         t0 = time.monotonic()
         try:
             audio = _read_wav(wav_path)
-            if len(audio) / 16000.0 > self.cfg.canary_long_s:
-                skipped = []
-                for name, online in self._online:
-                    text = self._ask(name, online, wav_path, skipped)
-                    if text is not None:
-                        return text                              # it keeps its own record
+            long = len(audio) / 16000.0 > self.cfg.canary_long_s
+            tried: list[str] = []
+            skipped: list[str] = []
+            routes = [("online first", n) for n in self.cfg.online_first]
+            if long:
+                routes += [("long", n) for n in self.cfg.long_online]
+            for i, (route, name) in enumerate(routes):
+                if name in tried:
+                    continue
+                tried.append(name)
+                after = next((n for _r, n in routes[i + 1:] if n not in tried),
+                             f"local '{self._long.cfg.model}'" if long else "canary")
+                text = self._ask(name, route, wav_path, skipped, after)
+                if text is not None:
+                    self.last = {"service": name, "route": route,
+                                 "seconds": round(time.monotonic() - t0, 2)}
+                    return text                              # it keeps its own record
+            if skipped:
+                sent["skipped"] = skipped
+            if long:
                 sent["route"] = f"long: local '{self._long.cfg.model}' on a short window"
-                if skipped:
-                    sent["skipped"] = skipped
                 text = self._long.text(wav_path, window_s=self.cfg.window_s or 10.0,
                                        beam_size=1)
             else:
+                sent["route"] = "canary"
                 text = self._canary(audio)
         except Exception as e:
             debug.model("stt", sent, error=e, seconds=time.monotonic() - t0)
             raise
+        self.last = {"service": "local" if long else "canary", "route": sent["route"],
+                     "seconds": round(time.monotonic() - t0, 2)}
         return _finish(sent, t0, text)
-
 
     # After a refusal or a timeout a service is not asked again for this long, so a service
     # that is down costs one wait and not one per recording. A missing or rejected key does
     # not fix itself: that service rests for the run.
     REST_S = 60.0
 
-    def _ask(self, name: str, online, wav_path, skipped: list) -> str | None:
-        """The service's text for a long recording, or None when it is to be passed over."""
+    def _ask(self, name: str, route: str, wav_path, skipped: list, after: str) -> str | None:
+        """The service's text for a recording, or None when it is to be passed over."""
+        from . import hw
         now = time.monotonic()
+        if name not in STT_PROFILES:
+            skipped.append(f"{name}: unknown service")
+            return None
         if now < self._rest_until.get(name, 0.0):
             skipped.append(f"{name}: resting after a failure")
             return None
-        if not cloud.is_online():
+        if hw.failed("internet") or not cloud.is_online():
             skipped.append(f"{name}: offline")
             return None
+        online = self._service(name)
         try:
-            return online.transcribe(wav_path)
+            return online.transcribe(wav_path, route=route)
         except cloud.CloudMisconfigured as e:
             self._rest_until[name] = float("inf")
             skipped.append(f"{name}: {e}"[:120])
+            rest = "for the run"
         except cloud.CloudUnavailable as e:
             self._rest_until[name] = now + self.REST_S
             skipped.append(f"{name}: {e}"[:120])
+            rest = f"{self.REST_S:g} s"
             if online.profile["base_url"]:
                 # The online flag speaks for the default host; this was another service's
                 # failure, and the stages after this one must not read it as "no internet".
                 cloud.mark_online()
+        # Once when the rest starts, not once per recording that passes it over.
+        print(f"[stt] {name} unavailable ({skipped[-1].split(': ', 1)[-1]}): resting {rest}, "
+              f"the next recordings go to {after}", flush=True)
         return None
 
 
@@ -357,12 +410,13 @@ def _onnx(folder: Path, stem: str) -> Path:
 class CloudTranscriber:
     """Uploads the recording to an OpenAI-compatible transcription endpoint."""
 
-    def __init__(self, cfg: STTConfig):
+    def __init__(self, cfg: STTConfig, timeout_s: float | None = None):
         if cfg.backend not in STT_PROFILES:
             raise ValueError(_unknown_backend(cfg.backend))
         self.cfg = cfg
         self.profile = STT_PROFILES[cfg.backend]
         self.model = cfg.cloud_model or self.profile["model"]
+        self.timeout_s = timeout_s               # None = the cloud layer's own read limit
 
     def ensure_loaded(self) -> None:
         """Nothing to download or load for a cloud backend."""
@@ -382,13 +436,16 @@ class CloudTranscriber:
             req["language"] = self.cfg.language
         return req
 
-    def transcribe(self, wav_path: str | Path) -> str:
+    def transcribe(self, wav_path: str | Path, route: str = "") -> str:
         sent = {"backend": self.cfg.backend, "model": self.model, "language": self.cfg.language,
                 "prompt": self.cfg.prompt, "keywords": list(self.cfg.keywords or ())}
+        if route:
+            sent["route"] = route                # which of Canary's routes asked
         if not cloud.is_online():
             debug.model("stt", sent, sent=False, note="not sent: known offline")
             raise cloud.CloudUnavailable("offline")
-        client = cloud.client(self.profile["base_url"], self.profile["api_key_env"])
+        client = cloud.client(self.profile["base_url"], self.profile["api_key_env"],
+                              timeout_s=self.timeout_s)
         t0 = time.monotonic()
         try:
             with cloud.guard():

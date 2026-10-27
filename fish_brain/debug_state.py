@@ -226,11 +226,18 @@ def _backends(hub) -> dict:
     from . import cloud
     out["online"] = cloud.is_online()
     keys = {"OPENAI_API_KEY", cfg.llm.api_key_env}
-    # Speech-to-text's own services: a cloud backend, or where canary sends long recordings.
+    # Speech-to-text's own services: a cloud backend, or where canary sends a recording
+    # first and the long ones next.
     from .config import STT_PROFILES
+    canary = cfg.stt.backend == "canary"
+    out["stt_online"] = list(cfg.stt.online_first) if canary else []
+    out["stt_long"] = list(cfg.stt.long_online) if canary else []
     names = (cfg.stt.backend,) if cfg.stt.backend in STT_PROFILES else (
-        cfg.stt.long_online if cfg.stt.backend == "canary" else ())
+        *out["stt_online"], *out["stt_long"])
     out["stt_keys"] = sorted({STT_PROFILES[n]["api_key_env"] for n in names if n in STT_PROFILES})
+    # The last recording's route, without building a transcriber (never the property).
+    transcriber = getattr(convo, "_stt", None) if convo is not None else None
+    out["stt_last"] = _plain(getattr(transcriber, "last", None))
     keys.update(out["stt_keys"])
     out["keys"] = {k: bool(os.environ.get(k)) for k in sorted(k for k in keys if k)}
     return out

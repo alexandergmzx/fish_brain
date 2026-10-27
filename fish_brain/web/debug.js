@@ -1255,7 +1255,9 @@
     kv($("cloudFacts"), [
       ["internet", be.online === false ? "OFFLINE" : "online", be.online === false ? "bad-text" : ""],
       ["keys", Object.entries(be.keys || {}).map(([k, ok]) => k + (ok ? " present" : " MISSING")).join("\n")],
-      ["speech-to-text", be.stt],
+      ["speech-to-text", be.stt + ((be.stt_online || []).length || (be.stt_long || []).length
+        ? " · online first: " + ((be.stt_online || []).join(" > ") || "none") + " · long: " + ((be.stt_long || []).join(" > ") || "local") : "")],
+      ["last transcription", be.stt_last ? be.stt_last.service + " (" + be.stt_last.route + ") " + secs(be.stt_last.seconds) + " s" : ""],
       ["LLM", be.echo ? "echo (no model called)" : be.llm_profile + " : " + be.llm_model],
       ["last LLM call", llm.last_s !== undefined && llm.last_s !== null ? secs(llm.last_s) + " s" : ""],
       ["last LLM error", llm.last_error || "none", llm.last_error ? "bad-text" : ""],
@@ -1456,6 +1458,9 @@
       const tr = el("tr");
       tr.appendChild(el("td", "dim", clockMs(r.t)));
       tr.appendChild(el("td", r.seconds > SLOW.stt ? "warn" : "", secs(r.seconds)));
+      const route = el("td", "dim wrap", (r.backend || "") + (r.route ? " · " + r.route : ""));
+      if (r.skipped && r.skipped.length) route.title = "passed over: " + r.skipped.join("; ");
+      tr.appendChild(route);
       tr.appendChild(el("td", "wrap", r.sent === false ? r.note : r.error ? r.error.type + ": " + r.error.text : (r.raw || "(empty)")));
       tr.appendChild(el("td", r.dropped || r.error || r.sent === false ? "bad" : "ok",
         r.dropped ? "DROPPED: " + r.dropped : r.error || r.sent === false ? "failed" : r.final ? "kept" : "empty"));

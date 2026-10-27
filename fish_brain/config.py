@@ -548,7 +548,13 @@ class STTConfig:
     # its worst (9 s, 26 % word errors). A recording longer than this goes elsewhere (his
     # word, 2026-10-13; docs/results/2026-10-13-unoq-stt-his-takes.md).
     canary_long_s: float = 6.0
-    # canary: where that longer recording goes while the machine is online, in order: names
+    # canary: every recording goes first to these services while the machine is online, in
+    # order: names from STT_PROFILES (his word, 2026-10-27: gpt-transcribe for now, Canary
+    # when offline). A service that refuses, times out or has no key gives way to the next,
+    # and after the last to Canary. Empty = Canary hears every short recording.
+    online_first: tuple[str, ...] = field(default_factory=lambda: _env_list("FISH_STT_ONLINE"))
+    # canary: where that longer recording goes next while the machine is online (after
+    # `online_first`; a name already tried is not asked twice), in order: names
     # from STT_PROFILES. A service that refuses, times out or has no key gives way to the
     # next; after the last, and whenever offline, the local model on a 10 s window. Empty =
     # always the local model.

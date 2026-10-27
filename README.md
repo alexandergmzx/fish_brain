@@ -95,7 +95,7 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 |---|---|---|
 | `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | — | Keys. Groq: the `groq` LLM profile and Groq STT. OpenAI: the `luna` profile, OpenAI STT and TTS. Anthropic: the `claude` and `claude-sonnet` profiles and, when set, the badge reading's first reader ([ADR 0018](docs/adr/0018-claude-through-its-own-sdk.md)); a fish without it runs as before |
 | `FISH_LLM_PROFILE` | `groq` | `groq` (GPT-OSS-20B), `luna` (GPT-6 Luna), `claude` (Claude Haiku 5.5) or `claude-sonnet` (Claude Sonnet 5.5). `FISH_LLM_MODEL` and `FISH_LLM_REASONING` override one field (for Claude the reasoning setting is the effort: `low` to `max`, empty or `none` = not sent). Compare them with `python -m fish_brain.ab` |
-| `FISH_STT_BACKEND` | `local` | `local` (faster-whisper, `FISH_STT_MODEL`; `FISH_STT_BEAM`, default 5, and `FISH_STT_WINDOW_S`, default 0 = the library's 30 s window), `canary` (NVIDIA Canary through sherpa-onnx, on this machine; needs `FISH_STT_MODEL_DIR` and the `unoq` extra; it takes recordings up to 6 s, a longer one goes to the services in `FISH_STT_LONG`, e.g. `groq`, while online, and to the local model on a 10 s window otherwise), `openai` or `groq` (**the recording is uploaded**). `FISH_STT_CLOUD_MODEL`, `FISH_STT_PROMPT`, `FISH_STT_KEYWORDS` tune the cloud ones |
+| `FISH_STT_BACKEND` | `local` | `local` (faster-whisper, `FISH_STT_MODEL`; `FISH_STT_BEAM`, default 5, and `FISH_STT_WINDOW_S`, default 0 = the library's 30 s window), `canary` (NVIDIA Canary through sherpa-onnx, on this machine; needs `FISH_STT_MODEL_DIR` and the `unoq` extra; every recording goes first to the services in `FISH_STT_ONLINE`, e.g. `openai`, while online, each with a 4 s read limit (estimate), and Canary hears it when none answers; it takes recordings up to 6 s, a longer one goes next to the services in `FISH_STT_LONG`, e.g. `groq`, while online, and to the local model on a 10 s window otherwise), `openai` or `groq` (**the recording is uploaded**). `FISH_STT_CLOUD_MODEL`, `FISH_STT_PROMPT`, `FISH_STT_KEYWORDS` tune the cloud ones |
 | `FISH_TTS_BACKEND` | `loq` | `loq` or `openai` (`FISH_TTS_MODEL`, `FISH_TTS_VOICE`, `FISH_TTS_INSTRUCTIONS`) |
 | `FISH_SERIAL_PORT` | `/dev/ttyACM0` | Motor board port |
 | `FISH_SERIAL_TRANSPORT` | `serial` | `serial`, or `bridge` (UNO Q: through the router to a Bridge sketch) |
@@ -219,13 +219,32 @@ Measured on the board ([candidates](docs/results/2026-10-12-unoq-stt-candidates.
 | `local`, `base`, `FISH_STT_WINDOW_S=10` | about 2 s | 38 to 40 % |
 | `canary` | about 2.5 s | 22 % |
 
+Since 2026-10-27 (his word: `gpt-transcribe` while connected) every recording goes first to
+the services in `FISH_STT_ONLINE` (the board's: `openai`) while the board is online, and
+Canary hears it when that service is offline, refuses, has no key or takes over 4 s
+(`ONLINE_TIMEOUT_S`, an estimate). A service that fails rests 60 s (for the run when its key
+is missing or rejected) and the journal says so once: `[stt] openai unavailable (…): resting
+60 s, the next recordings go to canary`. The lists are read at every recording, so
+`/debug` → Switches → "Speech-to-text online first" (`openai`, `groq`, `off`) takes effect
+at the next recording without a rebuild.
+
+| Route on his 0-3 s takes ([results](docs/results/2026-10-13-unoq-stt-his-takes.md)) | Median time | Word errors |
+|---|---|---|
+| `openai` (`gpt-transcribe`) | 0.62 s | 4.5 % |
+| `groq` (turbo) | 0.40 s | 13.0 % |
+| `canary` | 2.28 s | 21.4 % |
+
+Those are the RedOctane microphone's takes; the remote's microphone has no OpenAI row yet
+(not measured), and the first call of a process took 6.8 to 8.0 s there.
+
 Canary is for short phrases: its time grows faster than the clip, so it takes recordings up
-to 6 s. A longer one goes to the services listed in `FISH_STT_LONG` while the board is online
+to 6 s. A longer one goes next to the services listed in `FISH_STT_LONG` while the board is
+online (a service already asked from `FISH_STT_ONLINE` is not asked twice)
 (the board's: `groq`, under a second, 7 % word errors on those recordings) and otherwise to
 the local model on a 10 s window (about 10 s for a 7 s recording, 16 to 42 s over 10 s). The limit and the route come from his 62
 push-to-talk takes ([results](docs/results/2026-10-13-unoq-stt-his-takes.md),
 [online against local](docs/results/2026-10-12-unoq-online-stt.md)); OpenAI's transcription
-is the most accurate there (4 %) and is held for the fair. `deploy/unoq_setup.sh stt` fetches
+is the most accurate there (4 %). `deploy/unoq_setup.sh stt` fetches
 the Canary model and prints the `.env` lines. `tools/stt_bench.py` times and scores any route
 on a folder of clips and records clips from the remote. In real turns through the service
 Canary took 1.8 to 3.0 s for recordings of 1 to 2 s

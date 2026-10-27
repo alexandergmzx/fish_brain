@@ -148,8 +148,10 @@ def main(argv: list[str] | None = None) -> int:
     if cfg.stt.backend in STT_PROFILES and not args.text:
         cloud_keys.add(STT_PROFILES[cfg.stt.backend]["api_key_env"])
     if cfg.stt.backend == "canary" and not args.text:
-        # The services its long recordings go to (an unknown name is reported further down).
-        cloud_keys.update(STT_PROFILES[name]["api_key_env"] for name in cfg.stt.long_online
+        # The services it asks first and those its long recordings go to (an unknown name
+        # is reported further down).
+        cloud_keys.update(STT_PROFILES[name]["api_key_env"]
+                          for name in (*cfg.stt.online_first, *cfg.stt.long_online)
                           if name in STT_PROFILES)
     if not args.echo:
         cloud_keys.add(cfg.llm.api_key_env)
@@ -336,8 +338,9 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"[viz] debug view without actions: {type(e).__name__}",
                               file=sys.stderr)
             stt = "-" if args.text else cfg.stt.backend
-            if stt == "canary" and cfg.stt.long_online:
-                stt = ">".join(["canary", *cfg.stt.long_online])    # where the long ones go
+            if stt == "canary" and (cfg.stt.online_first or cfg.stt.long_online):
+                # online first, then canary, then where the long ones go
+                stt = ">".join([*cfg.stt.online_first, "canary", *cfg.stt.long_online])
             llm = "echo" if args.echo else f"{cfg.llm.profile}:{cfg.llm.model}"
             if viz is not None:
                 # Read when asked, not fixed here: the debug page's switches change them.

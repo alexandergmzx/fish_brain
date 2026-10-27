@@ -294,6 +294,48 @@ def test_cloud_round_trip_reports_each_service_and_skips_what_is_not_used(rig):
     assert rig.act.last["cloud"]["status"] == "skip"
 
 
+def test_cloud_round_trip_calls_canarys_first_online_service(rig):
+    rig.cfg.stt.backend, rig.cfg.stt.online_first, rig.convo.echo = "canary", ("openai",), True
+    calls = []
+
+    class Online:
+        def transcribe(self, path, route=""):
+            calls.append(route)
+            return ""
+
+    class Canary:
+        def _service(self, name):
+            calls.append(name)
+            return Online()
+
+        def transcribe(self, path):
+            raise AssertionError("canary itself is not the cloud check")
+    rig.convo.stt = Canary()
+    parts = rig.act.cloud()[1]["parts"]
+    assert parts["stt"]["ok"] and calls == ["openai", "cloud check"]
+    rig.cfg.stt.online_first = ()                    # nothing online first: canary runs here
+    assert "skipped" in rig.act.cloud()[1]["parts"]["stt"]
+
+
+def test_the_online_first_switch_sets_the_list_without_a_rebuild(rig, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "k-111111111")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    rig.cfg.stt.backend, rig.cfg.stt.online_first = "canary", ()
+    warmed = []
+    rig.convo._stt = "kept"
+    rig.convo.warm_stt = lambda: warmed.append(1)
+    assert _values(rig)["stt_online"]["value"] == "off"
+    assert rig.act.set("stt_online", "openai")[0] == 200
+    assert rig.cfg.stt.online_first == ("openai",) and rig.convo._stt == "kept" and warmed == [1]
+    assert "Canary when it is offline" in _values(rig)["stt_online"]["note"]
+    assert rig.act.set("stt_online", "groq")[1]["error"] == "GROQ_API_KEY is not set"
+    assert rig.cfg.stt.online_first == ("openai",)
+    assert rig.act.set("stt_online", "off")[0] == 200 and rig.cfg.stt.online_first == ()
+    assert rig.act.set("stt_online", "whisper")[0] == 400
+    rig.cfg.stt.backend = "local"
+    assert "not in use" in _values(rig)["stt_online"]["note"]
+
+
 # ---- switches: the running fish only ----
 
 def _values(rig):
@@ -302,7 +344,7 @@ def _values(rig):
 
 def test_switches_list_their_value_their_start_and_what_changed(rig):
     sw = _values(rig)
-    assert set(sw) == {"mode", "llm_profile", "stt", "stt_model", "tts", "gestures", "reading_look",
+    assert set(sw) == {"mode", "llm_profile", "stt", "stt_online", "stt_model", "tts", "gestures", "reading_look",
                        "voice_quit", "burble", "filler", "visit", "filler_delay_s",
                        "max_record_s", "mic", "show", "motors", "fortune_deck", "fortune_cup",
                        "place", "place_text"}

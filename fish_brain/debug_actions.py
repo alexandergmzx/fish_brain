@@ -208,6 +208,25 @@ def _set_stt_model(a, value: str) -> str:
     return _fresh_stt(a) if a.cfg.stt.backend in ("local", "canary") else ""
 
 
+def _stt_online(a) -> str:
+    return a.cfg.stt.online_first[0] if a.cfg.stt.online_first else "off"
+
+
+def _set_stt_online(a, value: str) -> str:
+    """Where every recording goes first while online (Canary only). The transcriber reads
+    the list at every call, so nothing is rebuilt; the new service's client is warmed."""
+    from .config import STT_PROFILES
+    if value in STT_PROFILES:
+        missing = _key_missing(STT_PROFILES[value]["api_key_env"])
+        if missing:
+            return missing
+    a.cfg.stt.online_first = () if value == "off" else (value,)
+    warm = getattr(a.convo, "warm_stt", None)
+    if warm is not None and a.cfg.stt.backend == "canary":
+        warm()
+    return ""
+
+
 def _set_tts(a, value: str) -> str:
     import shutil
     if value == "loq" and not shutil.which(a.cfg.tts.loq_bin):
@@ -251,6 +270,8 @@ SWITCHES: dict = {
                     lambda a: a.cfg.llm.profile, _set_llm_profile),
     "stt": ("Speech-to-text", "choice", ("openai", "groq", "local", "canary"),
             lambda a: a.cfg.stt.backend, _set_stt),
+    "stt_online": ("Speech-to-text online first", "choice", ("openai", "groq", "off"),
+                   _stt_online, _set_stt_online),
     "stt_model": ("Local speech model", "choice", ("tiny", "base", "small"),
                   lambda a: a.cfg.stt.model, _set_stt_model),
     "tts": ("Voice", "choice", ("loq", "openai"), lambda a: a.cfg.tts.backend, _set_tts),
@@ -302,9 +323,17 @@ def _switch_note(a, name: str, value) -> str:
     if name == "stt" and value == "local":
         return f"faster-whisper '{a.cfg.stt.model}' on this machine: loading now"
     if name == "stt" and value == "canary":
+        first = " > ".join([*a.cfg.stt.online_first, "Canary"])
         far = " > ".join([*a.cfg.stt.long_online, f"local '{a.cfg.stt.model}'"])
-        return (f"Canary on this machine for recordings up to {a.cfg.stt.canary_long_s:g} s, "
-                f"about 2.5 s a turn on the board; longer ones: {far}")
+        return (f"every recording: {first} (about 2.5 s a turn on the board); over "
+                f"{a.cfg.stt.canary_long_s:g} s, after Canary's turn: {far}")
+    if name == "stt_online":
+        if a.cfg.stt.backend != "canary":
+            return "not in use (speech-to-text is not canary)"
+        if value == "off":
+            return "Canary hears every short recording; nothing is uploaded first"
+        return (f"every recording goes to {value} while online; Canary when it is offline, "
+                "refuses or takes over 4 s")
     if name == "stt_model":
         used = {"local": "", "canary": "used for the long recordings when nothing online answers · "}.get(
             a.cfg.stt.backend, "not in use (speech-to-text is not local) · ")
@@ -730,11 +759,18 @@ class DebugActions:
         def run(convo) -> dict:
             from .config import STT_PROFILES
             parts: dict = {}
-            if self.cfg.stt.backend in STT_PROFILES:
+            stt = self.cfg.stt
+            # Canary's first online service is the call a turn makes first: this warms it.
+            online = stt.online_first[0] if stt.backend == "canary" and stt.online_first else ""
+            if stt.backend in STT_PROFILES or online in STT_PROFILES:
                 wav = _tone(0.6)
                 t0 = time.monotonic()
                 try:
-                    convo.stt.transcribe(wav)
+                    transcriber = convo.stt
+                    if online:
+                        transcriber._service(online).transcribe(wav, route="cloud check")
+                    else:
+                        transcriber.transcribe(wav)
                     parts["stt"] = {"ok": True, "seconds": round(time.monotonic() - t0, 2)}
                 except Exception as e:
                     parts["stt"] = {"ok": False, "error": type(e).__name__,

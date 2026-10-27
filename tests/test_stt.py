@@ -41,7 +41,8 @@ def fake(monkeypatch):
 
 
 def cfg(**kw) -> STTConfig:
-    base = dict(backend="openai", cloud_model="", prompt=PROMPT, keywords=(), language="es")
+    base = dict(backend="openai", cloud_model="", prompt=PROMPT, keywords=(), language="es",
+                online_first=(), long_online=())
     base.update(kw)
     return STTConfig(**base)
 
@@ -382,19 +383,27 @@ def test_canary_loads_the_long_recordings_model_too(canary_dir):
     assert loaded == ["local"] and t.cfg.canary_long_s == 6.0
 
 
-# --- canary: the long recordings go online first ---------------------------------------------
+# --- canary: online first, the long recordings next ------------------------------------------
 class FakeOnline:
-    """Stands in for a CloudTranscriber of the long route."""
+    """Stands in for the CloudTranscriber of one service."""
     profile = {"base_url": ""}
 
     def __init__(self, answer="texto de la nube", error=None):
-        self.answer, self.error, self.calls = answer, error, []
+        self.answer, self.error, self.calls, self.routes = answer, error, [], []
 
-    def transcribe(self, wav_path):
+    def transcribe(self, wav_path, route=""):
         self.calls.append(str(wav_path))
+        self.routes.append(route)
         if self.error:
             raise self.error
         return self.answer
+
+
+@pytest.fixture(autouse=True)
+def _no_marks(tmp_path, monkeypatch):
+    """The operator's hardware marks of this machine never decide a test."""
+    from fish_brain import hw
+    monkeypatch.setattr(hw, "_marks", hw.Marks(tmp_path / "hw.json"))
 
 
 def long_canary(canary_dir, tmp_path, seconds=7.0, long_online=("groq", "openai"), **kw):
@@ -411,14 +420,14 @@ def long_canary(canary_dir, tmp_path, seconds=7.0, long_online=("groq", "openai"
 def test_a_recording_over_six_seconds_goes_to_the_first_service(canary_dir, tmp_path):
     pytest.importorskip("numpy")
     t, wav, local = long_canary(canary_dir, tmp_path, cloud_model="gpt-transcribe")
-    assert [name for name, _ in t._online] == ["groq", "openai"]
-    # each service's own model: an override meant for another backend does not leak in
-    assert t._online[0][1].model == "whisper-large-v3-turbo"
+    # each service's own model, and the short read limit
+    assert t._service("groq").model == "whisper-large-v3-turbo"
+    assert t._service("groq").timeout_s == stt.ONLINE_TIMEOUT_S == 4.0
     groq, openai = FakeOnline(), FakeOnline("otra")
-    t._online = [("groq", groq), ("openai", openai)]
+    t._services = {"groq": groq, "openai": openai}
     assert t.transcribe(wav) == "texto de la nube"
-    assert groq.calls == [str(wav)] and openai.calls == [] and local == []
-    assert t._recognizer.heard == []
+    assert groq.calls == [str(wav)] and groq.routes == ["long"] and openai.calls == [] and local == []
+    assert t._recognizer.heard == [] and t.last["service"] == "groq"
 
 
 def test_a_refusal_falls_to_the_next_service_and_then_to_the_board(canary_dir, tmp_path):
@@ -426,11 +435,11 @@ def test_a_refusal_falls_to_the_next_service_and_then_to_the_board(canary_dir, t
     t, wav, local = long_canary(canary_dir, tmp_path)
     groq = FakeOnline(error=cloud.CloudUnavailable("RateLimitError: 429"))
     openai = FakeOnline("de openai")
-    t._online = [("groq", groq), ("openai", openai)]
+    t._services = {"groq": groq, "openai": openai}
     assert t.transcribe(wav) == "de openai" and local == []
     openai.error = cloud.CloudMisconfigured("OPENAI_API_KEY is not set")
     assert t.transcribe(wav) == "texto local"
-    assert local == [{"window_s": 10.0, "beam_size": 1}]
+    assert local == [{"window_s": 10.0, "beam_size": 1}] and t.last["service"] == "local"
     # groq rests after its refusal and openai for the run: neither is asked again
     assert len(groq.calls) == 1 and len(openai.calls) == 2
     groq.error = openai.error = None
@@ -443,14 +452,14 @@ def test_a_rested_service_is_asked_again_and_another_services_timeout_is_not_no_
     t, wav, local = long_canary(canary_dir, tmp_path, long_online=("groq",))
     groq = FakeOnline(error=cloud.CloudUnavailable("APITimeoutError"))
     groq.profile = {"base_url": "https://api.groq.com/openai/v1"}
-    t._online = [("groq", groq)]
+    t._services = {"groq": groq}
     monkeypatch.setattr(cloud, "_probe_started", True)
     monkeypatch.setattr(cloud, "_online", True)
     real = groq.transcribe
 
-    def timing_out(path):
+    def timing_out(path, route=""):
         cloud.mark_offline()                     # what the cloud layer does on a timeout
-        return real(path)
+        return real(path, route)
     groq.transcribe = timing_out
     assert t.transcribe(wav) == "texto local"
     assert cloud.is_online() is True             # the stages after this one still try
@@ -461,37 +470,143 @@ def test_a_rested_service_is_asked_again_and_another_services_timeout_is_not_no_
 
 def test_offline_the_long_recording_stays_on_the_board(canary_dir, tmp_path, monkeypatch):
     pytest.importorskip("numpy")
-    t, wav, local = long_canary(canary_dir, tmp_path, long_online=("groq",))
+    t, wav, local = long_canary(canary_dir, tmp_path, long_online=("groq",),
+                                online_first=("openai",))
     monkeypatch.setattr(cloud, "is_online", lambda: False)
     monkeypatch.setattr(cloud, "client", lambda *a, **k: pytest.fail("no call when offline"))
     assert t.transcribe(wav) == "texto local" and len(local) == 1
 
 
-def test_a_short_recording_never_leaves_the_board(canary_dir, tmp_path):
+def test_a_short_recording_without_online_first_never_leaves_the_board(canary_dir, tmp_path):
     pytest.importorskip("numpy")
     t, wav, local = long_canary(canary_dir, tmp_path, seconds=6.0)
     groq = FakeOnline()
-    t._online = [("groq", groq)]
+    t._services = {"groq": groq}
     assert t.transcribe(wav) == "Sí, simón."
     assert groq.calls == [] and local == [] and len(t._recognizer.heard) == 1
+    assert t.last["service"] == "canary"
 
 
 def test_no_long_route_is_the_board_alone_and_a_wrong_name_is_refused(canary_dir, tmp_path):
     pytest.importorskip("numpy")
     t, wav, local = long_canary(canary_dir, tmp_path, long_online=())
-    assert t._online == [] and t.transcribe(wav) == "texto local"
+    assert t._services == {} and t.transcribe(wav) == "texto local"
     with pytest.raises(ValueError, match="FISH_STT_LONG.*'grok'"):
         stt.CanaryTranscriber(cfg(backend="canary", model_dir=str(canary_dir),
                                   long_online=("grok",)))
+    with pytest.raises(ValueError, match="FISH_STT_ONLINE.*'opneai'"):
+        stt.CanaryTranscriber(cfg(backend="canary", model_dir=str(canary_dir),
+                                  online_first=("opneai",)))
 
 
 def test_loading_canary_also_builds_the_online_clients(canary_dir, tmp_path, monkeypatch):
-    t, _wav_path, _local = long_canary(canary_dir, tmp_path, long_online=("groq",))
+    t, _wav_path, _local = long_canary(canary_dir, tmp_path, long_online=("groq",),
+                                       online_first=("openai", "groq"))
     t._long.ensure_loaded = lambda: None
     built = []
-    monkeypatch.setattr(cloud, "client", lambda base_url="", api_key_env="", **k:
-                        built.append((base_url, api_key_env)))
+    monkeypatch.setattr(cloud, "client", lambda base_url="", api_key_env="", timeout_s=None:
+                        built.append((base_url, api_key_env, timeout_s)))
     t.ensure_loaded()
-    assert built == [("https://api.groq.com/openai/v1", "GROQ_API_KEY")]
+    assert built == [("", "OPENAI_API_KEY", 4.0),
+                     ("https://api.groq.com/openai/v1", "GROQ_API_KEY", 4.0)]
     monkeypatch.setattr(cloud, "client", lambda *a, **k: 1 / 0)      # a failure here is not fatal
     t.ensure_loaded()
+
+
+# every recording online first, Canary when that fails (his word, 2026-10-27)
+def test_a_short_recording_goes_online_first_and_canary_hears_nothing(canary_dir, tmp_path):
+    pytest.importorskip("numpy")
+    t, wav, local = long_canary(canary_dir, tmp_path, seconds=2.0, online_first=("openai",))
+    openai = FakeOnline("ir por mi novia")
+    t._services = {"openai": openai}
+    assert t.transcribe(wav) == "ir por mi novia"
+    assert openai.routes == ["online first"] and t._recognizer.heard == [] and local == []
+    assert t.last["service"] == "openai" and t.last["route"] == "online first"
+
+
+def test_a_failure_falls_to_canary_and_rests_with_one_line(canary_dir, tmp_path, capsys,
+                                                          monkeypatch):
+    pytest.importorskip("numpy")
+    from fish_brain import debug as dbg
+    records = []
+    monkeypatch.setattr(dbg, "model", lambda kind, sent=None, **kw: records.append(dict(sent or {})))
+    t, wav, local = long_canary(canary_dir, tmp_path, seconds=2.0, online_first=("openai",))
+    openai = FakeOnline(error=cloud.CloudUnavailable("APITimeoutError"))
+    t._services = {"openai": openai}
+    assert t.transcribe(wav) == "Sí, simón." and t.transcribe(wav) == "Sí, simón."
+    assert len(openai.calls) == 1 and len(t._recognizer.heard) == 2
+    out = capsys.readouterr().out
+    assert out.count("[stt] openai unavailable") == 1
+    assert "resting 60 s, the next recordings go to canary" in out
+    assert records[-1]["route"] == "canary"
+    assert records[-1]["skipped"] == ["openai: resting after a failure"]
+
+
+def test_a_bad_key_rests_for_the_run(canary_dir, tmp_path, monkeypatch, capsys):
+    pytest.importorskip("numpy")
+    t, wav, local = long_canary(canary_dir, tmp_path, seconds=2.0, online_first=("openai",))
+    openai = FakeOnline(error=cloud.CloudMisconfigured("OPENAI_API_KEY is not set"))
+    t._services = {"openai": openai}
+    t.transcribe(wav)
+    assert t._rest_until["openai"] == float("inf") and "resting for the run" in capsys.readouterr().out
+    t.transcribe(wav)
+    assert len(openai.calls) == 1
+
+
+def test_offline_or_marked_never_builds_a_client(canary_dir, tmp_path, monkeypatch):
+    pytest.importorskip("numpy")
+    from fish_brain import hw
+    t, wav, local = long_canary(canary_dir, tmp_path, seconds=2.0, online_first=("openai",))
+    monkeypatch.setattr(cloud, "client", lambda *a, **k: pytest.fail("no call when offline"))
+    monkeypatch.setattr(cloud, "is_online", lambda: False)
+    assert t.transcribe(wav) == "Sí, simón."
+    monkeypatch.setattr(cloud, "is_online", lambda: True)
+    hw.marks().set("internet", True)
+    assert t.transcribe(wav) == "Sí, simón." and len(t._recognizer.heard) == 2
+
+
+def test_the_routes_are_read_at_every_call(canary_dir, tmp_path):
+    """The transcriber built before an act changes the lists follows the change (the
+    fortune's dream went to the local model because nothing rebuilt it)."""
+    pytest.importorskip("numpy")
+    t, wav, local = long_canary(canary_dir, tmp_path, seconds=2.0, long_online=())
+    openai, groq = FakeOnline("de openai"), FakeOnline("de groq")
+    t._services = {"openai": openai, "groq": groq}
+    assert t.transcribe(wav) == "Sí, simón."
+    t.cfg.online_first = ("openai",)
+    assert t.transcribe(wav) == "de openai"
+    t.cfg.online_first = ()
+    long_wav = tmp_path / "long.wav"
+    _wav(long_wav, 8.0)
+    assert t.transcribe(long_wav) == "texto local"
+    t.cfg.long_online = ("groq",)
+    assert t.transcribe(long_wav) == "de groq"
+
+
+def test_a_long_clip_goes_online_first_then_the_long_route_then_local(canary_dir, tmp_path):
+    pytest.importorskip("numpy")
+    t, wav, local = long_canary(canary_dir, tmp_path, seconds=8.0, long_online=("openai", "groq"),
+                                online_first=("openai",))
+    openai = FakeOnline(error=cloud.CloudUnavailable("APITimeoutError"))
+    groq = FakeOnline(error=cloud.CloudUnavailable("RateLimitError: 429"))
+    t._services = {"openai": openai, "groq": groq}
+    assert t.transcribe(wav) == "texto local"
+    # openai is in both lists and asked once; groq is the long route's second chance
+    assert openai.routes == ["online first"] and groq.routes == ["long"]
+    assert t._recognizer.heard == [] and local == [{"window_s": 10.0, "beam_size": 1}]
+
+
+def test_the_short_limit_reaches_the_client(canary_dir, tmp_path, monkeypatch):
+    pytest.importorskip("numpy")
+    t, wav, local = long_canary(canary_dir, tmp_path, seconds=2.0, online_first=("openai",))
+    client = FakeClient("hola")
+    seen = []
+    monkeypatch.setattr(cloud, "is_online", lambda: True)
+    monkeypatch.setattr(cloud, "client", lambda base_url="", api_key_env="", timeout_s=None:
+                        seen.append(timeout_s) or client)
+    assert t.transcribe(wav) == "hola" and seen == [4.0]
+    # a cloud backend of its own keeps the cloud layer's limit
+    monkeypatch.setattr(cloud, "client", lambda base_url="", api_key_env="", timeout_s=None:
+                        seen.append(timeout_s) or client)
+    stt.CloudTranscriber(cfg()).transcribe(wav)
+    assert seen == [4.0, None]
