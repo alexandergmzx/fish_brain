@@ -162,9 +162,15 @@ EOF (`--text`), or Ctrl-C quit.
 
 ## The reading (2026-10-11)
 
+> Since 2026-10-27 ([ADR 0019](adr/0019-the-fortune-act.md)) the badge photo and the look tick
+> are not on the operator's page at `/`: only the typed name is ("Tell the hat", `POST
+> /reading`). The routes below, `POST /badge` included, stay for `/face`'s sheet and the
+> one-shot, and are parked.
+
 - **What it is** ([ADR 0007](adr/0007-the-reading.md)): the operator photographs a visitor's
   fair badge on the console; the board reads the name with the vision model of
-  `FISH_READING_PROFILE` (empty = the LLM profile; `luna` is the one with image input);
+  the first profile of `FISH_READING_PROFILE` that has a key and answers (empty = `claude`, then
+  the LLM profile; `luna` and `claude` take images, [ADR 0018](adr/0018-claude-through-its-own-sdk.md));
   the fish asks "¿Tú eres X?" by voice and the visitor's spoken answer is a normal turn,
   with the question seeded into the LLM history and the per-visitor rules
   (`ReadingConfig.rules`) attached to the persona for that visitor. A name typed on the
@@ -195,11 +201,14 @@ EOF (`--text`), or Ctrl-C quit.
   reading, as while thinking. The page also enters `k-reading` with `Leyendo tu gafete…`
   while a photo is on its way.
 - **Journal lines**: `[reading] badge <seconds>s tokens=<prompt tokens> found=<bool>
-  confidence=<high|medium|low>` (never the name), `fish> (lectura: pregunta por el nombre)` or `fish> (lectura)`, and a `[turn]
+  confidence=<high|medium|low> profile=<the profile that read it>` (never the name),
+  `[reading] <profile> unavailable (…); trying <next>` and `[reading] <profile> not usable (…)` /
+  `takes no images; skipped` (the last two once per process), `fish> (lectura: pregunta por el nombre)` or `fish> (lectura)`, and a `[turn]
   read=ask|tell …` line. The `fish>` and `you>` lines of the following turns carry the name
   as any turn does.
-- **One-shot**: `python -m fish_brain.app --tts openai --llm luna --read-badge foto.jpg`
-  prints the result as JSON before any voice warm-up.
+- **One-shot**: `FISH_READING_PROFILE=luna python -m fish_brain.app --tts openai --read-badge foto.jpg`
+  prints the result as JSON before any voice warm-up. Without `FISH_READING_PROFILE` it reads with
+  Claude first when `ANTHROPIC_API_KEY` is set (`--llm` only names the profile after it).
 
 ## The phone's microphone (2026-10-11)
 
@@ -291,6 +300,44 @@ EOF (`--text`), or Ctrl-C quit.
   sign that cannot be pressed (`html.notalk`), with "¡Pregúntame algo! / Mantén apretado OK en
   el control y habla" as its idle text; the state words still show on it. `?talk=1` keeps the
   hold-to-talk button on a device that has no remote at hand (the laptop as a spare).
+
+## The visit and the fortune on the operator's page (2026-10-27)
+
+The hat's acts ([ADR 0015](adr/0015-the-scripted-visit.md), [ADR 0019](adr/0019-the-fortune-act.md))
+speak to the page through one event and four routes, all under the page server's token rule;
+nothing of them reaches `/status` or `/face`.
+
+- **The `visit` event**: `{"type": "visit", "n", "stage", "of", "first", "house", "cues",
+  "sent", "show": {…}, "fortune": {…}}`, published by `conversation._push_visit` whenever an
+  act moves (`viz.push_visit`), and after `POST /cues`. `show` is the scripted visit's view
+  (`mode`, `open`, `last`, the open question's `options` and what was `heard`). `fortune` is
+  the fortune's: `{"on": true, "ready", "open", "deck", "cup", "place", "last": {n, mode, why,
+  data}}` always, and while an act is open `n`, `stage` (`ask` or `reading`), `q`, `of`,
+  `qid`, `tries`, `question` (the text asked), `heard` (the last transcript), `data` (the said
+  forms of what is known so far: `signo`, `elemento`, `numero`, `sueno`, `carta`, `taza`,
+  `animal`, `luna`, `palabra`), `first`, `house`, `why`. A page that connects gets the **last
+  pushed view** replayed, with its `show` and `fortune` blocks, so an open act survives a
+  reconnect; `GET /debug/state`'s `page.visit` carries the same.
+- **`POST /visit`** (a new visitor: the house act; `409 busy`, `503 no visit`), **`POST /cues
+  {"cues": {…}}`** (the chips; `400` on a value that is not one of the fixed words), **`POST
+  /show {"action": "answer"|"force"|"skip", "value"}`** (the scripted visit's taps; `400`,
+  `409 busy`, `200 {ok, visit}`).
+- **`POST /fortune {"action": "start"|"skip"|"end", "value"}`**: `start` opens a fortune
+  (`value` the typed name, at most 20 characters, or empty: after a verdict within 10 min the
+  act carries the house and the first name by itself), `skip` passes the open question with a
+  bridge line, `end` goes to the ending now. Answers: `400 {"ok": false, "error": …}` on a bad
+  action or value; `409 {"ok": false, "busy": true}` when the turn loop is not listening;
+  `409 {"ok": false, "busy": true, "why": "visit open"}` while a house act is at its questions
+  (the page says "finish the visit first (or Force a house)"); `503 {"ok": false, "error": "no
+  fortune"}` when the persona has no visit; `200 {"ok": true}` when the `FortuneInput` entered
+  the inbox: the next `visit` event shows the act. A start is refused in the loop, silently for
+  the visitor, while the question clips are not cached (`fortune.ready` false: the page greys
+  the button). "New visitor" or a typed name while a fortune is open drops it without a line.
+- **Journal lines**: `[fortune] #<n> start (<why>)`, one per answer with what was heard and
+  what landed, `[fortune] start refused: lines not ready` and `[fortune] start refused: visit
+  open`, and the `[turn]` line of the ending with `fortune: reading (llm|clips)` or
+  `dropped (<why>)`.
+  Never the year.
 
 ## The debug view
 

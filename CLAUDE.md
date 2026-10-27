@@ -27,7 +27,7 @@ data when warranted.
 - When a question has a clean experimental answer, propose the experiment instead of
   guessing. Don't add scope beyond what the task asks.
 
-## Status (as of 2026-10-26)
+## Status (as of 2026-10-27)
 
 | Item | State |
 |---|---|
@@ -41,10 +41,10 @@ data when warranted.
 | Board: while it thinks | **A burble at the release, short fillers, a 12 s limit** (ADR 0010, his word 2026-10-13: "I love this"). The burble (a synthesized bubble sound and one tail chain, never the mouth) starts 0.1 to 0.2 s after the recording ends; no burble = not heard. A filler of 1 to 2 s only when a stage is still running after 2.5 s of its own; at 12 s an apology and the turn is dropped. A short turn is burble, then the reply 2.3 to 2.8 s after release (`docs/results/2026-10-13-unoq-burble-and-fillers.md`). Not yet in a real turn: a filler since they were shortened, the apology, the reading, LLM mode. Open: whether the close pulse stays on a burble once drivers are wired |
 | Board: push-to-talk | Hold the remote's OK button, talk, release (up to 45 s; the LLM is told when a hold was cut); the page on the phone drives the same recording as the backup. Both record through the remote's microphone (results 2026-10-12). The browser's own microphone over HTTPS (`FISH_MIC_CAPTURE=browser`) works from the laptop's Chrome, off on the board. The display and its kiosk are parked |
 | Board: HDMI touch display | Unplugged since 2026-10-12 (ADR 0005 replaced by 0006): the browser cost 1.1 to 1.3 cores and 60 to 68 C; without it the board idles at 1 % and 41 to 44 C, a turn peaks at 30 % (results 2026-10-12). The LightDM session stays installed, it starts nothing |
-| The reading (la lectura) | Built (ADR 0007, proposed): badge photo on the phone → `gpt-6-luna` through the board (4.3 to 6.7 s, 1163 image tokens, surnames split, accents restored: `docs/results/2026-10-11-reading-badge.md`) → the fish asks "¿Tú eres X?" → the answer is a turn. Not yet tried with a real badge or on the phone |
+| The reading (la lectura) | Built (ADR 0007, proposed): badge photo on the phone → `gpt-6-luna` through the board (4.3 to 6.7 s, 1163 image tokens, surnames split, accents restored: `docs/results/2026-10-11-reading-badge.md`) → the fish asks "¿Tú eres X?" → the answer is a turn. Since 2026-10-26 (ADR 0018, proposed) Claude reads first when `ANTHROPIC_API_KEY` is set and luna after it; Claude is built and unit-tested, not measured (key due 2026-10-27). Not yet tried with a real badge or on the phone. Since 2026-10-27 the badge photo and the look tick are off the operator's page (ADR 0019); the server side is parked, the typed name stays |
 | Motors on the UNO Q (L298N), Billy Bass #2 calibration | Not started. Before wiring: 10 k pull-downs on D6, D3, D5 and on D7, D8 (D8 is pulled high in reset) |
 | Fair | **2026-10-17/18: failed** (the hub enumerated nothing at the venue; the fish had been left disabled; the laptop fallback was untested): `docs/results/2026-10-25-fair-postmortem.md`. No next show date |
-| Board + phone only (`docs/BRAINTIP.md` Phase 7) | On the board 2026-10-26: Phase 1 (licence guard, STOP watcher, bench mode, records); the scripted visit for the Halloween season (`FISH_SHOW=auto`, ADR 0015); the Show tab on the phone in English, in the study from `/face`, with hardware he marks failed and one Mode control (Auto, Model, Script, Echo; echo when the model fails) (ADR 0017); speaker routes USB → Bluetooth → phone and a `pw-record` capture (ADR 0016, `docs/results/2026-10-26-phone-console-and-audio-routes.md`). The motor link is back since `arduino` joined `arduino-router`. Next: his look on the phone; then slow uploads from the phone (4 to 26 s) and the remote's microphone sending zeros |
+| Board + phone only (`docs/BRAINTIP.md` Phase 7) | On the board 2026-10-26: Phase 1 (licence guard, STOP watcher, bench mode, records); the scripted visit (`FISH_SHOW=auto`, ADR 0015); the phone as the console in English, in the study from `/face`, hardware he marks failed, one Mode control (ADR 0017); speaker routes USB → Bluetooth → phone and a `pw-record` capture (ADR 0016, `docs/results/2026-10-26-phone-console-and-audio-routes.md`); the motor link back since `arduino` joined `arduino-router`. **Built 2026-10-27: the fortune act for adults** (ADR 0019, proposed: date → sign, the open dream, a tarot card, the cup, the animal, the moon, a magic word; the reading from the clips or from the model; about 140 `fortune_*` clips, about 10 min to render at the first boot, estimate), the three tabs Visit · Status · Settings, the adult register; the house act's 143 kid lines wait for his pass. Next: his look on the phone; then slow uploads from the phone (4 to 26 s) and the remote's microphone sending zeros |
 
 Ask before starting the next Braintip phase. Until the fair, prefer work that closes the fair
 path over polishing one module. The phase list lives in `docs/BRAINTIP.md`; keep this table
@@ -84,7 +84,8 @@ chains are not covered by it. So:
    → LLM (persona + history) → text-to-speech → WAV
    → loudness envelope → mouth pulses  +  text-driven neck/tail gestures
    → play audio and stream commands on one clock → the fish speaks → listen again
-[badge photo on the phone] → name (vision model) → "¿Tú eres X?" → the answer is a turn   (ADR 0007)
+[typed name on the phone] → "¿Tú eres X?" → the answer is a turn   (ADR 0007; the badge photo left the page 2026-10-27)
+[Fortune on the phone] → date, dream, card, cup, animal by voice → suspense → the reading from clips or the model   (ADR 0019)
 ```
 
 The whole command schedule is computed from the finished WAV, then audio and commands run
@@ -94,16 +95,17 @@ together.
 |---|---|---|
 | Push-to-talk | Keyboard key, the page's hold button, or a remote's button; a fresh press starts a recording, `FISH_PTT_MAX_S` ends a long one and the LLM is told the visitor was still talking. With `FISH_MIC_CAPTURE=browser` the page records with its own microphone and uploads a 16 kHz WAV (`POST /utterance`), taken by the loop through one inbox like a board recording; a remote's press is relayed to the page in browser mode | [`ptt.py`](fish_brain/ptt.py), [`evdev_button.py`](fish_brain/evdev_button.py), [`viz.py`](fish_brain/viz.py) |
 | Speech-to-text | `local` faster-whisper (optionally on an encoder window that follows the clip), `canary` (NVIDIA Canary through sherpa-onnx, for recordings up to 6 s; longer ones go to the services in `FISH_STT_LONG` while online, else to the local model), or the recording uploaded to `openai` / `groq`; the model loads in the background at start-up | [`stt.py`](fish_brain/stt.py) |
-| LLM | Profiles `groq` (GPT-OSS-20B) and `luna` (GPT-6 Luna); bounded history; fallback line on error. `reading.read_badge` turns a badge photo into a name (`luna` only: it takes images, `groq` does not) | [`llm.py`](fish_brain/llm.py), [`ab.py`](fish_brain/ab.py) |
+| LLM | Profiles `groq` (GPT-OSS-20B), `luna` (GPT-6 Luna), `claude` (Haiku 5.5) and `claude-sonnet` (Sonnet 5.5); each has a provider, and `make_conversation` picks the class; bounded history; fallback line on error. `reading.read_badge` turns a badge photo into a name with the first profile of `FISH_READING_PROFILE` that has a key and answers (empty = `claude`, then the LLM profile; `luna` and `claude` take images, `groq` does not) | [`llm.py`](fish_brain/llm.py), [`claude.py`](fish_brain/claude.py), [`ab.py`](fish_brain/ab.py) |
 | Cloud plumbing | One client per service, short timeouts, a background "is the internet there" flag, two error types | [`cloud.py`](fish_brain/cloud.py) |
 | Text-to-speech | `loq` (Loquendo "Jorge") or `openai`; always a WAV file, never played here | [`tts.py`](fish_brain/tts.py) |
-| Canned phrases | welcome, goodbye, no_signal, no_mic, reading_wait, reading_fail, and the fillers and apologies of a waiting turn (`filler_first_*`, `filler_more_*`, `timeout_stt_*`); cached by text and voice; an older rendering is used when a new one can't be made | [`canned.py`](fish_brain/canned.py) |
+| Canned phrases | welcome, goodbye, no_signal, no_mic, reading_wait, reading_fail, and the fillers and apologies of a waiting turn (`filler_first_*`, `filler_more_*`, `timeout_stt_*`); for the hat persona the show's `show_*` and the fortune's `fortune_*` lines too; cached by text and voice; an older rendering is used when a new one can't be made | [`canned.py`](fish_brain/canned.py) |
 | Mouth | WAV → openness (0..1) → timed pulses through measured curves | [`envelope.py`](fish_brain/envelope.py) |
 | Gestures | Head out on words, home on sentence ends; tail flaps | [`gestures.py`](fish_brain/gestures.py) |
 | Conductor | Plays the audio and sends each command at its time | [`conductor.py`](fish_brain/conductor.py), [`speak.py`](fish_brain/speak.py) |
 | Motor link | pyserial, or MessagePack-RPC through the UNO Q's router; a mock for `--dry-run`; a wrapper that keeps the fish talking without motors | [`serial_link.py`](fish_brain/serial_link.py), [`router_rpc.py`](fish_brain/router_rpc.py) |
 | Turn loop | One turn in stages; no error inside a turn ends the loop. A recording the fish can use is answered at once with a burble (a synthesized bubble sound and one tail chain, never the mouth; no burble = not heard). While a voice turn waits the fish says short cached phrases (first after 2.5 s, then every 2 s of silence) and at 12 s it apologizes and listens again; each waiting stage runs in a worker, the loop's thread does the talking and the records (ADR 0010; `FISH_BURBLE=false` and `FISH_FILLER=false` = as before) | [`conversation.py`](fish_brain/conversation.py), [`burble.py`](fish_brain/burble.py) |
-| The page | `/` is the operator's page on his phone or a PC (ADR 0011): the debug view with the drawn hat showing what the fish does (pose and colour per state, the visit's stage and verdict, a shake where a turn died, the lamps of the lines sent), the Visit tab (cues, badge, name), a thumb bar (Nuevo visitante, hold to talk), the phone's microphone behind a switch. HTTPS as a second listener behind `FISH_VIZ_TLS_CERT` keeps the phone's screen on. The old visitor face is at `/face` until after the fair | [`viz.py`](fish_brain/viz.py), [`web/`](fish_brain/web/), [`docs/debug.md`](docs/debug.md), [`docs/viz.md`](docs/viz.md) |
+| The fortune act | The second act for adults (ADR 0019): `fortune.py` is the data and the parsers (the birth date to a sign, element and lucky number, never the year; 21 dream themes; the tarot's 22 major arcana as `DECKS`; the cup's shapes; the animal; the moon; the magic words; the `[ADIVINACIÓN: …]` tag; `BANNED` and `clean_reading`), `fortune_bank.py` its `fortune_*` lines and the model's adult rules, `fortune_run.py` the act itself (`FortuneRun`: one question at a time by voice, a narrower re-ask with a budget of two, Skip and End from the page; the ending from the clips, or from the model started before the suspense clip and dropped to the clips on any failure; its own `fortune.json`). The place (`FISH_PLACE`) is a setting | [`fortune.py`](fish_brain/fortune.py), [`fortune_bank.py`](fish_brain/fortune_bank.py), [`fortune_run.py`](fish_brain/fortune_run.py) |
+| The page | `/` is the operator's page on his phone or a PC (ADR 0011, 0017): the debug view with the drawn hat showing what the fish does (pose and colour per state, the acts' stage and verdict, a shake where a turn died, the lamps of the lines sent) and three tabs first, Visit (the acts: New visitor, Fortune, the cue chips, the typed name) · Status (default on a phone) · Settings (mode, hardware, volume, phone speaker, network, place, fortune), a thumb bar (New visitor, hold to talk), the phone's microphone behind a switch. HTTPS as a second listener behind `FISH_VIZ_TLS_CERT` keeps the phone's screen on. The old visitor face is at `/face` until after the fair | [`viz.py`](fish_brain/viz.py), [`web/`](fish_brain/web/), [`docs/debug.md`](docs/debug.md), [`docs/viz.md`](docs/viz.md) |
 | The debug view | `/debug` on a desktop: the bring-up checks (speaker, sink, microphone, remote, link, service), what each model is sent and answers, the log, every key of the remote, one record per turn, the lines sent and the bytes back, the board, hints; tests, switches for the running fish (echo or LLM, backends, gestures, motors muted; nothing survives a restart), and armed motor pulses and restart (ADR 0009) | [`debug.py`](fish_brain/debug.py), [`debug_state.py`](fish_brain/debug_state.py), [`debug_actions.py`](fish_brain/debug_actions.py), [`web/debug.*`](fish_brain/web/), [`docs/debug.md`](docs/debug.md) |
 | Entry point | Flags, start-up checks, one-shots | [`app.py`](fish_brain/app.py) |
 
@@ -146,16 +148,19 @@ Changed only by a record in [`docs/adr/`](docs/adr/). Do not reopen without new 
 | Debugging | A desktop view at `/debug` that shows the whole fish and may act: tests, and armed for 60 s motor pulses and a restart; with an empty token it is open to the whole hotspot (ADR 0009, proposed) | 2026-10-12 |
 | The page at the fair | One page at `/` for the operator's phone, built from the debug view, with the hat as the at-a-glance display; visitors see no screen; the old face at `/face` until after the fair (ADR 0011, proposed, replaces 0008) | 2026-10-16 |
 | The reading's model | `gpt-6-luna` through the board, strict JSON, the photo in memory only; measured 2026-10-11 | 2026-10-11 |
-| The reading | A badge photo read by a vision model through the board (`luna`); the fish asks the name by voice before telling the future; the photo lives in memory only; badge-only by default, a look line only with a consent tick (ADR 0007, proposed) | 2026-10-11 |
+| The reading | A badge photo read by a vision model through the board (`luna`, or `claude` first when its key is set: ADR 0018, proposed); the fish asks the name by voice before telling the future; the photo lives in memory only; badge-only by default, a look line only with a consent tick (ADR 0007, proposed; superseded on the page 2026-10-27, the server side parked, the typed name stays) | 2026-10-11 |
+| The fortune act | A separate act for adults from the Visit tab: every answer by voice with one narrower re-ask and a budget of two per act; day and month, never the year; 21 dream themes and mentalist vision lines; the Rider-Waite major arcana as data (a lotería deck later), the cup optional, the animal question, the moon and a magic word; the reading from the clips, or from the model started before the suspense clip and dropped to the clips on any failure; the adult register with `BANNED` and `clean_reading`; the place as a setting; `fortune_*` clips for the hat persona whatever `FISH_SHOW` says; its own state file (ADR 0019, proposed) | 2026-10-27 |
 | Motor port | One holder at a time: a lock taken before the router is asked for anything | 2026-10-11 |
 | Speech backends | By environment; laptop defaults are local STT and `loq` (ADR 0003) | 2026-10-10 |
 | A waiting turn | A burble (sound and tail, never the mouth) at the release; short cached phrases while it waits, the first at 2.5 s; a turn dropped at 12 s with an apology (ADR 0010, proposed) | 2026-10-13 |
-| LLM | Profiles; `groq` in code, `luna` on the board (ADR 0004) | 2026-10-10 |
+| LLM | Profiles; `groq` in code, `luna` on the board (ADR 0004); `claude` and `claude-sonnet` selectable through the Anthropic SDK, not the default (ADR 0018, proposed) | 2026-10-10 |
 | `master` | Untouched. On `braintip` the laptop must still run with no environment set | 2026-10-10 |
 
 Not decided: which cloud speech-to-text; local STT when offline; whether the LightDM session
 stays installed with no display (to be measured). Decided 2026-10-10: the board's voice is
 Loquendo (`FISH_TTS_BACKEND=loq`). Decided 2026-10-11: tamer welcome and goodbye for the fair.
+Since 2026-10-27 the audience is adults (parties, spooky places, his parents' house, the
+university); the house act's lines keep the kid register until his pass.
 
 ## Serial protocol — the contract
 
@@ -214,10 +219,13 @@ check its replies against this table.
   `FISH_PTT_DEVICE`, `FISH_PTT_KEY`, `FISH_PTT_MODE`, `FISH_VIZ_HOST`, `FISH_WELCOME_ONCE`,
   `FISH_VOICE_QUIT`. Full list: README and [`deploy/env.unoq.example`](deploy/env.unoq.example).
   Since ADR 0006 and 0007: `FISH_VIZ_TLS_CERT`, `FISH_VIZ_TLS_KEY`, `FISH_VIZ_TLS_PORT`,
-  `FISH_MIC_CAPTURE` (`host` on the laptop), `FISH_READING_PROFILE` (empty = the LLM profile),
+  `FISH_MIC_CAPTURE` (`host` on the laptop), `FISH_READING_PROFILE` (a list; empty = `claude`, then the LLM profile), `ANTHROPIC_API_KEY`,
   `FISH_READING_LOOK`, `FISH_SAY_ADDRESS`. Since 2026-10-12: `FISH_STT_MODEL_DIR`,
   `FISH_STT_WINDOW_S`, `FISH_STT_BEAM`, `FISH_STT_LONG`. Since 2026-10-13: `FISH_FILLER`,
-  `FISH_FILLER_DELAY_S`, `FISH_FILLER_GAP_S`, `FISH_TURN_TIMEOUT_S`, `FISH_BURBLE`.
+  `FISH_FILLER_DELAY_S`, `FISH_FILLER_GAP_S`, `FISH_TURN_TIMEOUT_S`, `FISH_BURBLE`. Since
+  2026-10-27 (ADR 0019): `FISH_FORTUNE_DECK` (`tarot`, `off`), `FISH_FORTUNE_CUP`,
+  `FISH_FORTUNE_STATE`, `FISH_PLACE` (`casa`, `fiesta`, `universidad`, `otro`),
+  `FISH_PLACE_TEXT`.
 
 ### Every hardware boundary has a stand-in
 
@@ -303,7 +311,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q tests   # expect 
 .venv/bin/python -m fish_brain.app --dry-run --text --no-audio --tts openai   # type a turn; expect TX lines and a [turn] line
 .venv/bin/python -m fish_brain.app --dry-run --echo --viz --tts openai        # hold the button in the browser, it repeats you; the fish's face is the default view; ?debug=1 the developer page
 FISH_MIC_CAPTURE=browser .venv/bin/python -m fish_brain.app --dry-run --echo --viz --tts openai   # the browser's own microphone (localhost is a secure context)
-.venv/bin/python -m fish_brain.app --dry-run --text --no-audio --tts openai --llm luna --read-badge foto.jpg   # the badge call alone, prints the JSON (needs the key)
+FISH_READING_PROFILE=luna .venv/bin/python -m fish_brain.app --dry-run --text --no-audio --tts openai --read-badge foto.jpg   # the badge call alone, prints the JSON (needs the key; `claude` or `claude-sonnet` to try Claude)
 .venv/bin/python -m fish_brain.ab --no-vote                                   # both LLM profiles: latency and cost
 
 # laptop with the fish (his to run: uses loq and motors)
@@ -351,7 +359,8 @@ their own. The steps are in the README.
 | No phrase while it thinks | `FISH_FILLER`; the phrases must be rendered (`--prerender-canned`, the canned check on `/debug`): a missing one is skipped |
 | "no te entendí" every time | The level meter in the page; the selected source (`wpctl status`); `silence_rms`. With the phone's microphone: the `[utt]` line (rate, seconds, bytes) and the ring on the target; `?mic=host` brings the board microphone back |
 | No "Activar micrófono" button on the phone | The page is not a secure context: plain http, or the certificate warning not accepted; the hold still records with the board microphone |
-| The badge is never read | The `[reading]` line: `offline`, `misconfigured` (the profile has no image input, or no key); type the name in the field |
+| The badge is never read | The `[reading]` lines: `offline`, `misconfigured` (no profile with image input and a key; each skipped one is named once), `unavailable … trying luna` (Claude failed, luna took over); the line that answers ends `profile=`; type the name in the field |
+| The fortune never starts | The `[fortune]` line: `lines not ready` (its question clips are still rendering, about 10 min at the first boot, estimate; Fortune is greyed and the canned check on `/debug` counts them), `visit open` (a house act is at its questions: finish it or force a house). `503 no fortune` from `POST /fortune` means the persona has no visit |
 | Remote does nothing | `python -m fish_brain.evdev_button --list` and `--watch`; the start-up line `ptt=`. No burble and no line in the journal after `Unable to create stream: Timeout`: the fish is stuck on the microphone (2026-10-13), restart it |
 | Says "no signal" every turn | The `[cloud]` and `[llm]` lines name the error; keys in `.env` |
 | Bridge transport silent | `nc 127.0.0.1 7500`; router error 2 means no sketch registered the method |
@@ -381,6 +390,15 @@ Machine and tool facts only, each dated.
   starts one recording after another.
 - OpenAI shuts down its speech models on 2027-01-06 and the older transcription models on
   2027-02-26 (announced; read 2026-10-10).
+
+**Claude** (2026-10-26, `anthropic` 2.3.0, API version 2026-10-21; checked offline, no key yet: no call, latency or accuracy is measured)
+
+- **The SDK has no `temperature`, `top_p` or `top_k`**, and the API answers 400 to them: no profile sends one.
+- **`anthropic.transform_schema` asserts on `{"type": ["string", "null"]}`**; the badge schema is rewritten to `anyOf` for Claude only (`claude.anthropic_schema`).
+- **A client built with `api_key=` holds one credential and an explicit `base_url` beats `ANTHROPIC_BASE_URL`**; the key goes as `Authorization: Bearer`.
+- **`import anthropic` takes 0.78 s on the desktop, `openai` 0.35 s**; the first Claude call logs `[claude] sdk imported in …` (the board's figure is not measured).
+- **The SDK sleeps for any `Retry-After` (a 429 with 3600 asked for a 3600 s sleep) and `openai`'s stops at 60 s**: Claude clients run with `max_retries=0`. Both: [`docs/results/2026-10-26-anthropic-sdk-offline-checks.md`](docs/results/2026-10-26-anthropic-sdk-offline-checks.md).
+- **Haiku 5.5 accepts `thinking: disabled` at effort `high` or below; Sonnet 5.5 answers 400 and takes `between_tools`.** A 400 that names `thinking` or `effort` is retried once without it.
 
 **UNO Q** (2026-10-10, router 0.10.0, core 0.55.2)
 
@@ -499,6 +517,7 @@ Nothing here is started or extended without his word.
 - **Before touching the link or the router:** [`docs/UNOQ_BRIDGE_RPC_EXPLAINED.md`](docs/UNOQ_BRIDGE_RPC_EXPLAINED.md), [ADR 0001](docs/adr/0001-release-the-uart-through-the-router.md)
 - **Before touching the page, the phone or the reading:** [`docs/viz.md`](docs/viz.md), [ADR 0006](docs/adr/0006-the-phone-is-the-interface.md), [ADR 0007](docs/adr/0007-the-reading.md), [ADR 0008](docs/adr/0008-the-phone-is-the-fishs-face.md)
 - **Board set-up:** [`deploy/README.md`](deploy/README.md) · **Sketches:** [`tools/sketches/README.md`](tools/sketches/README.md)
-- **Before touching the debug view:** [`docs/debug.md`](docs/debug.md), [ADR 0009](docs/adr/0009-a-debug-view-that-acts.md)
+- **Before touching the acts (the visit, the show, the fortune):** [ADR 0015](docs/adr/0015-the-scripted-visit.md), [ADR 0019](docs/adr/0019-the-fortune-act.md)
+- **Before touching the debug view:** [`docs/debug.md`](docs/debug.md), [ADR 0009](docs/adr/0009-a-debug-view-that-acts.md), [ADR 0017](docs/adr/0017-the-show-tab.md)
 - **Decisions:** [`docs/adr/`](docs/adr/) · **Measurements:** [`docs/results/`](docs/results/)
 - **User guide:** [`README.md`](README.md)

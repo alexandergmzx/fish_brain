@@ -30,7 +30,7 @@ pip install -e .                 # installs deps from pyproject.toml
 # or, for the exact pinned versions this was built/tested with:
 #   pip install -r requirements.txt
 
-cp .env.example .env             # then put your keys in .env (GROQ_API_KEY and/or OPENAI_API_KEY)
+cp .env.example .env             # then put your keys in .env (GROQ_API_KEY, OPENAI_API_KEY and/or ANTHROPIC_API_KEY)
 
 # optional: fetch the speech model now (~0.5 GB for "small") so the first turn isn't slow
 python -m fish_brain.app --prefetch-stt
@@ -42,7 +42,9 @@ see a Hugging Face progress bar, and a harmless "set a HF_TOKEN" notice — no t
 
 `pyproject.toml` is the source of truth for dependencies; `requirements.txt` is a pinned
 snapshot (`pip freeze`) for reproducing the exact environment on a fresh clone. Regenerate it
-after changing deps with `pip freeze --exclude-editable > requirements.txt`.
+after changing deps with `pip freeze --exclude-editable > requirements.txt`. The current file
+predates the `anthropic` dependency (it is not regenerated: it was frozen in a shell with ROS
+packages); `pip install -e .` installs it.
 
 Serial access: your user must be in the `dialout` group (log out/in after adding):
 ```bash
@@ -71,12 +73,12 @@ python -m fish_brain.app --echo --dry-run --viz   # open http://127.0.0.1:8723
 Flags: `--dry-run` (mock serial, prints commands), `--text` (type instead of mic),
 `--echo` (repeat you back, no API key), `--no-audio` (don't play TTS), `--viz` (on-screen fish),
 `--port /dev/ttyACM0`, `--say "..."` (one-shot). Backends: `--stt local|openai|groq`,
-`--tts loq|openai`, `--llm groq|luna`, `--transport serial|bridge`, `--viz-host 0.0.0.0`.
+`--tts loq|openai`, `--llm groq|luna|claude|claude-sonnet`, `--transport serial|bridge`, `--viz-host 0.0.0.0`.
 One-shots: `--check-link` (open the motor link, send `STOP`), `--prerender-canned`,
 `--say-canned NAME`, `--list-canned`, `--prefetch-stt`, `--read-badge FILE` (read the name on a
 badge photo with the vision model and print the JSON; it starts no voice and no motors:
 `python -m fish_brain.app --tts openai --llm luna --read-badge foto.jpg`, needs
-`OPENAI_API_KEY`).
+`OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` for Claude, which reads first when it has a key).
 In the loop, say/type **`salir`** or hit Ctrl-C to quit; an unclear/empty recording just re-listens.
 Push-to-talk: with `--viz`, **hold the on-screen button** (or the browser spacebar) and pick your
 mic from the dropdown — easiest for debugging. Without `--viz`, hold **space** in the terminal
@@ -91,8 +93,8 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `GROQ_API_KEY`, `OPENAI_API_KEY` | — | Keys. Groq: the `groq` LLM profile and Groq STT. OpenAI: the `luna` profile, OpenAI STT and TTS |
-| `FISH_LLM_PROFILE` | `groq` | `groq` (GPT-OSS-20B) or `luna` (GPT-6 Luna). `FISH_LLM_MODEL` and `FISH_LLM_REASONING` override one field. Compare them with `python -m fish_brain.ab` |
+| `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | — | Keys. Groq: the `groq` LLM profile and Groq STT. OpenAI: the `luna` profile, OpenAI STT and TTS. Anthropic: the `claude` and `claude-sonnet` profiles and, when set, the badge reading's first reader ([ADR 0018](docs/adr/0018-claude-through-its-own-sdk.md)); a fish without it runs as before |
+| `FISH_LLM_PROFILE` | `groq` | `groq` (GPT-OSS-20B), `luna` (GPT-6 Luna), `claude` (Claude Haiku 5.5) or `claude-sonnet` (Claude Sonnet 5.5). `FISH_LLM_MODEL` and `FISH_LLM_REASONING` override one field (for Claude the reasoning setting is the effort: `low` to `max`, empty or `none` = not sent). Compare them with `python -m fish_brain.ab` |
 | `FISH_STT_BACKEND` | `local` | `local` (faster-whisper, `FISH_STT_MODEL`; `FISH_STT_BEAM`, default 5, and `FISH_STT_WINDOW_S`, default 0 = the library's 30 s window), `canary` (NVIDIA Canary through sherpa-onnx, on this machine; needs `FISH_STT_MODEL_DIR` and the `unoq` extra; it takes recordings up to 6 s, a longer one goes to the services in `FISH_STT_LONG`, e.g. `groq`, while online, and to the local model on a 10 s window otherwise), `openai` or `groq` (**the recording is uploaded**). `FISH_STT_CLOUD_MODEL`, `FISH_STT_PROMPT`, `FISH_STT_KEYWORDS` tune the cloud ones |
 | `FISH_TTS_BACKEND` | `loq` | `loq` or `openai` (`FISH_TTS_MODEL`, `FISH_TTS_VOICE`, `FISH_TTS_INSTRUCTIONS`) |
 | `FISH_SERIAL_PORT` | `/dev/ttyACM0` | Motor board port |
@@ -119,6 +121,10 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_LOQ_MAC_IFACE` | empty | Before restarting the voice, wait up to 90 s for this adapter's own MAC (board: `wlan0`). `FISH_LOQ_PROBE_TEXT` and `FISH_LOQ_WINESERVER` change the phrase and the `wineserver` binary |
 | `FISH_RECORD_DIR` | empty (off) | The fish's own record: one JSON line per turn, page action, button press, voice change, start and stop, fsynced so a pulled plug keeps it (board: `/home/arduino/.local/state/fish_brain/records`). `FISH_RECORD_KEEP` (30 files), `FISH_RECORD_MAX_MB` (100), `FISH_RECORD_BEAT_S` (60; a line with the board's facts). Read one with `tools/records.py` |
 | `FISH_SHOW` | `off` | The scripted visit for the hat (ADR 0015): `script` always, `auto` whenever the model cannot be trusted (offline, a key missing, the voice tainted, a model failure in the last 2 min). No model, no live voice, no error line, never stuck; "salir" does not quit and answers stay under 5.5 s. Its lines (`show_*`, `fish_brain/show_bank.py`) are rendered ahead with the canned phrases. `FISH_SHOW_STATE` (default `~/.local/state/fish_brain/show.json`: the seed, the visit counter, the line bags) and `FISH_SHOW_SEED` |
+| `FISH_FORTUNE_DECK` | `tarot` | The fortune act's deck ([ADR 0019](docs/adr/0019-the-fortune-act.md)): `tarot` (the 22 Rider-Waite major arcana; the visitor draws from a real deck and says the name or the number) or `off` (no card question). The deck's clips render either way. Changes from the page's Settings tab until a restart |
+| `FISH_FORTUNE_CUP` | `false` | `true`: the fortune asks which shape the visitor sees in the cup (eleven shapes). Also on the Settings tab |
+| `FISH_FORTUNE_STATE` | `~/.local/state/fish_brain/fortune.json` | The fortune's counter and line bags, beside the show's file |
+| `FISH_PLACE`, `FISH_PLACE_TEXT` | `otro`, empty | Where the hat is this evening: `casa`, `fiesta`, `universidad` or `otro`, and a free text for "other" that reaches the web model only. The place picks the fortune's intro and closing lines (a toast or a song only at a party) and goes to the model as `lugar=`. Both change from the Settings tab until a restart |
 | `FISH_AUDIO_ROUTES` | empty | Speaker routes (ADR 0016), in order: PipeWire sink-name patterns and `phone` (board: `alsa_output.usb-*,bluez_output.*,phone`). Each phrase goes to the first one that is there; a failed one cools for `FISH_AUDIO_RETRY_S` (30). `FISH_AUDIO_DELAY_MS` (`pattern=ms,...`): a route's sound delay, the motors follow it |
 | `FISH_MIC_BACKEND` | `sounddevice` | `pw-record` (board): record through a PipeWire subprocess that can always be ended; no audio within `FISH_MIC_OPEN_TIMEOUT_S` (3) is a microphone error, never a hang |
 | `FISH_VOICE_QUIT` | `true` | Saying "salir" ends the program |
@@ -132,8 +138,8 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_MOUTH_STOP` | `0 1` | Gate mode: the line that ends each phrase and each utterance, `<pwm> <ms>`: `0 1` coasts, `1 150` brakes (TB6612), `-200 74` is a reverse kick |
 | `FISH_LOQ_PREFIX` | the persona's (`\language=SpanishMx ` for the hat) | Loquendo control tags put before every text (`loq` only), each ended by a space. `\speed=N` sets the rate: 50 is the default, 30 is 13 % slower, 20 is 28 % slower ([results](docs/results/2026-10-17-loquendo-speed.md)). Changing it re-renders the canned phrases |
 | `FISH_TURN_TIMEOUT_S` | `12` | From the end of the recording to the start of the reply's voice; past it the turn is dropped |
-| `FISH_READING_PROFILE` | empty = `FISH_LLM_PROFILE` | LLM profile that reads a badge photo (the reading, ADR 0007). It needs image input: `luna` |
-| `FISH_READING_LOOK` | `false` | `true`: the console shows a per-visitor consent tick and the model may add one kind line on clothing, colours or accessories |
+| `FISH_READING_PROFILE` | empty = `claude`, then `FISH_LLM_PROFILE` | LLM profiles that read a badge photo (the reading, ADR 0007), comma-separated, tried in order. They need image input (`luna`, `claude`, `claude-sonnet`); one without a key is skipped, one that fails gives way to the next. Name one profile to keep the photo from ever reaching a second service. Since 2026-10-27 the badge photo is off the operator's page ([ADR 0019](docs/adr/0019-the-fortune-act.md)): the typed name stays there, the photo only on `/face`'s sheet and in `--read-badge` |
+| `FISH_READING_LOOK` | `false` | `true`: the model may add one kind line on clothing, colours or accessories, with a per-visitor consent tick; the tick is on `/face`'s sheet only since 2026-10-27 |
 | `FISH_CLOUD_TIMEOUT`, `FISH_CLOUD_CONNECT_TIMEOUT` | `10`, `3` | Seconds before a cloud call gives up |
 
 When a cloud call fails the fish says a short "no signal" line and listens again; nothing

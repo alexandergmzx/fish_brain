@@ -35,3 +35,17 @@ The switches still reset at a restart (only the network pin is a file).
   visit, the hat repeats the visitor (echo) instead of an error line.
 - Measured on the board, 2026-10-26: with the USB speaker marked failed, one scripted visit
   played all 18 phrases on a stand-in phone page.
+
+## Amendment, 2026-10-27: three tabs
+
+- The Show tab becomes three: **Visit** (the acts: "New visitor", the scripted visit's row,
+  the fortune ([0019](0019-the-fortune-act.md)) and its row, the cue chips in English, the typed
+  name), **Status** (the summary and the go / no-go rows; the default on a phone) and
+  **Settings** (mode, hardware, volume, the phone speaker, network, the place, the fortune's
+  deck and cup). "The separate Visit tab is folded into it" above is reversed: the acts have
+  their tab again, apart from the status and the settings. `?tab=<name>` opens one; `show` is
+  kept as an alias of `status` for phones that remembered it.
+- The badge photo and the look tick leave the page ([0007](0007-the-reading.md), superseded on
+  the page); the typed name stays as "Tell the hat".
+- The place and the fortune's switches reset at a restart like the mode; only the network pin
+  and the hardware marks are files.

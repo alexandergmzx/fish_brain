@@ -1,6 +1,6 @@
 # 0007 — The reading: a badge photo becomes a name, the fish asks, then tells the future
 
-**Status:** proposed · **Date:** 2026-10-11
+**Status:** proposed; superseded on the page 2026-10-27 ([0019](0019-the-fortune-act.md)): the badge photo and the look tick left the operator page; the server side (`reading.py`, `/badge`, `/reading`) is parked, the typed name stays · **Date:** 2026-10-11
 
 ## Context
 
@@ -9,15 +9,16 @@ is on the visitor's fair badge; visitors are school children. In this repository
 names the second body (the Spin Master hat), so the feature is called **the reading** (`la
 lectura`). The board's LLM profile `luna` (`gpt-6-luna`) takes image input, Structured Outputs and
 `reasoning_effort="none"`; the laptop default `groq` is text only, and Groq's only vision model is a
-preview. The page can take a photo over plain http (a file input with `capture`). The LLM history
+preview. Since [0018](0018-claude-through-its-own-sdk.md) the `claude` profile takes images too. The page can take a photo over plain http (a file input with `capture`). The LLM history
 in `llm.Conversation` is shared and bounded; `Speaker` drops speech that overlaps a phrase being
 spoken. Loquendo renders a short sentence in about 0.75 s when warm.
 
 ## Decision
 
 - The operator photographs the badge on the console; the page downscales it to a 1024 px JPEG and
-  posts it to the board (`POST /badge`). The board relays it in memory to the profile named by
-  `FISH_READING_PROFILE` (empty = the LLM profile; `luna` on the board) with a strict JSON schema
+  posts it to the board (`POST /badge`). The board relays it in memory to the first profile of
+  `FISH_READING_PROFILE` that has a key and answers (empty = `claude`, then the LLM profile; `luna` on
+  the board; [0018](0018-claude-through-its-own-sdk.md)) with a strict JSON schema
   (`full_name`, `given_names`, `surnames`, `name_for_speech`, `look`, `confidence`),
   `store=False`, reasoning off, image detail high, its own timeout. While the call runs the fish
   says a cached canned line (`reading_wait`).
@@ -56,7 +57,10 @@ spoken. Loquendo renders a short sentence in about 0.75 s when warm.
 ## Consequences
 
 - A badge photo leaves the machine to OpenAI (abuse logs up to 30 days, no training; zero data
-  retention needs approval and is not in place). A Spanish sign at the stand says so.
+  retention needs approval and is not in place). A Spanish sign at the stand says so. Since
+  [0018](0018-claude-through-its-own-sdk.md) it goes to Anthropic first when `ANTHROPIC_API_KEY` is
+  set, and to OpenAI only if that fails (Anthropic's retention terms are not recorded here): the
+  sign's wording is his to change before the next show.
 - About $0.0002 per reading (estimate; Luna's image token multiplier is not published and
   `usage.prompt_tokens` is logged to measure it).
 - Loquendo's time on a four-sentence prophecy and its pronunciation of names are measured before

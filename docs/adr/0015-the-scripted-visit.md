@@ -50,3 +50,13 @@ speech and fell back to typed answers. Children's speech recognition is poor eve
 Visitors who give the same answers with the same chips get the same house; the lines vary by
 visit. Unclear answers are common, so the default paths (re-ask, bridge, chips, bag, buttons)
 carry many visits. Reviewing the 132 lines is his.
+
+## Amendment, 2026-10-27
+
+A sibling act, the fortune ([0019](0019-the-fortune-act.md)), shares this visit's conventions:
+the bank's (clips rendered at start-up after the probe, no error line, re-ask then move on,
+two re-asks per act), the recording cap (lifted to 10 s for the dream question while the long
+speech route is online) and the matcher (`show.match_option` for its animal question). Its
+lines are `fortune_*`, never `show_*`, and they are joined for the hat persona whatever
+`FISH_SHOW` says. The house act's lines keep the kid register until his later pass; the
+audience is adults since 2026-10-27.
