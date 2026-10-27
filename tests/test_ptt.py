@@ -384,3 +384,45 @@ def test_two_silent_takes_of_exact_zeros_make_the_mic_dead(monkeypatch):
     assert P.mic_dead(PTTConfig())
     P._note_take([_np.ones(160, dtype=_np.int16)])       # one real take: alive again
     assert not P.mic_dead(PTTConfig())
+
+
+def test_mic_dead_is_the_or_of_zeroed_and_a_missing_source(monkeypatch):
+    import numpy as _np
+    from fish_brain import ptt as P, pw
+    from fish_brain.config import PTTConfig
+
+    class Cache:
+        def __init__(self, names):
+            self.names = names
+
+        def sources(self):
+            return [{"name": n} for n in self.names]
+    monkeypatch.setattr(P, "_zero_takes", 0)
+    cfg = PTTConfig()
+    assert P.mic_source_present(cfg) is None and not P.mic_zeroed()   # nothing named
+    cfg.source, cfg.backend = "src.XING_WEI", "pw-record"
+    monkeypatch.setattr(pw, "cache", lambda: Cache(["src.XING_WEI"]))
+    assert P.mic_source_present(cfg) is True and not P.mic_dead(cfg)
+    monkeypatch.setattr(pw, "cache", lambda: Cache([]))              # not listable: unknown
+    assert P.mic_source_present(cfg) is None and not P.mic_dead(cfg)
+    monkeypatch.setattr(pw, "cache", lambda: Cache(["other"]))
+    assert P.mic_source_present(cfg) is False and P.mic_dead(cfg)
+    monkeypatch.setattr(pw, "cache", lambda: Cache(["src.XING_WEI"]))
+    P._note_take([_np.zeros(160, dtype=_np.int16)])
+    P._note_take([_np.zeros(160, dtype=_np.int16)])
+    assert P.mic_zeroed() and P.mic_dead(cfg)
+
+
+def test_an_off_source_never_records_nor_relays(monkeypatch):
+    monkeypatch.setattr(ptt, "_record_until",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("recorded")))
+    flag, calls, box, item = Flag(), [], [], Item()
+    src = relayed(flag)
+    src.off = True                                    # the remote marked failed
+    plain = ptt.ButtonSource(flag.is_held, reset=flag.reset, name="remote")
+    plain.off = True
+    threading.Timer(0.05, lambda: setattr(flag, "held", True)).start()
+    threading.Timer(0.25, lambda: box.append(item)).start()
+    got = ptt.record_multi(PTTConfig(), [src, plain],
+                           inbox=lambda: box.pop() if box else None, relay=calls.append)
+    assert got is item and calls == [] and flag.resets == 0

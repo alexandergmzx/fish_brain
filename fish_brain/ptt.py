@@ -50,6 +50,9 @@ class ButtonSource:
                  arm: Callable[[bool], None] | None = None, name: str = "button",
                  relay: bool = False):
         self.is_held = is_held
+        # True: `record_multi` leaves this source out entirely (the remote marked failed,
+        # hw.py); set by `hw.apply`, a plain bool like `relay`.
+        self.off = False
         self._reset = reset
         self._arm = arm
         self.name = name
@@ -194,20 +197,40 @@ class _PwRecord:
 _zero_takes = 0
 
 
+def mic_zeroed() -> bool:
+    """The board's microphone sent two takes of exact zeros in a row."""
+    return _zero_takes >= 2
+
+
+def mic_source_present(cfg: PTTConfig) -> bool | None:
+    """Whether the configured PipeWire source is listed; None when no source is named, the
+    backend is not pw-record, or the sources cannot be listed."""
+    if not (cfg.source and cfg.backend == "pw-record"):
+        return None
+    try:
+        from . import pw
+        sources = pw.cache().sources()
+    except Exception:
+        return None
+    if not sources:
+        return None
+    return any(s["name"] == cfg.source for s in sources)
+
+
 def mic_dead(cfg: PTTConfig) -> bool:
     """The board's microphone streams nothing (two takes of exact zeros in a row), or its
-    PipeWire source is gone: the remote's presses go to a phone microphone instead."""
-    if _zero_takes >= 2:
-        return True
-    if cfg.source and cfg.backend == "pw-record":
-        try:
-            from . import pw
-            sources = pw.cache().sources()
-            if sources and not any(s["name"] == cfg.source for s in sources):
-                return True
-        except Exception:
-            pass
-    return False
+    PipeWire source is gone: the remote's presses go to a phone microphone instead.
+    The OR of `mic_zeroed()` and `mic_source_present(cfg) is False`."""
+    return mic_zeroed() or mic_source_present(cfg) is False
+
+
+def recorder(cfg: PTTConfig, mic_pages: int) -> str:
+    """Who records the next hold now (devices.recorder over the live facts): `browser` (a
+    phone page with its microphone ready) or `host`. The microphone's mark is read here, the
+    configured capture is never rewritten (hw.apply)."""
+    from . import devices, hw
+    mic_out = cfg.capture == "auto" and mic_dead(cfg)    # asked only where it counts
+    return devices.recorder(cfg.capture, hw.failed("mic"), mic_out, mic_pages)
 
 
 def _note_take(frames) -> None:
@@ -441,10 +464,14 @@ def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
     `relay_ready()`, when given, is asked at every press edge whether the page is still
     there: if not, that source records here for the rest of this wait (the phone went away
     mid-wait and the remote must not go dead).
+
+    A source whose `.off` is True (the remote marked failed) is left out: its presses
+    neither record nor relay.
     """
     global _cut_last
     if not sources and inbox is None:
         raise PTTUnavailable("no push-to-talk source configured")
+    sources = [s for s in sources if not getattr(s, "off", False)]   # a marked remote: ignored
 
     def from_inbox():
         return inbox() if inbox is not None else None

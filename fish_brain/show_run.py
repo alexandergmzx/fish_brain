@@ -31,13 +31,14 @@ def model_trusted(convo, failed_at: float | None = None, back_s: float = 0.0) ->
     """Whether the model can be asked for a visitor right now, and why not: the internet
     marked failed, echo mode, offline, the key missing, the voice tainted, or a model failure
     at `failed_at` less than `back_s` ago. Shared by the scripted visit and the fortune act."""
-    from . import hw
-    if hw.failed("internet"):
-        return False, "internet marked failed"
+    from . import devices, hw
+    usable, why = devices.internet(hw.failed("internet"), cloud.is_online())
+    if why == "internet marked failed":
+        return False, why
     if convo.echo:
         return False, "echo"
-    if not cloud.is_online():
-        return False, "offline"
+    if not usable:
+        return False, why
     key = convo.cfg.llm.api_key_env
     if key and cloud.missing_keys({key}):
         return False, "no key"

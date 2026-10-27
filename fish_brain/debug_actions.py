@@ -451,14 +451,20 @@ class DebugActions:
 
     # ---- through the turn loop --------------------------------------------------------------
 
+    def _recorder(self) -> str:
+        """Who records the next hold, as the turn loop decides it (ptt.recorder)."""
+        from . import ptt
+        return ptt.recorder(self.cfg.ptt, self.viz.mic_pages() if self.viz is not None else 0)
+
     def _offer(self, fn, wait_s: float, *, phone_ok: bool = False) -> tuple[int, dict]:
         if self.viz is None or not self.viz.listening:
             return 409, {"ok": False, "error": "busy"}
         if any(s.is_held() for s in getattr(self.convo, "sources", ())):
             return 409, {"ok": False, "error": "recording"}
-        if not phone_ok and self.cfg.ptt.capture == "browser" and self.viz.mic_pages() > 0:
+        if not phone_ok and self._recorder() == "browser":
             # A phone records by itself and only says so when it uploads: a test could land
-            # in the middle of a visitor's sentence. Not in this mode.
+            # in the middle of a visitor's sentence. Not while the device table says a phone
+            # records (capture browser, the microphone marked, or auto with it out).
             return 409, {"ok": False, "error": "a phone is the microphone"}
         item = _Item(fn, self._clock() + PICKUP_S, self._clock)
         if not self.viz.offer(item):

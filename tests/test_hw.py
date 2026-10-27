@@ -26,14 +26,34 @@ def test_marks_persist_and_unknown_parts_are_refused(marks, tmp_path):
 
 
 def test_a_failed_mic_records_on_the_phone_and_back(marks):
+    """The mark is read by ptt.recorder (devices.recorder); the capture is never rewritten."""
+    from fish_brain import ptt
     cfg = Config()
     cfg.ptt.capture = "auto"
     marks.set("mic", True)
     hw.apply(cfg)
-    assert cfg.ptt.capture == "browser"
+    assert cfg.ptt.capture == "auto"                 # the switch's start value stays the boot value
+    assert ptt.recorder(cfg.ptt, mic_pages=1) == "browser"
+    assert ptt.recorder(cfg.ptt, mic_pages=0) == "host"   # no phone ready: the board records
     marks.set("mic", False)
     hw.apply(cfg)
     assert cfg.ptt.capture == "auto"
+    assert ptt.recorder(cfg.ptt, mic_pages=1) == "host"
+
+
+def test_a_failed_remote_is_ignored_and_back(marks):
+    from fish_brain import ptt
+
+    class Convo:
+        sources = [ptt.ButtonSource(lambda: False, name="web"),
+                   ptt.ButtonSource(lambda: True, name="remote")]
+    cfg, convo = Config(), Convo()
+    marks.set("remote", True)
+    hw.apply(cfg, convo)
+    assert [s.off for s in convo.sources] == [False, True]
+    marks.set("remote", False)
+    hw.apply(cfg, convo)
+    assert [s.off for s in convo.sources] == [False, False]
 
 
 def test_failed_motors_mute_the_link(marks):

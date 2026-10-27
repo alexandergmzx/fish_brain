@@ -4,11 +4,20 @@ Automatic detection (a missing sink, a microphone sending only zeros, the cloud 
 runs; a mark forces the fallback at once, because the operator usually knows first. Marks
 survive restarts and reboots (a cable swap reboots the board) until he clears them.
 
-    speaker   the USB speaker: phrases go to Bluetooth, then the phone
-    mic       the USB microphone (the remote's): recordings come from the phone
-    remote    the remote's button: the page's Hold to talk only
-    motors    the motors: the link is muted, nothing moves
-    internet  no model calls: the visit runs as the script
+A mark is read where the decision is made, through the device table's functions
+(`devices.py`, ADR 0021), never by rewriting the configuration:
+
+    part      effect                                           read by
+    speaker   phrases go to Bluetooth, then the phone          devices.speaker_routes (audio_route)
+    mic       recordings come from a phone with its            devices.recorder (conversation,
+              microphone on; with none, the board records       debug_actions)
+    remote    its presses are ignored: the page's Hold to      ButtonSource.off, set by apply()
+              talk only
+    motors    the link is muted, nothing moves                 apply()
+    internet  no model calls: the visit runs as the script     devices.internet (show_run, stt)
+
+`apply()` leaves `cfg.ptt.capture` as configured: the `mic` switch's start value is the boot
+value whatever is marked.
 """
 from __future__ import annotations
 
@@ -67,9 +76,9 @@ def failed(part: str) -> bool:
 def apply(cfg, convo=None, link=None) -> None:
     """Make the running fish follow the marks (at start and after every change)."""
     m = marks()
-    if not hasattr(cfg.ptt, "_capture_configured"):
-        cfg.ptt._capture_configured = cfg.ptt.capture
-    cfg.ptt.capture = "browser" if "mic" in m.failed else cfg.ptt._capture_configured
+    for s in getattr(convo, "sources", None) or ():
+        if s.name == "remote":
+            s.off = "remote" in m.failed            # its presses neither record nor relay
     if link is not None and hasattr(link, "mute"):
         want = "motors" in m.failed
         if bool(getattr(link, "muted", False)) != want:

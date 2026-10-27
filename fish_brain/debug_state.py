@@ -479,16 +479,8 @@ def _facts(hub, st: dict):
     cards = debug_checks.sound_cards()
     # The board microphone's health: its PipeWire source and the zero takes (ptt.mic_dead).
     from . import ptt
-    zeroed = getattr(ptt, "_zero_takes", 0) >= 2
-    source_present = None
-    if cfg.ptt.source and cfg.ptt.backend == "pw-record":
-        try:
-            from . import pw
-            sources = pw.cache().sources()
-            if sources:
-                source_present = any(s["name"] == cfg.ptt.source for s in sources)
-        except Exception:
-            pass
+    zeroed = ptt.mic_zeroed()
+    source_present = ptt.mic_source_present(cfg.ptt)
     turns = hub.recent("turn", 1) if hasattr(hub, "recent") else []
     last_play = ((turns[-1].get("perf") or {}).get("result") or "") if turns else ""
     show = getattr(convo, "show", None)
@@ -511,7 +503,7 @@ def _facts(hub, st: dict):
         playback_cards=sum(1 for c in cards if c["playback"]) if cards else None,
         capture_cards=sum(1 for c in cards if c["capture"]) if cards else None,
         last_play=last_play,
-        capture=getattr(cfg.ptt, "_capture_configured", cfg.ptt.capture),
+        capture=cfg.ptt.capture,
         mic_source=cfg.ptt.source or "",
         mic_source_present=source_present,
         mic_zeroed=zeroed,

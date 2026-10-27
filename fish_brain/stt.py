@@ -369,7 +369,7 @@ class CanaryTranscriber:
 
     def _ask(self, name: str, route: str, wav_path, skipped: list, after: str) -> str | None:
         """The service's text for a recording, or None when it is to be passed over."""
-        from . import hw
+        from . import devices, hw
         now = time.monotonic()
         if name not in STT_PROFILES:
             skipped.append(f"{name}: unknown service")
@@ -377,7 +377,7 @@ class CanaryTranscriber:
         if now < self._rest_until.get(name, 0.0):
             skipped.append(f"{name}: resting after a failure")
             return None
-        if hw.failed("internet") or not cloud.is_online():
+        if not devices.internet(hw.failed("internet"), cloud.is_online())[0]:
             skipped.append(f"{name}: offline")
             return None
         online = self._service(name)

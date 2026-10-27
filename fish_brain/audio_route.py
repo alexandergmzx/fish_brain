@@ -165,20 +165,17 @@ class RoutedPlayer(Player):
         return 0.0
 
     def _candidates(self):
-        from . import hw
-        now = self._clock()
-        for route in self.cfg.routes:
-            if self._cool.get(route, 0.0) > now:
-                continue
-            if route.startswith("alsa_output.usb") and hw.failed("speaker"):
-                continue                        # he marked the USB speaker failed
+        """(route, node, make a player) for each route a phrase can take now, in order: the
+        device table's decision (devices.speaker_routes: cooling skipped, a marked USB
+        speaker skipped, `phone` only with an armed page)."""
+        from . import devices, hw
+        pages = getattr(self.viz, "speaker_pages", lambda: 0)() if self.viz is not None else 0
+        for route, node in devices.speaker_routes(self.cfg.routes, hw.failed("speaker"),
+                                                  self.cache.sinks(), pages, self._cool,
+                                                  self._clock()):
             if route == "phone":
-                if self.viz is not None and getattr(self.viz, "speaker_pages", lambda: 0)() > 0:
-                    yield route, "", lambda: PhonePlayer(self.viz, ack_s=self.cfg.phone_ack_s)
-                continue
-            sink = self.cache.find_sink(route)
-            if sink is not None:
-                node = sink["name"]
+                yield route, "", lambda: PhonePlayer(self.viz, ack_s=self.cfg.phone_ack_s)
+            else:
                 yield route, node, (lambda n=node: PwPlayer(n, stall_s=self.cfg.stall_s))
 
     def play(self, wav_path) -> None:

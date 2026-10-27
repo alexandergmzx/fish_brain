@@ -209,6 +209,52 @@ def test_a_switch_passes_while_a_phone_is_the_microphone(rig, monkeypatch):
     assert status == 200 and rig.cfg.ptt.capture == "host"
 
 
+def _marks(monkeypatch, tmp_path):
+    from fish_brain import hw
+    m = hw.Marks(tmp_path / "hw.json")
+    monkeypatch.setattr(hw, "_marks", m)
+    return m
+
+
+def test_hw_marks_set_clear_and_refuse_an_unknown_part(rig, monkeypatch, tmp_path):
+    from fish_brain import ptt
+    marks = _marks(monkeypatch, tmp_path)
+    remote = ptt.ButtonSource(lambda: False, name="remote")
+    rig.convo.sources = [remote]
+    status, out = rig.act.post("/debug/hw", {"part": "remote", "failed": True})
+    assert status == 200 and out["hw"]["remote"] is True and marks.failed == {"remote"}
+    assert remote.off is True                         # the fish follows at once
+    status, out = rig.act.post("/debug/hw", {"part": "mic", "failed": True})
+    assert status == 200 and rig.cfg.ptt.capture == "host"   # the capture is never rewritten
+    status, out = rig.act.post("/debug/hw", {"part": "remote", "failed": False})
+    assert status == 200 and out["hw"]["remote"] is False and remote.off is False
+    assert marks.failed == {"mic"}
+    status, out = rig.act.post("/debug/hw", {"part": "toaster", "failed": True})
+    assert status == 400 and "toaster" in out["error"] and marks.failed == {"mic"}
+
+
+def test_no_test_with_auto_a_dead_board_mic_and_a_phone_ready(rig, monkeypatch, tmp_path):
+    from fish_brain import ptt
+    _marks(monkeypatch, tmp_path)
+    rig.cfg.ptt.capture = "auto"
+    monkeypatch.setattr(rig.viz, "mic_pages", lambda: 1)
+    monkeypatch.setattr(ptt, "_zero_takes", 2)       # the remote sends zeros: a phone records
+    rig.act.arm(True)
+    assert rig.act.motor("mouth")[1]["error"] == "a phone is the microphone"
+    assert rig.sent() == []
+    monkeypatch.setattr(ptt, "_zero_takes", 0)       # the board hears again: the test runs
+    assert rig.act.motor("mouth")[0] == 200
+
+
+def test_no_test_with_the_mic_marked_and_a_phone_ready(rig, monkeypatch, tmp_path):
+    marks = _marks(monkeypatch, tmp_path)
+    rig.cfg.ptt.capture = "host"
+    monkeypatch.setattr(rig.viz, "mic_pages", lambda: 1)
+    marks.set("mic", True)
+    rig.act.arm(True)
+    assert rig.act.motor("mouth")[1]["error"] == "a phone is the microphone"
+
+
 def test_speaker_test_plays_a_rendered_phrase_and_nothing_else(rig, tmp_path, monkeypatch):
     from fish_brain import tts
     monkeypatch.setattr(tts, "synthesize", lambda *a, **k: 1 / 0)    # must never be reached

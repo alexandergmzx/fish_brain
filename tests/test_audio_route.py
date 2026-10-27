@@ -193,3 +193,24 @@ def test_view_next_is_the_route_the_next_phrase_takes(routed, monkeypatch, tmp_p
     assert p.view()["next"] == "bluez_output.*"
     p2, _ = routed([], viz=Viz(pages=0))
     assert p2.view()["next"] == "none"
+
+
+def test_next_after_a_mark_and_while_cooling_follows_the_device_table(routed, monkeypatch, tmp_path):
+    """The routes come from devices.speaker_routes: a mark and a cooling show in `next` at once,
+    and the phone only with an armed page."""
+    from fish_brain import devices, hw
+    marks = hw.Marks(tmp_path / "hw.json")
+    monkeypatch.setattr(hw, "_marks", marks)
+    viz = Viz(pages=0)
+    p, wav = routed(["alsa_output.usb-Jieli_x"], viz=viz)
+    assert p.view()["next"] == "alsa_output.usb-*"
+    marks.failed = {"speaker"}
+    assert p.view()["next"] == "none"                 # no Bluetooth, no armed phone
+    viz.pages = 1
+    assert p.view()["next"] == "phone"
+    marks.failed = set()
+    FakePw.fail = {"alsa_output.usb-Jieli_x"}
+    p.play(wav)                                       # USB fails, the phone takes the phrase
+    assert p.route == "phone" and p.view()["next"] == "phone"
+    assert [r for r, _ in devices.speaker_routes(
+        p.cfg.routes, False, p.cache.sinks(), 1, p._cool, p._clock())] == ["phone"]
