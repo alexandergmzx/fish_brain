@@ -348,7 +348,7 @@ DREAM_THEMES: tuple[Theme, ...] = (
         "perro*", "perrit*", "cachorro", "lomito", "xolo*", "me ladraba", "gato", "gatos",
         "gatit*", "gata", "gato negro", "michi", "minino", "caballo*", "yegua", "pony",
         "montaba a caballo", "burro", "vaca", "vacas", "toro", "borreg*", "oveja*", "rebano*",
-        "cabra*", "ajolote*", "gallina*", "pato*", "zorro*", "pajaro*",
+        "cabra*", "cabrit*", "ajolote*", "gallina*", "pato*", "patit*", "zorro*", "pajaro*",
         "pajarit*", "colibri", "paloma", "buho", "lechuza", "tecolote", "murcielago*",
         "mariposa*", "monarca", "conejo", "tortuga", "pez", "peces", "delfin", "ballena",
         "tiburon", "cocodrilo", "leon", "tigre", "lobo", "lobos", "oso", "elefante",

@@ -293,7 +293,7 @@ class FortuneRun:
         self.v = {"n": n, "qs": qs, "i": 0, "tries": 0, "reprompts": 0, "data": {}, "heard": [],
                   "why": why, "deck": deck, "place": place, "first": first, "house": house,
                   "stage": "ask", "mode": None, "mode_why": "", "clips": [], "reading": None,
-                  "t0": time.monotonic(), "last_s": now}
+                  "t0": time.monotonic(), "last_s": now, "pistas": self._pistas()}
         self._last.pop("refused", None)
         letter = show.HOUSE_LETTERS.get(house) if house else None
         intro = self._pick(f"intro_{letter}") if letter else None
@@ -366,8 +366,9 @@ class FortuneRun:
 
     def _fortune(self) -> fortune.Fortune:
         v = self.v
+        v["pistas"] = self._pistas()     # the record keeps what the reading was given
         return fortune_of(v["data"], nombre=v["first"], lugar=place_word(self.c.cfg.place),
-                          casa=v["house"], pistas=self._pistas())
+                          casa=v["house"], pistas=v["pistas"])
 
     def _ending(self, lead: list, *, clips_only: bool = False) -> bool:
         """The reading: the moon and the magic word join the data; the model's reading when
@@ -471,7 +472,7 @@ class FortuneRun:
         debug.emit("fortune", n=v["n"], mode=v["mode"], why=v["mode_why"], how=how,
                    place=v["place"], data=data, heard=[list(h) for h in v["heard"]],
                    clips=list(v["clips"]), reading=v["reading"], house=v["house"],
-                   first=v["first"], pistas=self._pistas(), seconds=seconds)
+                   first=v["first"], pistas=v.get("pistas", {}), seconds=seconds)
         debug.turn_set(fortune=f"#{v['n']} reading ({how})", outcome=f"fortune: reading ({how})")
         self._last = {"n": v["n"], "mode": how, "why": v["mode_why"], "data": data}
         self.v = None
@@ -504,7 +505,7 @@ class FortuneRun:
               f"{min(v['i'] + 1, len(v['qs']))}/{len(v['qs'])}", flush=True)
         debug.emit("fortune", n=v["n"], dropped=why, place=v["place"], data=data,
                    heard=[list(h) for h in v["heard"]], clips=list(v["clips"]),
-                   house=v["house"], first=v["first"], pistas=self._pistas(),
+                   house=v["house"], first=v["first"], pistas=v.get("pistas", {}),
                    seconds=round(time.monotonic() - v["t0"], 1))
         debug.turn_set(fortune=f"#{v['n']} dropped ({why})", outcome=f"dropped ({why})")
         self._last = {"n": v["n"], "mode": "dropped", "why": why, "data": data}
