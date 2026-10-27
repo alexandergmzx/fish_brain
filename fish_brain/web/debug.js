@@ -177,7 +177,7 @@
   // One id per load: a reconnect replaces this page's own stream on the board instead of
   // waiting for its dead socket to free one of the four places.
   const PAGE = Math.random().toString(36).slice(2, 10);
-  let es = null, lastMsgAt = 0;
+  let es = null, lastMsgAt = 0, openedAt = 0;   // openedAt: when connect() last opened a stream
   // One connection record (ADR 0021): the stream is live while a record (the 10 s heartbeat
   // included) came within QUIET_S, quiet until DOWN_S, then down and reopened; the slow state is
   // stale after STALE_S. The watchdog, the hat, the Status tab, the band, a resume and the phone's
@@ -187,8 +187,12 @@
     const now = performance.now();
     const age_s = lastMsgAt ? (now - lastMsgAt) / 1000 : null;
     const state_age_s = S.stateAt ? (now - S.stateAt) / 1000 : null;
-    const stream = age_s === null || age_s > CONN.DOWN_S ? "down"
-      : S.connected && age_s <= CONN.QUIET_S ? "live" : "quiet";
+    // An attempt that has not opened yet (a first load over TLS, the tail of records) is quiet,
+    // not down, until DOWN_S after connect() opened it: the watchdog never tears it down early.
+    const since = Math.max(lastMsgAt, openedAt);
+    const quiet_s = since ? (now - since) / 1000 : null;
+    const stream = quiet_s === null || quiet_s > CONN.DOWN_S ? "down"
+      : S.connected && age_s !== null && age_s <= CONN.QUIET_S ? "live" : "quiet";
     return { stream, age_s, state_age_s, stale: state_age_s !== null && state_age_s > CONN.STALE_S,
              token_ok: $("tokenGate").hidden };
   }
@@ -201,6 +205,7 @@
     if (S.boot && S.lastSeq) q.set("since", S.boot + "-" + S.lastSeq);
     else q.set("tail", "1500");                   // a first load: the last records, not every ring
     es = new EventSource("/debug/events" + (q.toString() ? "?" + q : ""));
+    openedAt = performance.now();
     es.onopen = () => { S.connected = true; lastMsgAt = performance.now(); mark("bar"); };
     es.onerror = () => { S.connected = false; mark("bar"); checkToken(); };
     es.onmessage = (e) => {
@@ -816,7 +821,8 @@
       const out = await post("/debug/hw", { part, failed });
       b.disabled = false;
       if (out.ok) b.setAttribute("aria-pressed", failed ? "true" : "false");
-      if (ph && armedByTap[part] && (!failed || !out.ok)) { armedByTap[part] = false; ph.disarm(); }
+      // a refused clear is not a clearing: the board still has the mark, the phone stays on
+      if (ph && armedByTap[part] && ((failed && !out.ok) || (!failed && out.ok))) { armedByTap[part] = false; ph.disarm(); }
       $("setupMsg").textContent = out.ok ? "" : part + ": " + explain(out);
       soon();
     });

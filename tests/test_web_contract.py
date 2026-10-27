@@ -393,6 +393,9 @@ def test_one_connection_record_and_no_stray_thresholds():
     for key in ("stream", "age_s", "state_age_s", "token_ok"):
         assert key in conn, key
     assert not re.search(r"lastMsgAt\)?\s*[<>]=?\s*\d", js)
+    # an attempt that has not opened yet is quiet, not down, until DOWN_S after connect()
+    assert "Math.max(lastMsgAt, openedAt)" in conn
+    assert "openedAt = performance.now();" in _fn(js, "function connect() {")
     assert "connState()" in js and js.count("connState()") >= 7
     # the six sites
     watchdog = js[js.index("// a stream that went quiet"):]
@@ -429,5 +432,6 @@ def test_the_hardware_taps_are_pessimistic_and_symmetric():
     assert "explain(out)" in block
     # the phone is armed inside the tap, and disarmed only when this tap armed it
     assert "armedByTap[part] = true" in block and block.index("armedByTap[part] = true") < sent
-    assert "if (ph && armedByTap[part] && (!failed || !out.ok))" in block
+    assert "if (ph && armedByTap[part] && ((failed && !out.ok) || (!failed && out.ok)))" in block
+    assert "(!failed || !out.ok)" not in block      # a refused clear leaves the phone on
     assert "const armedByTap = { speaker: false, mic: false };" in js
