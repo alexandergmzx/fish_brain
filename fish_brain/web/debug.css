@@ -407,6 +407,8 @@ body.still .perch, body.still #tip, body.still #eyes, body.still #tipPose { anim
 .go.ok b::before { content: "● "; color: var(--hoja-bien); }
 .go.warn b::before { content: "● "; color: var(--hoja-aviso); }
 .go.bad b::before { content: "● "; color: var(--hoja-mal); }
+/* The hat stopped answering: the last good rows stay, dimmed, under the summary that says so. */
+.go-rows.stale { opacity: .45; }
 #volSlider { width: 100%; min-height: 40px; }
 .pick[aria-pressed="true"] { background: #6b46c1; color: #fff; }
 

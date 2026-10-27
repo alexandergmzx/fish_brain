@@ -42,7 +42,7 @@
       try { out = await r.json(); } catch (_) {}
       out.status = r.status;
       return out;
-    } catch (_) { return { ok: false, error: "no connection", status: 0 }; }
+    } catch (_) { return { ok: false, status: 0 }; }   // explain(): status 0, the board unreachable
   }
 
   // ---- store -------------------------------------------------------------------------------
@@ -90,13 +90,13 @@
     return devMap;
   }
   const MARK = { ok: "● ", warn: "▲ ", bad: "■ ", off: "○ " };
-  // One place for what an action answered (the old per-panel spots are gone).
+  // One place for what an action answered (the old per-panel spots are gone); `warn` colours it.
   let toastTimer = null;
-  function msg(_node, text, ms) {
+  function msg(_node, text, ms, warn) {
     const t = $("toast");
     if (!text) return;
     t.textContent = text;
-    t.className = /refused|NOT DELIVERED|no connection|failed/.test(text) ? "warn" : "";
+    t.className = warn ? "warn" : "";
     t.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { t.hidden = true; }, ms || 6000);
@@ -107,6 +107,22 @@
     try { return make(); } catch (e) { console.error("[page] " + name + " is off:", e); return stub; }
   }
   const PHONE = matchMedia("(max-width: 700px)");
+  // One sentence for every refusal a POST can bring back (docs/debug.md): the status first, then
+  // the server's `why` or `error`. `what` names the act a 503 says is off ("the fortune").
+  const WHY = { "visit open": "finish the visit first (or Force a house)" };
+  const BUSY = { recording: "the hat is recording", speaking: "the hat is speaking",
+                 "a phone is the microphone": "a phone is the microphone", "link off": "the motor link is off",
+                 "test running": "a test is running" };
+  function explain(out, what) {
+    const s = (out || {}).status, e = (out || {}).error || "";
+    if (s === 0) return "no connection";
+    if (s === 403) return e === "not armed" ? "arm first (60 s)" : "no permission (token)";
+    if (s === 503) return (what || "it") + " is off";
+    if (s === 504) return "the hat did not pick it up";
+    const why = s === 409 && out.why ? WHY[out.why] || out.why : s === 409 && BUSY[e] ? BUSY[e] : "";
+    if (s === 409 && !why && (!e || e === "busy" || out.busy)) return "the hat is busy: try again when it waits";
+    return "refused: " + (why || e || "status " + s);
+  }
 
   // ---- ARM and STOP: wired first, so nothing below can take them down ------------------------
   let armTick = null;
@@ -133,6 +149,7 @@
   async function toggleArm() {
     const out = await post("/debug/arm", { on: !(performance.now() < S.armedUntil) });
     if (out.ok) setArmed(out.armed_s || 0);
+    else msg(null, "arm: " + explain(out), 6000, true);
   }
   $("armBtn").addEventListener("click", toggleArm);
   $("armBtn2").addEventListener("click", toggleArm);
@@ -142,7 +159,7 @@
     const out = await post("/debug/stop", {});
     setArmed(0);
     b.textContent = out.status === 200 && out.ok ? "STOP sent " + new Date().toLocaleTimeString("en-GB")
-                                                  : "NOT DELIVERED" + (out.error ? " (" + out.error + ")" : "");
+                                                  : "NOT DELIVERED (" + explain(out) + ")";
     if (out.speaking) msg($("motorMsg"), "STOP sent; the fish is speaking: its next pulse moves the mouth again until the phrase ends", 10000);
     setTimeout(() => { b.textContent = "STOP"; }, 4000);
     refresh();
@@ -161,6 +178,20 @@
   // waiting for its dead socket to free one of the four places.
   const PAGE = Math.random().toString(36).slice(2, 10);
   let es = null, lastMsgAt = 0;
+  // One connection record (ADR 0021): the stream is live while a record (the 10 s heartbeat
+  // included) came within QUIET_S, quiet until DOWN_S, then down and reopened; the slow state is
+  // stale after STALE_S. The watchdog, the hat, the Status tab, the band, a resume and the phone's
+  // microphone all read it here, never their own clock.
+  const CONN = { QUIET_S: 15, DOWN_S: 25, STALE_S: 15 };
+  function connState() {
+    const now = performance.now();
+    const age_s = lastMsgAt ? (now - lastMsgAt) / 1000 : null;
+    const state_age_s = S.stateAt ? (now - S.stateAt) / 1000 : null;
+    const stream = age_s === null || age_s > CONN.DOWN_S ? "down"
+      : S.connected && age_s <= CONN.QUIET_S ? "live" : "quiet";
+    return { stream, age_s, state_age_s, stale: state_age_s !== null && state_age_s > CONN.STALE_S,
+             token_ok: $("tokenGate").hidden };
+  }
   function connect() {
     if (es) { try { es.close(); } catch (_) {} }
     if (document.hidden) { es = null; return; }   // resume() opens it again
@@ -181,7 +212,7 @@
   }
   setInterval(() => {                           // a stream that went quiet (sleep, network): reopen
     if (document.hidden) return;
-    if (!es || es.readyState === EventSource.CLOSED || performance.now() - lastMsgAt > 25000) connect();
+    if (!es || es.readyState === EventSource.CLOSED || connState().stream === "down") connect();
   }, 5000);
   // The server's clock against this one, from records that arrive live: each sample is at most
   // the true offset (a record is never received before it is made), so the largest is close.
@@ -501,8 +532,7 @@
     }
     function paint() {
       const st = S.state || {};
-      const quiet = performance.now() - lastMsgAt > 15000;
-      const off = STILL === "offline" || (!STILL && (!S.connected || (quiet && !document.hidden && lastMsgAt > 0)));
+      const off = STILL === "offline" || (!STILL && connState().stream !== "live");
       box.classList.toggle("st-offline", off);
       const noNet = (dev().internet || {}).present === false;
       box.classList.toggle("no-net", noNet);
@@ -583,7 +613,7 @@
       if (page.visit && !S.visit) { S.visit = page.visit; fish.visit(page.visit, false); visitRow.view(page.visit); }
       if (page.visit && page.visit.fortune && !S.fortune) { fortuneRow.view(page.visit.fortune, page.visit); fish.fortune(page.visit.fortune, false); }
       fish.reconcile(S.state.mode);
-    } catch (_) { S.state = S.state || null; S.stateAt = 0; }
+    } catch (_) { /* the last good state and its time stay: the Status tab says how old it is */ }
     mark("bar", "hints", "panels");
   }
   function soon() { clearTimeout(stateTimer); stateTimer = setTimeout(refresh, 400); }
@@ -616,18 +646,16 @@
   }
   function renderStatus() {
     const rows = $("goRows");
-    // Never a "ready" without data: until the hat answers, and when its answer gets old, say so.
-    const age = S.stateAt ? (performance.now() - S.stateAt) / 1000 : Infinity;
+    // Never a "ready" without data: until the hat answers, say so; when its answer gets old, the
+    // last good rows stay, dimmed, under how long it has been silent.
+    const conn = connState();
     const st = S.state;
     if (!st || (!Array.isArray(st.devices) && (!st.show_tab || st.show_tab.error))) {
       setSummary("wait", S.stateAt ? "No answer from the hat" : "Waiting for the hat…");
       rows.replaceChildren();
       return;
     }
-    if (age > 15) {
-      setSummary("bad", "No answer from the hat for " + Math.round(age) + " s: check the Wi-Fi");
-      return;
-    }
+    rows.classList.toggle("stale", conn.stale);
     const t = st.show_tab && !st.show_tab.error ? st.show_tab : {};
     const out = [], local = [];                  // local: the rows only the page decides
     // The device rows first, in the table's order (ADR 0021): the USB rows lead on the board;
@@ -659,6 +687,10 @@
     row("Start at boot", svc.enabled === false ? "bad" : "ok", svc.enabled === false ? "off" : "on",
       svc.enabled === false ? "systemctl --user enable fish-brain" : "");
     rows.replaceChildren(...out);
+    if (conn.stale) {
+      setSummary("bad", "No answer from the hat for " + Math.round(conn.state_age_s) + " s: check the Wi-Fi");
+      return;
+    }
     // The summary: the server's verdict on the devices, then the page's own rows.
     const sum = st.summary || {}, d = dev();
     const say = (id) => { const x = d[id] || {}; return (x.label || id) + " · " + (x.state || x.reason || ""); };
@@ -719,7 +751,7 @@
     clearTimeout(volTimer);
     volTimer = setTimeout(async () => {
       const out = await post("/debug/volume", { value: Number($("volSlider").value) });
-      $("setupMsg").textContent = out.ok ? "" : "the volume could not be changed";
+      $("setupMsg").textContent = out.ok ? "" : "volume: " + explain(out);
       volDragging = false; soon();
     }, 250);
   });
@@ -731,7 +763,7 @@
       const a1 = await post("/debug/set", { name: "show", value: show });
       const a2 = await post("/debug/set", { name: "mode", value: mode });
       const bad = [a1, a2].find((o) => !o.ok);
-      $("setupMsg").textContent = bad ? "refused: " + (bad.error || bad.status) : "";
+      $("setupMsg").textContent = bad ? "mode: " + explain(bad) : "";
       soon();
     });
   }
@@ -739,7 +771,7 @@
   // state confirms it; a refusal is written under them in #actMsg.
   async function setFromTap(name, value) {
     const out = await post("/debug/set", { name, value });
-    $("actMsg").textContent = out.ok ? "" : "refused: " + (out.error === "busy" ? "the hat is mid-turn, try again when it waits" : out.error || out.status);
+    $("actMsg").textContent = out.ok ? "" : explain(out);
     soon();
   }
   // The place: a setting for the evening (the intro and the closing of the fortune follow it);
@@ -767,21 +799,32 @@
   });
   // Hardware he marks failed. Marking the speaker or the microphone failed also arms this phone
   // for it in the same tap (a browser lets sound and the microphone start only from a tap).
+  // Pessimistic: the button is disabled during the POST and shows the mark only once the board
+  // took it. Symmetric: clearing the mark (or a refused mark) turns this phone's speaker or
+  // microphone off again only when that tap turned it on (armedByTap), never one he armed himself.
+  const armedByTap = { speaker: false, mic: false };
+  const PHONE_PART = {
+    speaker: { on: () => phoneSpeaker.isOn(), arm: () => phoneSpeaker.enable(), disarm: () => phoneSpeaker.disable() },
+    mic: { on: () => phoneMic.isOn(), arm: () => phoneMic.arm(), disarm: () => phoneMic.disarm() },
+  };
   for (const b of document.querySelectorAll("[data-hw]")) {
     b.addEventListener("click", async () => {
-      const part = b.dataset.hw, failed = b.getAttribute("aria-pressed") !== "true";
-      if (failed && part === "speaker") phoneSpeaker.enable();
-      if (failed && part === "mic") phoneMic.arm();
-      b.setAttribute("aria-pressed", failed ? "true" : "false");
+      if (b.disabled) return;
+      const part = b.dataset.hw, failed = b.getAttribute("aria-pressed") !== "true", ph = PHONE_PART[part];
+      if (failed && ph && !ph.on()) { ph.arm(); armedByTap[part] = true; }    // inside the tap
+      b.disabled = true;
       const out = await post("/debug/hw", { part, failed });
-      $("setupMsg").textContent = out.ok ? "" : "refused: " + (out.error || out.status);
+      b.disabled = false;
+      if (out.ok) b.setAttribute("aria-pressed", failed ? "true" : "false");
+      if (ph && armedByTap[part] && (!failed || !out.ok)) { armedByTap[part] = false; ph.disarm(); }
+      $("setupMsg").textContent = out.ok ? "" : part + ": " + explain(out);
       soon();
     });
   }
   for (const b of document.querySelectorAll("[data-net]")) {
     b.addEventListener("click", async () => {
       const out = await post("/debug/net", { pin: b.dataset.net });
-      $("setupMsg").textContent = out.ok ? (b.dataset.net === "ap" ? "the hat raises its own Wi-Fi" : "the hat looks for its known networks") : "refused";
+      $("setupMsg").textContent = out.ok ? (b.dataset.net === "ap" ? "the hat raises its own Wi-Fi" : "the hat looks for its known networks") : "network: " + explain(out);
       soon();
     });
   }
@@ -826,6 +869,8 @@
       },
       stop() { if (src) { try { src.stop(); } catch (_) {} src = null; } },
       enable() { if (!on) enable().catch(() => say("the browser refused")); },
+      disable() { if (on) disable(); },
+      isOn: () => on,
       // The table's phone_speaker row: how many pages are armed and whether a phone plays now.
       status(d) {
         const x = (d && d.phone_speaker) || {};
@@ -837,7 +882,7 @@
         else say(x.level === "warn" ? "off · " + x.reason : "off");
       },
     };
-  }, { play() {}, stop() {}, enable() {}, status() {} });
+  }, { play() {}, stop() {}, enable() {}, disable() {}, isOn: () => false, status() {} });
 
   // ---- render ----------------------------------------------------------------------------------
   function render() {
@@ -873,8 +918,9 @@
   function renderBar() {
     const st = S.state;
     const stream = $("hStream");
-    stream.className = "chip " + (S.connected ? "ok" : "bad");
-    stream.textContent = (S.connected ? "● stream live" : "■ stream down") + (S.missed ? " · missed " + S.missed : "");
+    const conn = connState();
+    stream.className = "chip " + { live: "ok", quiet: "warn", down: "bad" }[conn.stream];
+    stream.textContent = (MARK[{ live: "ok", quiet: "warn", down: "bad" }[conn.stream]]) + "stream " + conn.stream + (S.missed ? " · missed " + S.missed : "");
     if (!st) { $("hHost").textContent = "no answer from the fish"; return; }
     $("hHost").textContent = st.host || "fish";
     $("hAddr").textContent = location.host;
@@ -1157,18 +1203,18 @@
   $("recPlay").addEventListener("click", async () => {
     try {
       const r = await api("/debug/rec.wav");
-      if (!r.ok) { msg($("micMsg"), "no recording kept", 4000); return; }
+      if (!r.ok) { msg($("micMsg"), "no recording kept", 4000, true); return; }
       const a = $("recAudio");
       if (a.src) URL.revokeObjectURL(a.src);
       a.src = URL.createObjectURL(await r.blob());
       a.hidden = false;
       a.play().catch(() => {});
-    } catch (_) { msg($("micMsg"), "no connection", 4000); }
+    } catch (_) { msg($("micMsg"), explain({ status: 0 }), 4000, true); }
   });
   $("micCheck").addEventListener("click", async () => {
     msg($("micMsg"), "recording 2 s…");
     const out = await post("/debug/mic", { seconds: 2 });
-    msg($("micMsg"), out.ok ? "done: rms " + ((out.rec || {}).rms ?? "?") : "refused: " + (out.error || out.status), 8000);
+    msg($("micMsg"), out.ok ? "done: rms " + ((out.rec || {}).rms ?? "?") : "microphone: " + explain(out), 8000, !out.ok);
     refresh();
   });
 
@@ -1191,7 +1237,7 @@
         b.addEventListener("click", async () => {
           msg(null, "saying: " + label + "…");
           const out = await post("/debug/pron", { i });
-          msg(null, out.ok ? "said: " + label : "refused: " + (out.error || out.status), 6000);
+          msg(null, out.ok ? "said: " + label : label + ": " + explain(out), 6000, !out.ok);
         });
         return b;
       }));
@@ -1203,7 +1249,7 @@
       b.addEventListener("click", async () => {
         msg($("voiceMsg"), "playing " + c.name + "…");
         const out = await post("/debug/say", { name: c.name });
-        msg($("voiceMsg"), out.ok ? "played through " + out.player : "refused: " + (out.error || out.status), 8000);
+        msg($("voiceMsg"), out.ok ? "played through " + out.player : c.name + ": " + explain(out), 8000, !out.ok);
       });
       return b;
     }));
@@ -1212,10 +1258,14 @@
     const text = $("sayText").value.trim();
     if (!text) return;
     const out = await post("/speak", { text });
-    msg($("voiceMsg"), out.ok ? "sent" : "refused: " + (out.error || out.status), 5000);
+    msg($("voiceMsg"), out.ok ? "sent" : "speak: " + explain(out), 5000, !out.ok);
     if (out.ok) $("sayText").value = "";
   });
-  $("waitTick").addEventListener("change", async () => { await post("/wait", { on: $("waitTick").checked }); refresh(); });
+  $("waitTick").addEventListener("change", async () => {
+    const out = await post("/wait", { on: $("waitTick").checked });
+    if (!out.ok) msg(null, "wait to speak: " + explain(out), 6000, true);
+    refresh();
+  });
 
   // ---- motors ----------------------------------------------------------------------------------
   function renderMotors() {
@@ -1241,7 +1291,7 @@
         msg($("motorMsg"), "sending " + part + "…");
         const out = await post("/debug/motor", { part });
         msg($("motorMsg"), out.ok ? part + ": " + out.result + " · " + (out.lines || []).join(" | ") + (out.note ? " · " + out.note : "")
-                                  : part + " refused: " + (out.error || out.status), 10000);
+                                  : part + ": " + explain(out), 10000, !out.ok);
         refresh();
       });
       row.appendChild(b);
@@ -1268,7 +1318,7 @@
   }
   $("pingBtn").addEventListener("click", async () => {
     const out = await post("/debug/ping", {});
-    msg($("pingMsg"), out.ok ? "MCU: " + out.result + " in " + out.ms + " ms · health " + out.health : "refused: " + (out.error || out.status), 8000);
+    msg($("pingMsg"), out.ok ? "MCU: " + out.result + " in " + out.ms + " ms · health " + out.health : "ping: " + explain(out), 8000, !out.ok);
     refresh();
   });
 
@@ -1317,7 +1367,7 @@
   $("restartYes").addEventListener("click", async () => {
     $("restartAsk").hidden = true;
     const out = await post("/debug/restart", { confirm: "restart" });
-    msg($("restartMsg"), out.ok ? "signalled: waiting for the fish to come back…" : "refused: " + (out.error || out.status), 20000);
+    msg($("restartMsg"), out.ok ? "signalled: waiting for the fish to come back…" : "restart: " + explain(out), 20000, !out.ok);
   });
   function renderConfig() {
     const rows = (S.state || {}).config;
@@ -1383,7 +1433,7 @@
     $(id).addEventListener("click", async () => {
       msg($("checkMsg"), label + "…");
       const out = await post(path, {});
-      msg($("checkMsg"), out.ok ? label + ": " + say(out) : label + " refused: " + (out.error || out.status), 15000);
+      msg($("checkMsg"), out.ok ? label + ": " + say(out) : label + ": " + explain(out), 15000, !out.ok);
       refresh();
     });
   }
@@ -1397,7 +1447,7 @@
     msg($("switchMsg"), w.label + "…");
     const out = await post("/debug/set", { name: w.name, value });
     msg($("switchMsg"), out.ok ? w.label + ": " + (out.unchanged ? "already " : "now ") + out.value
-      : w.label + " refused: " + (out.error === "busy" ? "busy (the fish is mid-turn: try again when it waits)" : out.error || out.status), 12000);
+      : w.label + ": " + explain(out), 12000, !out.ok);
     await refresh();
   }
   function renderSwitches() {
@@ -1505,10 +1555,9 @@
 
   // ---- the band: what he needs without scrolling -----------------------------------------------
   function renderBand() {
-    const ago = lastMsgAt ? Math.round((performance.now() - lastMsgAt) / 1000) : null;
-    const a = $("hAgo");
-    a.textContent = ago === null ? "" : ago < 2 ? "now" : ago + " s ago";
-    a.className = "chip " + (ago === null ? "unknown" : ago > 15 ? "bad" : ago > 8 ? "warn" : "ok");
+    const conn = connState(), a = $("hAgo"), secsAgo = conn.age_s === null ? null : Math.round(conn.age_s);
+    a.textContent = secsAgo === null ? "" : secsAgo < 2 ? "now" : secsAgo + " s ago";
+    a.className = "chip " + (secsAgo === null ? "unknown" : { live: "ok", quiet: "warn", down: "bad" }[conn.stream]);
     const v = S.visit, f = S.fortune, b = $("bandVisit");
     const fortune = !!(f && f.open);
     b.hidden = !fortune && !(v && v.stage);
@@ -1648,9 +1697,8 @@
       setBusy(true);
       say("Sending the name…", "busy");
       const out = await post("/reading", { name: n });
-      if (out.status === 409) say("The hat is busy", "bad-text");
-      else if (out.status === 400) say("Type a name", "bad-text");
-      else if (!out.ok) say(out.status === 0 ? "No connection" : "Could not send the name", "bad-text");
+      if (out.status === 400) say("Type a name", "bad-text");
+      else if (!out.ok) say("the name: " + explain(out, "the reading"), "bad-text");
       else { say("Sent: the hat greets " + n, ""); name.value = ""; name.blur(); }
       setBusy(false);
     }
@@ -1683,8 +1731,7 @@
     let showKey = "";
     async function showTap(action, value) {
       const out = await post("/show", { action, value: value || "" });
-      if (!out.ok) say(out.status === 409 ? "The hat is busy: try again in a moment"
-                     : out.status === 0 ? "No connection" : "Refused", "bad-text");
+      if (!out.ok) say(explain(out, "the visit"), "bad-text");
     }
     for (const b of showRow.querySelectorAll(".pick[data-house]")) {
       b.addEventListener("click", () => showTap("force", b.dataset.house));
@@ -1736,15 +1783,13 @@
       const at = rev;
       inflight = true;
       const out = await post("/cues", { cues: current() });
-      if (out.status === 0) {                       // no connection: try again shortly
-        say("No connection: the cue did not arrive", "bad-text");
+      if (out.status === 0) {                       // the board unreachable: try again shortly
+        say("cue: " + explain(out) + ", trying again", "bad-text");
         timer = setTimeout(() => { timer = 0; flush(); }, 3000);
       } else {
         postedRev = at;                             // a refusal is not retried
         if (out.ok) { say(""); latest = out.visit || latest; }
-        else if (out.status === 400) say("Cue refused", "bad-text");
-        else if (out.status === 403) say("No permission (token)", "bad-text");
-        else say("The visit is off", "bad-text");
+        else say("cue: " + explain(out, "the visit"), "bad-text");
       }
       inflight = false;
       if (rev !== postedRev && !timer) flush();
@@ -1776,8 +1821,7 @@
         showTab("visit");
         return;
       }
-      msg(null, out.status === 409 ? "refused: the hat is busy · wait until it finishes"
-              : out.status === 503 ? "refused: the visit is off" : out.status === 0 ? "no connection" : "refused: " + (out.error || out.status), 6000);
+      msg(null, "new visitor: " + explain(out, "the visit"), 6000, true);
       btn.disabled = false;
     });
     return {
@@ -1799,9 +1843,7 @@
     const data = $("fortuneData"), last = $("fortuneLast");
     let open = false, ready = false, wantOpen = false, btnTimer = 0, still = false, label = "🔮 Fortune";
     function refuse(out) {
-      msg(null, out.status === 409 && out.why === "visit open" ? "refused: finish the visit first (or Force a house)"
-        : out.status === 503 ? "refused: the fortune is off" : out.status === 0 ? "no connection"
-        : out.busy || out.status === 409 ? "refused: the hat is busy" : "refused: " + (out.error || out.status), 6000);
+      msg(null, "fortune: " + explain(out, "the fortune"), 6000, true);
     }
     async function tap(action, value) {
       const out = await post("/fortune", { action, value: value || "" });
@@ -1916,7 +1958,7 @@
       }
       return fetch("/micstate", { method: "POST", headers: headers(true), body, keepalive: true }).catch(() => {});
     }
-    const streamLive = () => S.connected && performance.now() - lastMsgAt < 25000;
+    const streamLive = () => connState().stream === "live";
     function keepAlive() {
       clearInterval(keepTimer);
       keepTimer = setInterval(() => {
@@ -1981,7 +2023,7 @@
       catch (e) { await release(); tick.checked = false; busy = false;
                   say(e && e.name === "NotAllowedError" ? "permission denied: Chrome's site settings → Microphone" : "no microphone: " + (e && e.name), "bad-text"); return; }
       const out = await post("/debug/set", { name: "mic", value: "browser" });
-      if (!out.ok) { await release(); tick.checked = false; busy = false; say("refused: " + (out.error || out.status), "bad-text"); return; }
+      if (!out.ok) { await release(); tick.checked = false; busy = false; say(explain(out), "bad-text"); return; }
       await micState(true); keepAlive(); busy = false;
       say("on: the hold button and the remote record with this phone");
       refresh();
@@ -1989,8 +2031,9 @@
     async function off(why) {
       busy = true;
       await release();
-      await post("/debug/set", { name: "mic", value: switchValue("mic", "start") || "host" });   // back to how it started
+      const out = await post("/debug/set", { name: "mic", value: switchValue("mic", "start") || "host" });   // back to how it started
       tick.checked = false; busy = false;
+      if (!out.ok) why = (why ? why + "; " : "") + "the board's microphone was not given back: " + explain(out);
       say(why || "off: the board records", why ? "warn-text" : "");
       refresh();
     }
@@ -2012,8 +2055,8 @@
         holding = false; ending = false;
         const chunks = clip || [], total = clipLen;
         clip = null; clipLen = 0;
-        if (heldMs < MIN_HOLD_MS) { msg(null, "phone mic: too short", 3000); return; }
-        if (peak < QUIET_RMS) { msg(null, "phone mic: silence (is it the right microphone?)", 5000); return; }
+        if (heldMs < MIN_HOLD_MS) { msg(null, "phone mic: too short", 3000, true); return; }
+        if (peak < QUIET_RMS) { msg(null, "phone mic: silence (is it the right microphone?)", 5000, true); return; }
         upload(toWav(chunks, total, actx ? actx.sampleRate : 48000), heldMs, ended);
         fish.thinking("hearing");
       }, TAIL_MS);
@@ -2046,8 +2089,13 @@
       h["Content-Type"] = "audio/wav"; h["X-Fish-Hold-Ms"] = String(heldMs); h["X-Fish-End"] = ended || "release";
       try {
         const r = await fetch("/utterance", { method: "POST", headers: h, body: blob });
-        if (!r.ok) msg(null, r.status === 409 ? "phone mic: the hat is busy" : "phone mic: refused " + r.status, 5000);
-      } catch (_) { msg(null, "phone mic: no connection", 5000); }
+        if (!r.ok) {
+          let out = {};
+          try { out = await r.json(); } catch (_) {}
+          out.status = r.status;
+          msg(null, "phone mic: " + explain(out), 5000, true);
+        }
+      } catch (_) { msg(null, "phone mic: " + explain({ status: 0 }), 5000, true); }
     }
     return {
       status(page, d) {
@@ -2074,8 +2122,11 @@
       abort() { clearTimeout(holdTimer); clearTimeout(tailTimer); holding = false; ending = false; clip = null; clipLen = 0; },
       hidden() { if (actx) { release(true); tick.checked = false; say("released when the screen slept: turn it on again", "warn-text"); } },
       arm() { if (!tick.checked && !busy) { tick.checked = true; on(); } },   // the Hardware tap
+      disarm() { if (tick.checked && !busy) off(); },                           // its clearing tap
+      isOn: () => tick.checked,
     };
-  }, { status() {}, ready: () => false, can: () => false, holding: () => false, begin() {}, end() {}, abort() {}, hidden() {}, arm() {} });
+  }, { status() {}, ready: () => false, can: () => false, holding: () => false, begin() {}, end() {}, abort() {}, hidden() {},
+       arm() {}, disarm() {}, isOn: () => false });
 
   // ---- coming back: the phone slept, the tab was hidden, the network returned ---------------------
   function onHidden() {
@@ -2089,7 +2140,7 @@
     if (document.hidden) return;
     refresh();
     wake.ask();
-    if (!es || es.readyState === EventSource.CLOSED || performance.now() - lastMsgAt > 12000) connect();
+    if (!es || es.readyState === EventSource.CLOSED || connState().stream !== "live") connect();
   }
   document.addEventListener("visibilitychange", () => (document.hidden ? onHidden() : resume()));
   window.addEventListener("pageshow", resume);
@@ -2098,12 +2149,12 @@
 
   // ---- this phone's own facts, and two of its preferences ---------------------------------------
   function phoneFacts() {
-    const st = getComputedStyle(document.documentElement);
+    const conn = connState();
     return [
       ["screen", innerWidth + " × " + innerHeight + " CSS px · DPR " + (devicePixelRatio || 1).toFixed(2)],
       ["secure context", window.isSecureContext ? "yes" : "NO: use https for the screen lock and the microphone", window.isSecureContext ? "" : "bad-text"],
       ["screen lock", wake.held() ? "held" : "not held"],
-      ["stream", (S.connected ? "live" : "down") + (lastMsgAt ? " · last record " + Math.round((performance.now() - lastMsgAt) / 1000) + " s ago" : "")],
+      ["stream", conn.stream + (conn.age_s !== null ? " · last record " + Math.round(conn.age_s) + " s ago" : "")],
       ["page id", PAGE],
     ];
   }

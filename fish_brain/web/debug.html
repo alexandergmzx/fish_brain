@@ -217,7 +217,8 @@
                 <div class="panel" id="p-status" hidden>
                     <!-- The phone as the console (ADR 0017): is the hat ready and what failed. Rows
                          come from /debug/state's device table (ADR 0021), then show_tab; the act
-                         row from the visit's view. -->
+                         row from the visit's view. A state older than CONN.STALE_S keeps its rows,
+                         dimmed (.stale), under "No answer from the hat for N s". -->
                     <div id="showSummary" class="summary wait" role="status" aria-live="polite">Waiting for the hat…</div>
                     <div id="goRows" class="go-rows"></div>
                 </div>

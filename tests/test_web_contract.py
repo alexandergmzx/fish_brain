@@ -226,8 +226,9 @@ def test_the_fortune_row_posts_only_to_fortune_and_names_the_questions():
     for action in ("skip", "end"):
         assert f'tap("{action}")' in block
     assert "showTab(\"visit\")" in block
-    for word in ("finish the visit first", "the fortune is off", "the hat is busy", "no connection"):
-        assert word in block, word
+    # its refusals are explain()'s: a 503 names the fortune, a 409 with why "visit open" the visit
+    assert 'explain(out, "the fortune")' in block
+    assert '"visit open": "finish the visit first (or Force a house)"' in js
     qids = set(re.findall(r'(\w+): "[^"]+"', re.search(r"QUESTION_EN = \{([^}]*)\}", js).group(1)))
     assert qids == {"fecha", "sueno", "carta", "taza", "animal"}
     data = set(re.findall(r'(\w+): "[^"]+"', re.search(r"DATA_EN = \{([^}]*)\}", js, re.S).group(1)))
@@ -353,3 +354,80 @@ def test_the_fortune_button_waits_for_its_lines_from_show_tab_only():
     assert "btn.disabled = open || wantOpen || !ready;" in block
     assert "tabReady" not in block and "f.ready" not in block    # the view's flag no longer decides
     assert "ready = !!ft &&" in block
+
+
+# --- one connection record and one explain() (ADR 0021, C4) ---
+
+def test_every_refusal_is_worded_once_inside_explain():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    body = _fn(js, "function explain(out, what) {")
+    for word in ('"no connection"', '"the hat is busy', '"refused: "'):
+        assert js.count(word) == 1 and word in body, word
+    for word in ('"arm first (60 s)"', '"no permission (token)"', '" is off"', '"the hat did not pick it up"'):
+        assert word in body, word
+    assert len(re.findall(r"\bexplain\(", js)) >= 16      # the definition and at least 15 callers
+    # every POST's answer goes through it: no caller words a refusal itself
+    assert not re.search(r"out\.error \|\| out\.status|bad\.error \|\| bad\.status", js)
+    # the cue keeps its retry when the board cannot be reached
+    flush = js[js.index("async function flush() {"):]
+    flush = flush[:flush.index("\n    }\n")]
+    assert "out.status === 0" in flush and "setTimeout(() => { timer = 0; flush(); }, 3000)" in flush
+    assert "explain(out" in flush
+
+
+def test_the_toast_colour_is_a_flag_not_a_regex():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    body = _fn(js, "function msg(_node, text, ms, warn) {")
+    assert 't.className = warn ? "warn" : "";' in body
+    assert ".test(text)" not in body
+
+
+def test_one_connection_record_and_no_stray_thresholds():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    assert js.count("CONN = {") == 1
+    assert re.search(r"const CONN = \{ QUIET_S: 15, DOWN_S: 25, STALE_S: 15 \};", js)
+    conn = _fn(js, "function connState() {")
+    # the stream's and the state's ages are read only in connState()
+    assert js.count("- lastMsgAt") == 1 and "- lastMsgAt" in conn
+    assert js.count("- S.stateAt") == 1 and "- S.stateAt" in conn
+    for key in ("stream", "age_s", "state_age_s", "token_ok"):
+        assert key in conn, key
+    assert not re.search(r"lastMsgAt\)?\s*[<>]=?\s*\d", js)
+    assert "connState()" in js and js.count("connState()") >= 7
+    # the six sites
+    watchdog = js[js.index("// a stream that went quiet"):]
+    assert 'connState().stream === "down"' in watchdog[:watchdog.index("}, 5000);")]
+    assert 'connState().stream !== "live"' in _fn(js, "function resume() {")
+    assert 'const streamLive = () => connState().stream === "live";' in js
+    assert "connState()" in _fn(js, "function renderBand() {")
+    assert "connState()" in _fn(js, "function renderStatus() {")
+    hat = js[js.index("    function paint() {"):]
+    assert "connState().stream" in hat[:hat.index("\n    }\n")]
+    # a failed refresh keeps the last good state's time: never "Infinity", never stateAt = 0
+    assert "Infinity" not in js and "S.stateAt = 0" not in js
+    refresh = _fn(js, "async function refresh() {")
+    assert refresh.count("S.stateAt =") == 1
+
+
+def test_a_stale_state_keeps_its_rows_dimmed():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    status = _fn(js, "function renderStatus() {")
+    assert 'rows.classList.toggle("stale", conn.stale)' in status
+    assert status.index("rows.replaceChildren(...out)") < status.index('"No answer from the hat for "')
+    css = (WEB_DIR / "debug.css").read_text(encoding="utf-8")
+    assert re.search(r"\.go-rows\.stale \{[^}]*opacity", css)
+
+
+def test_the_hardware_taps_are_pessimistic_and_symmetric():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    block = js[js.index('for (const b of document.querySelectorAll("[data-hw]")) {'):]
+    block = block[:block.index("\n  }\n")]
+    sent = block.index('await post("/debug/hw"')
+    assert block.index('b.setAttribute("aria-pressed"') > sent
+    assert "if (out.ok) b.setAttribute" in block
+    assert block.index("b.disabled = true") < sent < block.index("b.disabled = false")
+    assert "explain(out)" in block
+    # the phone is armed inside the tap, and disarmed only when this tap armed it
+    assert "armedByTap[part] = true" in block and block.index("armedByTap[part] = true") < sent
+    assert "if (ph && armedByTap[part] && (!failed || !out.ok))" in block
+    assert "const armedByTap = { speaker: false, mic: false };" in js
