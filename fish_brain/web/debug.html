@@ -8,6 +8,7 @@
     <title>Sombrero</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/debug.css">
+    <link rel="stylesheet" href="/scene.css">
 </head>
 <body>
     <!-- The operator's page (docs/debug.md, ADR 0011): the debug view, on a desktop or on his
@@ -56,7 +57,56 @@
                  visit and shakes when a turn dies. The lamps light for every line the link
                  really sent to the motors (as the board's LED matrix does). -->
             <div id="fishBox">
-                <div id="hatBox" class="st-waiting">
+                <div id="hatBox" class="study st-waiting">
+                    <!-- The study from /face (window, moon, books, candle, stool, the sign): decoration only. -->
+                    <div class="scene" aria-hidden="true">
+                        <svg class="ventana" viewBox="0 0 100 132">
+                            <path d="M8,130 V52 A42,42 0 0 1 92,52 V130 Z" fill="#3a3352" stroke="#23231c" stroke-width="4" stroke-linejoin="round"/>
+                            <path d="M19,124 V54 A31,31 0 0 1 81,54 V124 Z" fill="#141236"/>
+                            <g id="stars" fill="#f3ecc8">
+                                <circle cx="30" cy="62" r="1.6"/><circle cx="42" cy="98" r="1.3"/><circle cx="70" cy="104" r="1.7"/>
+                                <circle cx="35" cy="114" r="1.1"/><circle cx="60" cy="76" r="1.2"/><circle cx="28" cy="84" r="1"/>
+                            </g>
+                            <path d="M64,34 A13,13 0 1 0 72,58 A10,10 0 1 1 64,34 Z" fill="#f3ecc8"/>
+                            <path d="M50,26 V124 M19,86 H81" stroke="#23231c" stroke-width="4" stroke-linecap="round"/>
+                            <path d="M4,130 H96" stroke="#23231c" stroke-width="6" stroke-linecap="round"/>
+                        </svg>
+                        <svg class="piso" viewBox="0 0 360 120" preserveAspectRatio="none">
+                            <path d="M-4,18 H364 V124 H-4Z" fill="#4d3119" stroke="#23231c" stroke-width="4" vector-effect="non-scaling-stroke"/>
+                            <g stroke="#2e1708" stroke-width="2" vector-effect="non-scaling-stroke" opacity="0.7">
+                                <path d="M-4,52 H364 M-4,88 H364"/>
+                                <path d="M70,18 V52 M190,18 V52 M300,18 V52 M30,52 V88 M140,52 V88 M250,52 V88 M100,88 V124 M220,88 V124 M330,88 V124"/>
+                            </g>
+                        </svg>
+                        <svg class="prop libros" viewBox="0 0 90 70">
+                            <g stroke="#23231c" stroke-width="3" stroke-linejoin="round">
+                                <rect x="6" y="46" width="78" height="18" rx="2" fill="#6b2a36"/>
+                                <rect x="12" y="28" width="66" height="18" rx="2" fill="#2f4d6b" transform="rotate(-3 45 37)"/>
+                                <rect x="4" y="11" width="72" height="17" rx="2" fill="#5b6b2a" transform="rotate(4 40 19)"/>
+                            </g>
+                            <g stroke="#d2ad75" stroke-width="2" stroke-linecap="round">
+                                <path d="M14,51 V59 M76,51 V59"/><path d="M20,33 V41 M70,31 V39"/><path d="M12,16 V23 M68,20 V27"/>
+                            </g>
+                        </svg>
+                        <svg class="prop vela" viewBox="0 0 60 120">
+                            <ellipse class="halo" cx="30" cy="34" rx="26" ry="30" fill="#ffcf7a" opacity="0.25"/>
+                            <g class="llama"><path d="M30,18 C38,30 38,42 30,46 C22,42 22,30 30,18 Z" fill="#ffb22e" stroke="#23231c" stroke-width="2.5" stroke-linejoin="round"/>
+                                <path d="M30,30 C33,36 33,41 30,43 C27,41 27,36 30,30 Z" fill="#fff3c4"/></g>
+                            <path d="M30,46 V52" stroke="#23231c" stroke-width="2.5" stroke-linecap="round"/>
+                            <path d="M18,52 H42 V106 H18 Z M18,52 C18,64 22,66 22,58 M42,52 C42,70 37,72 37,60" fill="#f7e7c4" stroke="#23231c" stroke-width="3" stroke-linejoin="round"/>
+                            <ellipse cx="30" cy="108" rx="26" ry="8" fill="#b88a3a" stroke="#23231c" stroke-width="3"/>
+                        </svg>
+                    </div>
+                    <h1 class="sign"><span>El Sombrero Adivino</span></h1>
+                    <div id="fishState">…</div>
+                    <div class="stage-wrap">
+                    <svg class="banco" viewBox="0 0 200 110" aria-hidden="true">
+                        <g stroke="#23231c" stroke-width="4" stroke-linejoin="round">
+                            <path d="M28,20 L16,108 M172,20 L184,108 M100,24 V108" fill="none" stroke="#3b2414" stroke-width="10" stroke-linecap="round"/>
+                            <ellipse cx="100" cy="16" rx="96" ry="13" fill="#6e4a2a"/>
+                            <path d="M4,16 Q100,40 196,16" fill="none" stroke-width="3"/>
+                        </g>
+                    </svg>
                     <div class="perch"><div class="perch-kick"><div class="perch-fx">
                     <svg id="hat" viewBox="0 0 600 500" aria-hidden="true">
                     <defs>
@@ -123,10 +173,10 @@
                          once all four have loaded. -->
                     <canvas id="hatSprite" width="600" height="500" hidden></canvas>
                     </div></div></div>
+                    </div>
                     <div id="hatHouse" hidden></div>
                 </div>
                 <div class="fishside">
-                    <div id="fishState">…</div>
                     <div id="budget"><i id="budgetBar"></i></div>
                     <div id="hatErr" hidden></div>
                     <div class="lamps">

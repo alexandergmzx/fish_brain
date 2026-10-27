@@ -1,6 +1,8 @@
 """What fish.js expects of index.html, read from the two files. No browser, no server."""
 import re
 
+import pytest
+
 from fish_brain.viz import WEB_DIR
 
 
@@ -54,11 +56,13 @@ def test_debug_page_takes_text_only_as_text_and_calls_only_routed_paths():
         assert f'"{path}"' in viz or f'"{path}"' in actions, path
 
 
-def test_debug_css_animates_only_transform_and_opacity():
-    css = re.sub(r"/\*.*?\*/", "", (WEB_DIR / "debug.css").read_text(encoding="utf-8"), flags=re.S)
+@pytest.mark.parametrize("name, least", [("debug.css", 4), ("scene.css", 2)])
+def test_debug_css_animates_only_transform_and_opacity(name, least):
+    css = re.sub(r"/\*.*?\*/", "", (WEB_DIR / name).read_text(encoding="utf-8"), flags=re.S)
+    css = re.sub(r"@font-face\s*\{.*?\}", "", css, flags=re.S)
     allowed = {"transform", "opacity"}
     frames = re.findall(r"@keyframes\s+([\w-]+)\s*\{((?:[^{}]*\{[^{}]*\})*)\s*\}", css)
-    assert len(frames) >= 4
+    assert len(frames) >= least
     for name, body in frames:
         props = set(re.findall(r"([\w-]+)\s*:", re.sub(r"[^{}]*\{", "{", body)))
         assert props <= allowed, (name, props - allowed)
@@ -149,3 +153,9 @@ def test_the_visit_cues_on_the_operator_page_are_the_ones_the_host_takes():
 def test_the_operator_page_never_transitions_a_property_list():
     css = re.sub(r"/\*.*?\*/", "", (WEB_DIR / "debug.css").read_text(encoding="utf-8"), flags=re.S)
     assert not re.findall(r"transition-property\s*:", css)
+
+
+def test_the_operator_page_links_the_scene_and_it_is_served():
+    html = (WEB_DIR / "debug.html").read_text(encoding="utf-8")
+    assert 'href="/scene.css"' in html and 'class="sign"' in html and 'class="banco"' in html
+    assert '"/scene.css"' in (WEB_DIR.parent / "viz.py").read_text(encoding="utf-8")

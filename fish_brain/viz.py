@@ -838,7 +838,7 @@ def _make_handler(server: "VizServer"):
                 self._serve_file("debug.html")          # the operator's page (ADR 0011)
             elif path in ("/face", "/face/"):
                 self._serve_file("index.html")          # the old visitor face, until after the fair
-            elif path in ("/fish.js", "/fish.css", "/rec.js", "/debug.js", "/debug.css"):
+            elif path in ("/fish.js", "/fish.css", "/rec.js", "/debug.js", "/debug.css", "/scene.css"):
                 self._serve_file(path.lstrip("/"))
             elif path.startswith("/debug/"):
                 self._get_debug(path, query)

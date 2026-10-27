@@ -19,6 +19,7 @@
 
   // ---- token: as the phone page does (out of the address bar, kept for this tab) ----------
   const PARAMS = new URLSearchParams(location.search);
+  if (PARAMS.get("lite") === "1") document.documentElement.classList.add("lite");   // the loops stop (a hot phone)
   let TOKEN = PARAMS.get("token") || "";
   if (TOKEN) {
     try { sessionStorage.setItem("fishToken", TOKEN); } catch (_) {}
