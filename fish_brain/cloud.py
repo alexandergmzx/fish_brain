@@ -105,6 +105,9 @@ def mark_online() -> None:
 def client(base_url: str = "", api_key_env: str = "OPENAI_API_KEY",
            timeout_s: float | None = None):
     """Cached OpenAI-SDK client for one service. Raises CloudMisconfigured without a key."""
+    if api_key_env == "ANTHROPIC_API_KEY":
+        # An empty base_url means api.openai.com: Anthropic's key must never be sent there.
+        raise CloudMisconfigured("ANTHROPIC_API_KEY belongs to the Anthropic client (claude.py)")
     key = (base_url, api_key_env, timeout_s)
     with _lock:
         if key in _clients:
@@ -135,7 +138,13 @@ def classify(exc: BaseException) -> RuntimeError:
             mark_offline()
         return CloudUnavailable(f"{name}: {exc}")
     detail = f"{name} status={status} code={getattr(exc, 'code', None)}: {exc}"
-    if detail not in _warned:            # say it loudly, but only once per distinct error
+    return config_error(detail)
+
+
+def config_error(detail: str) -> CloudMisconfigured:
+    """The exception for a call that will not work until someone fixes the set-up. Logged
+    loudly, but only once per distinct detail."""
+    if detail not in _warned:
         _warned.add(detail)
         _log(f"CONFIG ERROR {detail}")
     return CloudMisconfigured(detail)

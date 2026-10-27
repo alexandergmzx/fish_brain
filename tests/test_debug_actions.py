@@ -364,6 +364,25 @@ def test_mode_and_profile_switch_the_model_and_start_a_fresh_history(rig, monkey
     assert rig.act.set("mode", "llm")[1]["error"] == "GROQ_API_KEY is not set" and rig.convo.echo is True
 
 
+def test_the_claude_profiles_are_switchable_and_need_the_key_and_the_package(rig, monkeypatch):
+    import sys
+    choices = next(sw["choices"] for sw in rig.act.switches() if sw["name"] == "llm_profile")
+    assert choices == ["groq", "luna", "claude", "claude-sonnet"]
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert rig.act.set("llm_profile", "claude")[1]["error"] == "ANTHROPIC_API_KEY is not set"
+    assert rig.cfg.llm.profile != "claude"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-0000")
+    monkeypatch.setitem(sys.modules, "anthropic", None)          # the package is not installed
+    answer = rig.act.set("llm_profile", "claude")
+    assert answer[0] != 200 and "not installed" in answer[1]["error"]
+    assert rig.cfg.llm.profile != "claude"                          # nothing switched
+    monkeypatch.setitem(sys.modules, "anthropic", types.ModuleType("anthropic"))
+    rig.convo._llm = object()
+    assert rig.act.set("llm_profile", "claude")[0] == 200
+    assert rig.cfg.llm.profile == "claude" and rig.cfg.llm.model == "claude-haiku-5-5"
+    assert rig.cfg.llm.provider == "anthropic" and rig.convo._llm is None      # a fresh history
+
+
 def test_motors_can_be_muted_only_when_armed_and_stop_still_passes(rig, monkeypatch):
     monkeypatch.setattr(debug, "_hub", rig.hub)      # the link's hooks report to this hub
     assert rig.act.set("motors", "muted") == (403, {"ok": False, "error": "not armed"})

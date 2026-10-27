@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .config import LLMConfig, LLM_PROFILES
-from .llm import Conversation
+from .llm import make_conversation
 
 PROMPTS = [
     "Hola Billy, ¿cómo estás?",
@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     for n in names:
         cfg = LLMConfig(profile=n)
         try:
-            convs[n] = Conversation(cfg)
+            convs[n] = make_conversation(cfg)
         except Exception as e:                  # e.g. missing API key
             print(f"can't start profile {n!r}: set {cfg.api_key_env} in .env ({e})")
             return 1

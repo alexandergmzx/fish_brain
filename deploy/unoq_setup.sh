@@ -174,14 +174,17 @@ print_owner_steps() {
 
 # Which API keys the selected backends need and do not have. One name per line.
 missing_keys() {
-    local stt tts llm need_openai=0 need_groq=0
+    local stt tts llm need_openai=0 need_groq=0 need_anthropic=0
     stt="$(env_get FISH_STT_BACKEND)"; stt="${stt:-local}"
     tts="$(env_get FISH_TTS_BACKEND)"; tts="${tts:-loq}"
     llm="$(env_get FISH_LLM_PROFILE)"; llm="${llm:-groq}"
     [[ "$stt" == openai || "$tts" == openai || "$llm" == luna ]] && need_openai=1
     [[ "$stt" == groq || "$llm" == groq ]] && need_groq=1
+    # Only the chat profile makes it required: the reading uses Claude when the key is there.
+    [[ "$llm" == claude || "$llm" == claude-sonnet ]] && need_anthropic=1
     if (( need_openai )) && [[ -z "$(env_get OPENAI_API_KEY)" ]]; then say OPENAI_API_KEY; fi
     if (( need_groq )) && [[ -z "$(env_get GROQ_API_KEY)" ]]; then say GROQ_API_KEY; fi
+    if (( need_anthropic )) && [[ -z "$(env_get ANTHROPIC_API_KEY)" ]]; then say ANTHROPIC_API_KEY; fi
     return 0
 }
 

@@ -74,3 +74,12 @@ def test_a_house_only_on_the_tag_line_is_a_problem(monkeypatch):
     rec = hat_rehearse.run_visit(llm, Config(), visitor)
     assert rec["house"] == "Gryffindor"
     assert "the house is not said aloud" in rec["turns"][-1]["problems"]
+
+
+def test_the_cost_of_a_claude_call_comes_from_its_profile_prices():
+    from fish_brain import claude
+    from fish_brain.ab import _cost
+    from fish_brain.config import LLMConfig
+    usage = claude.Usage(prompt_tokens=1000, completion_tokens=100)
+    assert _cost(LLMConfig(profile="claude"), usage) == (1000 * 0.10 + 100 * 0.50) / 1e6
+    assert _cost(LLMConfig(profile="claude-sonnet"), usage) == (1000 * 2.0 + 100 * 10.0) / 1e6

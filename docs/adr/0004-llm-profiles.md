@@ -20,3 +20,10 @@ accepted at that effort, so it is left out at any other.
 
 - Each profile needs its own key (`GROQ_API_KEY`, `OPENAI_API_KEY`).
 - An API error makes the fish say a fallback line; the failed turn is not added to history.
+
+## Amendment, 2026-10-26: a profile has a provider
+
+`LLM_PROFILES` gains `claude` and `claude-sonnet`, served by the Anthropic SDK instead of an
+OpenAI client, so "one OpenAI client serves them all" no longer holds: each profile has a
+`provider` and `llm.make_conversation` picks the class. The default stays as above
+([0018](0018-claude-through-its-own-sdk.md)).

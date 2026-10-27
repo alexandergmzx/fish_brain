@@ -551,7 +551,11 @@ class CloudConfig:
 
 
 # LLM backends you can switch between with FISH_LLM_PROFILE (or A/B with `python -m fish_brain.ab`).
-# All are OpenAI-compatible, so one client serves them all. `temperature: None` = don't send it.
+# `groq` and `luna` are OpenAI-compatible, so one OpenAI client serves them. The `claude*` profiles
+# have `provider: anthropic`: they run through the Anthropic SDK (claude.py), never an OpenAI client.
+# `temperature: None` = don't send it (and Anthropic's API version 2026-10-21 rejects it outright).
+# `vision: True` = takes images (the reading, reading.py). A key of a profile must be a field of
+# LLMConfig. Prices are USD per 1M tokens as the vendors published them (Anthropic: 2026-10-06).
 LLM_PROFILES: dict[str, dict] = {
     "groq": {                                   # GPT-OSS-20B on Groq: fastest
         "base_url": "https://api.groq.com/openai/v1",
@@ -569,9 +573,39 @@ LLM_PROFILES: dict[str, dict] = {
         "reasoning_effort": "none",             # default is "medium"; must be explicit
         "extra_body": {},
         "temperature": None,                    # not confirmed for Luna; send only if you add it
+        "vision": True,
         "price_in": 0.10, "price_out": 0.50,
     },
+    "claude": {                                 # Claude Haiku 5.5: the fastest Claude
+        "provider": "anthropic",
+        "base_url": "https://api.anthropic.com",    # explicit: ANTHROPIC_BASE_URL never redirects the key
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "model": "claude-haiku-5-5",
+        "reasoning_effort": "low",              # output_config.effort
+        "thinking": "disabled",                 # accepted by Haiku 5.5 at effort high or below
+        "extra_body": {},
+        "temperature": None,
+        "max_completion_tokens": 600,           # (estimate) room for the reply if thinking comes back
+        "vision": True,
+        "price_in": 0.10, "price_out": 0.50,
+    },
+    "claude-sonnet": {                          # Claude Sonnet 5.5: slower, a better reader of badges (to measure)
+        "provider": "anthropic",
+        "base_url": "https://api.anthropic.com",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "model": "claude-sonnet-5-5",
+        "reasoning_effort": "low",
+        "thinking": "between_tools",           # Sonnet 5.5 answers a 400 to "disabled"
+        "extra_body": {},
+        "temperature": None,
+        "max_completion_tokens": 1200,          # (estimate)
+        "vision": True,
+        "price_in": 2.0, "price_out": 10.0,
+    },
 }
+
+# Values of LLMConfig.thinking; None = the field is not sent (the model's own default).
+THINKING_MODES = ("disabled", "adaptive", "between_tools")
 
 
 @dataclass
@@ -586,8 +620,16 @@ class LLMConfig:
     temperature: float | None = None
     price_in: float = 0.0
     price_out: float = 0.0
-    max_completion_tokens: int = 400   # reasoning tokens count toward this cap too
-    timeout_s: float = 8.0
+    # Which SDK speaks to the profile: "openai" (any OpenAI-compatible API) or "anthropic".
+    # `thinking` (anthropic only) is one of THINKING_MODES, None = not sent. `vision`: takes
+    # images. The next four are None until the profile or the defaults below fill them, because
+    # the profile loop only fills a field that is None / 0 / 0.0 / False: a non-None default
+    # here could never be overridden by a profile.
+    provider: str | None = None
+    thinking: str | None = None
+    vision: bool | None = None
+    max_completion_tokens: int | None = None   # (400) reasoning tokens count toward this cap too
+    timeout_s: float | None = None             # (8.0) read timeout of one call
     max_history_turns: int = 8      # user+assistant pairs kept for context
     # Spoken instead of crashing when the API is unreachable / errors out.
     fallback_reply: str = field(
@@ -676,9 +718,16 @@ class BurbleConfig:
 @dataclass
 class ReadingConfig:
     """The reading (ADR 0007): a badge photo becomes a name, the fish asks, then tells the
-    future. The photo goes to the vision model named by `profile` and is never kept."""
-    # LLM profile that reads the badge; empty = the LLM profile. Needs image input (`luna`).
-    profile: str = field(default_factory=lambda: _env("FISH_READING_PROFILE", ""))
+    future. The photo goes to the first vision model of `profiles` that answers and is never
+    kept."""
+    # LLM profiles that read the badge, in order (FISH_READING_PROFILE, comma-separated). Each
+    # needs image input (`vision` in LLM_PROFILES: luna, claude). Empty = `claude` first, then
+    # the LLM profile; a profile whose key is not set is skipped (reading.py). To keep the photo
+    # from ever reaching a second service, name one profile.
+    profiles: tuple[str, ...] = field(default_factory=lambda: _env_list("FISH_READING_PROFILE"))
+    # A candidate that is not the last one gets this long before the next is tried, so a stuck
+    # one cannot use up the whole `timeout_s`. (estimate: not measured)
+    fallback_after_s: float = 7.0
     # Allow the "look" line (clothing, colours, accessories) when the operator ticks consent
     # for that visitor. Off: the model is told to leave it null and the page shows no tick.
     look: bool = field(default_factory=lambda: _env_bool("FISH_READING_LOOK", False))

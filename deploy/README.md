@@ -46,7 +46,8 @@ phrases change.
 Notes on `install`:
 
 - It reads the backends from `.env` and asks only for the keys they need
-  (`OPENAI_API_KEY` for `openai` STT/TTS and the `luna` profile, `GROQ_API_KEY` for `groq`).
+  (`OPENAI_API_KEY` for `openai` STT/TTS and the `luna` profile, `GROQ_API_KEY` for `groq`,
+  `ANTHROPIC_API_KEY` for the `claude` profiles; with it set the badge reading tries Claude first).
 - After `--prerender-canned` the script also checks the files themselves: one
   `~/.cache/fish_brain/canned/<name>-*.wav` for every name printed by `--list-canned`.
 - The link check runs with `FISH_SERIAL_REQUIRED=true` for that one command, so a port that
@@ -365,7 +366,7 @@ heartbeat, blue per command).
 | 2b | Hold-to-talk backup | Hold "Hold to talk" in the thumb bar, ask into the remote, release | Same as 2: the board records |
 | 3 | Phone turn, phone microphone | Voice tab: tick "Record with this phone's microphone" (allow once), then hold the thumb button toward the visitor | Same as 2, plus an `[utt]` line; untick (or the screen sleeping) gives the board its microphone back without a restart |
 | 3d | Inputs on the page | Live tab; press OK on the remote; switch the remote to its mouse mode and press again | Each press shows in Inputs with its key; in mouse mode a red hint names `BTN_LEFT` (unless it is already in `FISH_PTT_KEY`); a turn fills the pipeline (Turns tab) |
-| 3b | A visit | Visit tab: "Nuevo visitante", two cues, then three answers through the remote; or `Badge photo` instead of the greeting | The greeting (or "¿Tú eres X?"), the stage chip 1/4 → 4/4, the lit cues go dark once used; at the verdict the house's colour and name on the hat |
+| 3b | A visit | Visit tab: "New visitor" in the thumb bar, two cues, then three answers through the remote; or a typed name and "Tell the hat" instead of the greeting | The greeting (or "¿Tú eres X?"), the stage chip 1/4 → 4/4, the lit cues go dark once used; at the verdict the house's colour and name on the hat |
 | 3c | Fallback page | Open `/face` in the same tab | The old face (sign, bubbles, candle sheet) works as on 2026-10-16; back to `/` afterwards. One page at a time |
 | 4 | Who can open the page | With `FISH_VIZ_TOKEN` empty (his hotspot), any phone on the hotspot opens everything, ARM and restart included (ADR 0011). On another network set the token | Noted |
 | 5 | Turn time | Read five `[turn]` lines | Release-to-voice mostly under about 5 s |

@@ -13,6 +13,10 @@ dependencies = [
     "av<18",
     # 3.x changed the HTTP layer and is untested here.
     "openai>=2.41,<3",
+    # The `claude` LLM profile and the badge reading's first reader (claude.py). Imported only
+    # when a Claude call is made, so a machine without it still runs; 2.x sends API version
+    # 2026-10-21, which has no temperature / top_p / top_k.
+    "anthropic>=2.3,<3",
     "python-dotenv>=1.0",
 ]
 

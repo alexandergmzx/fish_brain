@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tts", choices=["loq", "openai"],
                         help="text-to-speech backend (default: FISH_TTS_BACKEND or loq)")
     parser.add_argument("--llm", metavar="PROFILE",
-                        help="LLM profile, e.g. groq or luna (default: FISH_LLM_PROFILE)")
+                        help="LLM profile: groq, luna, claude or claude-sonnet (default: FISH_LLM_PROFILE)")
     parser.add_argument("--transport", choices=["serial", "bridge"],
                         help="how commands reach the motor board (default: serial)")
     parser.add_argument("--check-link", action="store_true",
@@ -65,8 +65,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="render every canned phrase with the current TTS backend, then exit")
     parser.add_argument("--read-badge", metavar="FILE",
                         help="read the name on a badge photo (JPEG) with the vision model, "
-                             "print the result as JSON and exit (--llm / FISH_READING_PROFILE "
-                             "pick the profile)")
+                             "print the result as JSON and exit (FISH_READING_PROFILE picks the "
+                             "profiles; empty: claude if it has a key, then --llm)")
     args = parser.parse_args(argv)
 
     # Load .env so OPENAI_API_KEY (and optional overrides) are available.

@@ -160,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     os.environ.pop("FISH_VISIT", None)
     from fish_brain.ab import _cost
     from fish_brain.config import Config, LLMConfig
-    from fish_brain.llm import Conversation
+    from fish_brain.llm import make_conversation
 
     cfg = Config()
     if not cfg.visit.rules:
@@ -173,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
     for name in [n.strip() for n in args.profiles.split(",") if n.strip()]:
         lcfg = LLMConfig(profile=name)
         try:
-            llm = Conversation(lcfg)
+            llm = make_conversation(lcfg)
         except Exception as e:                  # a missing key: name the variable only
             print(f"can't start profile {name!r}: set {lcfg.api_key_env} in .env "
                   f"({type(e).__name__})", file=sys.stderr)

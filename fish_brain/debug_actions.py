@@ -141,10 +141,17 @@ def _set_mode(a, value: str) -> str:
 
 
 def _set_llm_profile(a, value: str) -> str:
-    from .config import LLM_PROFILES, LLMConfig
+    from .config import LLMConfig
     missing = _key_missing(LLM_PROFILES[value]["api_key_env"])
     if missing:
         return missing
+    if LLM_PROFILES[value].get("provider") == "anthropic":
+        from . import claude
+        from .cloud import CloudMisconfigured
+        try:
+            claude.ready(LLM_PROFILES[value]["api_key_env"])    # the package, so a turn does not find out
+        except CloudMisconfigured as e:
+            return str(e)
     old = a.cfg.llm
     a.cfg.llm = LLMConfig(profile=value, system_prompt=old.system_prompt,
                           fallback_reply=old.fallback_reply,

@@ -296,6 +296,16 @@ def test_a_cut_recording_tells_the_llm(monkeypatch, tmp_path, capsys):
     assert "cut=15.0s" in capsys.readouterr().out
 
 
+def test_the_model_is_built_by_the_provider_factory_from_the_current_profile(monkeypatch):
+    from fish_brain import llm
+    built = []
+    monkeypatch.setattr(llm, "make_conversation", lambda cfg: built.append(cfg.profile) or object())
+    cfg = Config()
+    convo = FishConversation(cfg, MockSerialLink(cfg.serial), play_audio=False, echo=False)
+    first = convo.llm
+    assert convo.llm is first and built == [cfg.llm.profile]       # built once, on first use
+
+
 # --- the debug hub sees every turn, and can never break one ---
 
 def test_turn_records_for_the_debug_page(make, tmp_path, capsys):

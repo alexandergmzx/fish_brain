@@ -1,7 +1,9 @@
-"""Cloud LLM (any OpenAI-compatible API: Groq, OpenAI, ...) with bounded history + fish persona.
+"""Cloud LLM with bounded history + fish persona.
 
 Only text leaves the machine. Which backend is used comes from LLMConfig.profile
 (FISH_LLM_PROFILE in .env); its API key is read from the env var the profile names.
+`Conversation` speaks to any OpenAI-compatible API (Groq, OpenAI, ...); a profile with
+`provider: anthropic` is served by claude.Conversation. `make_conversation` picks.
 """
 from __future__ import annotations
 
@@ -13,23 +15,12 @@ from . import cloud, debug
 from .config import LLMConfig
 
 
-class Conversation:
+class _Chat:
+    """What every provider's conversation shares: the persona, the per-visitor rules and the
+    bounded history. A subclass sends the request and sets `last_*` in `reply()`."""
+
     def __init__(self, cfg: LLMConfig):
         self.cfg = cfg
-        import openai  # lazy import so --text/--dry-run without the key is fine
-        # Never let the SDK pick a key by itself: with none given it would fall back to
-        # OPENAI_API_KEY and send it to whichever service this profile points at.
-        key = os.environ.get(cfg.api_key_env or "", "").strip()
-        if not key:
-            raise cloud.CloudMisconfigured(f"{cfg.api_key_env} is not set (put it in .env)")
-        self._client = openai.OpenAI(
-            base_url=cfg.base_url or None,           # None -> api.openai.com
-            api_key=key,
-            # A bare float would also stretch the connect timeout; keep that one short so a
-            # dead hotspot fails in seconds.
-            timeout=openai.Timeout(cfg.timeout_s, connect=3.0),
-            max_retries=1,
-        )
         # Request options the API rejected once (HTTP 400); not sent again.
         self._dropped: set[str] = set()
         # Rolling history of {"role","content"} (user/assistant only; system is fixed).
@@ -64,6 +55,32 @@ class Conversation:
         max_msgs = self.cfg.max_history_turns * 2
         if len(self._history) > max_msgs:
             self._history = self._history[-max_msgs:]
+
+
+class Conversation(_Chat):
+    """The OpenAI-compatible provider (Groq, OpenAI)."""
+
+    def __init__(self, cfg: LLMConfig):
+        if cfg.provider != "openai":
+            # Its key would be sent to api.openai.com (an empty base_url means that host).
+            raise cloud.CloudMisconfigured(
+                f"profile {cfg.profile!r} is a {cfg.provider} profile: build it with "
+                "llm.make_conversation")
+        import openai  # lazy import so --text/--dry-run without the key is fine
+        # Never let the SDK pick a key by itself: with none given it would fall back to
+        # OPENAI_API_KEY and send it to whichever service this profile points at.
+        key = os.environ.get(cfg.api_key_env or "", "").strip()
+        if not key:
+            raise cloud.CloudMisconfigured(f"{cfg.api_key_env} is not set (put it in .env)")
+        self._client = openai.OpenAI(
+            base_url=cfg.base_url or None,           # None -> api.openai.com
+            api_key=key,
+            # A bare float would also stretch the connect timeout; keep that one short so a
+            # dead hotspot fails in seconds.
+            timeout=openai.Timeout(cfg.timeout_s, connect=3.0),
+            max_retries=1,
+        )
+        super().__init__(cfg)
 
     def _kwargs(self) -> dict:
         kwargs: dict = {}
@@ -162,3 +179,14 @@ class Conversation:
         if remember:
             self.remember(user_text, answer)
         return answer
+
+
+def make_conversation(cfg: LLMConfig) -> _Chat:
+    """The conversation for the profile's provider. The SDK is imported here, when the
+    object is built, so a machine that never uses a provider does not need its package."""
+    if cfg.provider == "anthropic":
+        from .claude import Conversation as ClaudeConversation
+        return ClaudeConversation(cfg)
+    if cfg.provider == "openai":
+        return Conversation(cfg)
+    raise ValueError(f"unknown LLM provider {cfg.provider!r} (profile {cfg.profile!r})")

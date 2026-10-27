@@ -1,10 +1,12 @@
 """The reading (ADR 0007): a badge photo becomes a name; the fish asks, then tells the future.
 
-`read_badge()` relays a JPEG, in memory, to the vision model of the profile named by
-`FISH_READING_PROFILE` (empty = the LLM profile; `luna` is the one with image input) with a
-strict JSON schema, reasoning off and `store=False`. The photo is never written, logged or
-kept: it lives in the caller's local variable. The result's names are cleaned so what the
-fish says is letters only, and the journal line carries timings and confidence, never a name.
+`read_badge()` relays a JPEG, in memory, to a vision model with a strict JSON schema and
+reasoning off. The models are the profiles of `FISH_READING_PROFILE`, in order (empty =
+`claude` first, then the LLM profile; only profiles with image input: `claude`, `luna`): a
+profile whose key is not set is skipped, and one that fails gives way to the next. The photo
+is never written, logged or kept: it lives in the caller's local variable. The result's names
+are cleaned so what the fish says is letters only, and the journal line carries timings and
+confidence, never a name.
 
 `Reading` is the item the page offers the turn loop (through the viz inbox); the loop
 speaks "¿Tú eres X?" or, for a confirmed (typed) name, tells the future at once.
@@ -55,6 +57,7 @@ class BadgeRead:
     confidence: str = "low"
     seconds: float = 0.0
     tokens: int = 0
+    profile: str = ""             # the LLM profile that read it
 
 
 @dataclass
@@ -99,46 +102,111 @@ def first_word(name: str) -> str:
     return (name.split() or [""])[0]
 
 
-def _profile(cfg: Config) -> dict:
-    name = cfg.reading.profile or cfg.llm.profile
-    if name not in LLM_PROFILES:
-        raise cloud.CloudMisconfigured(
-            f"FISH_READING_PROFILE={name!r}; choose one of {list(LLM_PROFILES)}")
-    return LLM_PROFILES[name]
+_noted: set[str] = set()
+
+
+def _once(note: str) -> None:
+    """Say a skip once per process: a fish without a Claude key would otherwise repeat it for
+    every badge."""
+    if note not in _noted:
+        _noted.add(note)
+        print(f"[reading] {note}", file=sys.stderr, flush=True)
+
+
+def _candidates(cfg: Config) -> list[tuple[str, dict]]:
+    """The profiles that may read the badge, in the order they are tried: FISH_READING_PROFILE,
+    or Claude and then the LLM profile. An unknown name is a set-up error."""
+    names = list(cfg.reading.profiles) or ["claude", cfg.llm.profile]
+    out: list[tuple[str, dict]] = []
+    for name in names:
+        if name not in LLM_PROFILES:
+            raise cloud.CloudMisconfigured(
+                f"FISH_READING_PROFILE={name!r}; choose from {list(LLM_PROFILES)}")
+        if all(name != taken for taken, _ in out):
+            out.append((name, LLM_PROFILES[name]))
+    return out
 
 
 def read_badge(jpeg: bytes, cfg: Config, *, want_look: bool) -> BadgeRead:
     """Read a badge photo. Raises ValueError for a non-JPEG or oversized body,
-    `cloud.CloudUnavailable` when offline or the call fails transiently,
-    `cloud.CloudMisconfigured` for a missing key or a rejected request."""
+    `cloud.CloudUnavailable` when offline or when a call failed transiently and none other
+    answered, `cloud.CloudMisconfigured` for a missing key or a rejected request."""
     if not isinstance(jpeg, (bytes, bytearray)) or jpeg[:3] != JPEG_MAGIC:
         raise ValueError("not a JPEG")
     if len(jpeg) > cfg.reading.max_image_bytes:
         raise ValueError("image too large")
-    profile = _profile(cfg)
-    if not cloud.is_online():
-        raise cloud.CloudUnavailable("offline")
-    client = cloud.client(profile["base_url"], profile["api_key_env"],
-                          timeout_s=cfg.reading.timeout_s)
+    candidates = _candidates(cfg)
     ask = "Lee el gafete." + (" Describe también el look." if want_look
                               else " No describas a la persona: look es null.")
-    data_url = "data:image/jpeg;base64," + base64.b64encode(bytes(jpeg)).decode("ascii")
+    problems: list[str] = []
+    for name, profile in candidates:
+        if not profile.get("vision"):                 # nothing is sent to a model that cannot see
+            _once(f"{name} takes no images; skipped")
+            problems.append(f"{name} takes no images")
+    usable = [(name, profile) for name, profile in candidates if profile.get("vision")]
+    if not usable:
+        raise cloud.CloudMisconfigured(
+            "no profile for the reading takes images (FISH_READING_PROFILE: luna or claude); "
+            + "; ".join(problems))
+    errors: list[Exception] = []
+    for i, (name, profile) in enumerate(usable):
+        last = i == len(usable) - 1
+        try:
+            return _read_one(name, profile, cfg, bytes(jpeg), ask, want_look, last=last)
+        except cloud.CloudUnavailable as e:
+            errors.append(e)
+            problems.append(f"{name}: {e}")
+            if not last:
+                print(f"[reading] {name} unavailable ({e}); trying {usable[i + 1][0]}",
+                      file=sys.stderr, flush=True)
+        except cloud.CloudMisconfigured as e:
+            errors.append(e)
+            problems.append(f"{name}: {e}")
+            if not last:
+                _once(f"{name} not usable ({e}); trying {usable[i + 1][0]}")
+    if len(errors) == 1 and len(problems) == 1:
+        raise errors[0]                                # one profile, its own error
+    transient = any(isinstance(e, cloud.CloudUnavailable) for e in errors)
+    raise (cloud.CloudUnavailable if transient else cloud.CloudMisconfigured)("; ".join(problems))
+
+
+def _read_one(name: str, profile: dict, cfg: Config, jpeg: bytes, ask: str, want_look: bool,
+              *, last: bool) -> BadgeRead:
+    """One profile's attempt. A profile that is not the last gets `fallback_after_s`, so a
+    stuck one cannot use up the whole reading."""
+    anthropic = profile.get("provider") == "anthropic"
+    timeout_s = (cfg.reading.timeout_s if last
+                 else min(cfg.reading.fallback_after_s, cfg.reading.timeout_s))
+    if anthropic:
+        from . import claude
+        claude.ready(profile["api_key_env"])        # no key / no package: skipped, nothing recorded
+    elif not profile.get("base_url") and not cloud.is_online():
+        # The probe watches api.openai.com, so it only speaks for profiles hosted there.
+        raise cloud.CloudUnavailable("offline")
     # For /debug: what the vision model was asked. Never the photo or its data URL.
-    sent = {"model": profile["model"], "prompt": cfg.reading.badge_prompt, "ask": ask,
-            "image_bytes": len(jpeg)}
+    sent = {"profile": name, "model": profile["model"], "prompt": cfg.reading.badge_prompt,
+            "ask": ask, "image_bytes": len(jpeg)}
     t0 = time.monotonic()
     try:
-        resp = _ask_badge(client, profile, cfg, ask, data_url)
+        if anthropic:
+            resp = claude.ask_badge(profile, system=cfg.reading.badge_prompt, jpeg=jpeg, ask=ask,
+                                    schema=BADGE_SCHEMA, timeout_s=timeout_s)
+        else:
+            client = cloud.client(profile["base_url"], profile["api_key_env"],
+                                  timeout_s=timeout_s)
+            data_url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")
+            resp = _ask_badge(client, profile, cfg, ask, data_url)
     except Exception as e:
         debug.model("vision", sent, error=e, seconds=time.monotonic() - t0)
         raise
     seconds = time.monotonic() - t0
     out = _parse_badge(resp, seconds, want_look)
+    out.profile = name
     debug.model("vision", sent, seconds=seconds, tokens=out.tokens, found=out.found,
                 confidence=out.confidence, name=out.full_name,
                 name_for_speech=out.name_for_speech, look=out.look)
     print(f"[reading] badge {seconds:.1f}s tokens={out.tokens} found={str(out.found).lower()} "
-          f"confidence={out.confidence}", file=sys.stderr, flush=True)
+          f"confidence={out.confidence} profile={name}", file=sys.stderr, flush=True)
     return out
 
 
