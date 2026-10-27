@@ -740,13 +740,25 @@ def banned_in(text: str) -> list[str]:
     return found
 
 
+def reading_problems(text: str) -> list[str]:
+    """Why a reading would be refused ([] = it would be said): empty, the banned words, years
+    and clock times, more than 6 sentences, more than 90 words. Bracket tags are removed
+    first, as for the voice."""
+    text = strip_notes(text or "")
+    if not text:
+        return ["empty"]
+    out = [f"banned {w!r}" for w in banned_in(text)]
+    sentences = len(re.findall(r"[.!?…]+(?:\s|$)", text)) or 1
+    if sentences > MAX_READING_SENTENCES:
+        out.append(f"{sentences} sentences")
+    words = len(text.split())
+    if words > MAX_READING_WORDS:
+        out.append(f"{words} words")
+    return out
+
+
 def clean_reading(reply: str) -> str | None:
     """The model's reading fit to be said: any bracket tag removed, whitespace collapsed; None
     when it carries a banned word, more than 6 sentences or more than 90 words."""
     text = strip_notes(reply or "")
-    if not text or banned_in(text):
-        return None
-    sentences = len(re.findall(r"[.!?…]+(?:\s|$)", text)) or 1
-    if sentences > MAX_READING_SENTENCES or len(text.split()) > MAX_READING_WORDS:
-        return None
-    return text
+    return None if reading_problems(text) else text

@@ -47,6 +47,79 @@ def _not_sure(text: str) -> bool:
     return any(re.search(rf"\b{p}\b", joined) for p in show.NOT_SURE)
 
 
+# ---- the act's pure steps (shared with tools/hat_rehearse.py) ---------------------------------
+def parse_answer(qid: str, words: str, deck: dict | None, data: dict) -> tuple[str, object]:
+    """One answer (notes stripped) into `data`: (what was found, its id), ("not_sure", None)
+    or ("none", None). "No sé" is the bridge, except at the dream: "no me acuerdo" is a theme
+    of its own (`nada`, a line that needs no content), so its parser decides."""
+    if qid != "sueno" and _not_sure(words):
+        return "not_sure", None
+    if qid == "fecha":
+        birth = fortune.parse_birth(words)
+        if birth is not None:
+            day, month = birth
+            sid = fortune.sign_of(day, month)
+            data.update(fecha=birth, signo=sid, numero=fortune.lucky_number(day, month))
+            return "sign", sid
+        sid = fortune.parse_sign(words)
+        if sid is not None:
+            data["signo"] = sid
+            return "sign", sid
+        return "none", None
+    if qid == "sueno":
+        theme = fortune.dream_theme(words)
+        if theme is None:
+            return "none", None
+        data.update(sueno=theme, sueno_txt=clean_cue_text(words, DREAM_TEXT_MAX))
+        return "theme", theme
+    if qid == "carta":
+        n = fortune.parse_card(words, deck)
+        if n is None:
+            return "none", None
+        data["carta"] = n
+        return "card", n
+    if qid == "taza":
+        shape = fortune.parse_shape(words)
+        if shape is None:
+            return "none", None
+        data["taza"] = shape
+        return "shape", shape
+    if qid == "animal":
+        heard = show.match_option(fortune.ANIMAL_Q, words)
+        if heard.kind == "not_sure":
+            return "not_sure", None
+        if heard.kind != "option":
+            return "none", None
+        data["animal"] = heard.option
+        return "option", heard.option
+    return "none", None
+
+
+def fortune_of(data: dict, *, nombre: str = "", lugar: str = "",
+               casa: str | None = None) -> fortune.Fortune:
+    """The act's data (parse_answer's dict, plus the moon and the magic word) as a Fortune."""
+    d = data
+    return fortune.Fortune(nombre=nombre, lugar=lugar, casa=casa,
+                           fecha=d.get("fecha"), signo=d.get("signo"), numero=d.get("numero"),
+                           sueno=d.get("sueno"), sueno_txt=d.get("sueno_txt", ""),
+                           carta=d.get("carta"), taza=d.get("taza"), animal=d.get("animal"),
+                           luna=d.get("luna"), palabra=d.get("palabra", ""))
+
+
+def reading_request(llm, rules: str, f: fortune.Fortune, deck: dict | None) -> str:
+    """The model set up for a reading (a fresh history: the data travel in the tag, the
+    fortune's rules after the persona); returns the tag to send."""
+    begin_model(llm, rules)
+    return fortune.reading_tag(f, deck)
+
+
+def reading_result(raw: str) -> str | None:
+    """The model's reply as the reading to say, or None when it is empty or breaks the rules
+    (fortune.reading_problems says why)."""
+    spoken, _house = split_reply(raw or "")
+    return fortune.clean_reading(spoken)
+
+
 class FortuneRun:
     def __init__(self, convo):
         self.c = convo
@@ -239,12 +312,7 @@ class FortuneRun:
         text = text or ""
         v["heard"].append((qid, text))
         words = fortune.strip_notes(text)
-        # "No sé" is the bridge, except at the dream: "no me acuerdo" is a theme of its own
-        # (`nada`, a line that needs no content), so its parser decides.
-        if qid != "sueno" and _not_sure(words):
-            kind, value = "not_sure", None
-        else:
-            kind, value = self._parse(qid, words, v["deck"])
+        kind, value = parse_answer(qid, words, v["deck"], v["data"])
         shown = "" if value is None else value
         debug.turn_set(fortune=f"#{v['n']} {qid} {kind} {shown}")
         print(f"[fortune] #{v['n']} {qid} heard={text!r} -> {kind} {shown}", flush=True)
@@ -256,49 +324,6 @@ class FortuneRun:
         if qid == "sueno":
             clips.append(self._pick("vision"))   # a mentalist line that needs no content
         return self._next(clips)
-
-    def _parse(self, qid: str, words: str, deck: dict | None) -> tuple[str, object]:
-        """One answer into the act's data: (what was found, its id), or ("none", None)."""
-        data = self.v["data"]
-        if qid == "fecha":
-            birth = fortune.parse_birth(words)
-            if birth is not None:
-                day, month = birth
-                sid = fortune.sign_of(day, month)
-                data.update(fecha=birth, signo=sid, numero=fortune.lucky_number(day, month))
-                return "sign", sid
-            sid = fortune.parse_sign(words)
-            if sid is not None:
-                data["signo"] = sid
-                return "sign", sid
-            return "none", None
-        if qid == "sueno":
-            theme = fortune.dream_theme(words)
-            if theme is None:
-                return "none", None
-            data.update(sueno=theme, sueno_txt=clean_cue_text(words, DREAM_TEXT_MAX))
-            return "theme", theme
-        if qid == "carta":
-            n = fortune.parse_card(words, deck)
-            if n is None:
-                return "none", None
-            data["carta"] = n
-            return "card", n
-        if qid == "taza":
-            shape = fortune.parse_shape(words)
-            if shape is None:
-                return "none", None
-            data["taza"] = shape
-            return "shape", shape
-        if qid == "animal":
-            heard = show.match_option(fortune.ANIMAL_Q, words)
-            if heard.kind == "not_sure":
-                return "not_sure", None
-            if heard.kind != "option":
-                return "none", None
-            data["animal"] = heard.option
-            return "option", heard.option
-        return "none", None
 
     def no_answer(self) -> bool:
         """Nothing usable for the open question: once more, narrower; then the bridge line
@@ -331,14 +356,10 @@ class FortuneRun:
 
     # ---- the reading ---------------------------------------------------------------------------
     def _fortune(self) -> fortune.Fortune:
-        v, d = self.v, self.v["data"]
+        v = self.v
         place = self.c.cfg.place
         lugar = place.text.strip() if place.place == "otro" and place.text.strip() else place.place
-        return fortune.Fortune(nombre=v["first"], lugar=lugar, casa=v["house"],
-                               fecha=d.get("fecha"), signo=d.get("signo"), numero=d.get("numero"),
-                               sueno=d.get("sueno"), sueno_txt=d.get("sueno_txt", ""),
-                               carta=d.get("carta"), taza=d.get("taza"), animal=d.get("animal"),
-                               luna=d.get("luna"), palabra=d.get("palabra", ""))
+        return fortune_of(v["data"], nombre=v["first"], lugar=lugar, casa=v["house"])
 
     def _ending(self, lead: list, *, clips_only: bool = False) -> bool:
         """The reading: the moon and the magic word join the data; the model's reading when
@@ -388,8 +409,7 @@ class FortuneRun:
         try:
             self.c._settle("llm")                # a stale job on the same model ends first
             llm = self.c.llm                     # the client is built here, on this thread
-            begin_model(llm, self.cfg.rules)     # a fresh history: the data travel in the tag
-            tag = fortune.reading_tag(self._fortune(), v["deck"])
+            tag = reading_request(llm, self.cfg.rules, self._fortune(), v["deck"])
             ask = llm.reply
             job = _Job("llm", lambda: ask(tag, remember=False))
         except TurnTimeout:
@@ -415,8 +435,7 @@ class FortuneRun:
             self._model_failed(f"error: {job.exc or llm.last_error}")
             return False
         raw = job.result or ""
-        spoken, _house = split_reply(raw)
-        text = fortune.clean_reading(spoken)
+        text = reading_result(raw)
         if not text:
             self._model_failed("the reply was empty or broke the rules")
             return False

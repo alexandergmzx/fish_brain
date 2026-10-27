@@ -274,3 +274,51 @@ def test_a_roman_numeral_by_a_month_is_the_day_but_vi_alone_is_a_word():
 
 def test_the_cup_hears_the_star_as_canary_mangles_it():
     assert fortune.parse_shape("uña extraída.") == "estrella"
+
+
+def test_reading_problems_say_why_a_reading_is_refused():
+    assert fortune.reading_problems("Escorpio, de agua. Tu palabra es Zumbalí.") == []
+    assert fortune.reading_problems("[ADIVINACIÓN: x]") == ["empty"]
+    assert fortune.reading_problems(None) == ["empty"]
+    assert fortune.reading_problems("Vas al hospital en 2027.") == ["banned 'hospital'",
+                                                                    "banned '2027'"]
+    assert fortune.reading_problems("Uno. Dos. Tres. Cuatro. Cinco. Seis. Siete.") == ["7 sentences"]
+    assert fortune.reading_problems("palabra " * 91) == ["91 words"]
+
+
+# ---- the act's pure steps (fortune_run), shared with the rehearsal ---------------------------
+def test_parse_answer_fills_the_data_as_the_act_does():
+    from fish_brain.fortune_run import parse_answer
+    data: dict = {}
+    assert parse_answer("fecha", "diecisiete de junio", TAROT, data) == ("sign", "geminis")
+    assert data["fecha"] == (17, 6) and data["signo"] == "geminis" and data["numero"]
+    assert parse_answer("fecha", "no sé", TAROT, {}) == ("not_sure", None)
+    assert parse_answer("sueno", "no me acuerdo", TAROT, {})[0] == "theme"
+    assert parse_answer("carta", "la luna", TAROT, data)[0] == "card"
+    assert parse_answer("taza", "un corazón", TAROT, data) == ("shape", data["taza"])
+    assert parse_answer("animal", "un gato negro", TAROT, data) == ("option", "gato")
+    assert parse_answer("animal", "ninguno", TAROT, {}) == ("not_sure", None)
+    assert parse_answer("animal", "un perrito xoloitzcuintle", TAROT, {}) == ("none", None)
+    assert parse_answer("otra", "algo", TAROT, {}) == ("none", None)
+
+
+def test_fortune_of_and_the_reading_steps():
+    from fish_brain.fortune_run import fortune_of, reading_request, reading_result
+    data = {"signo": "geminis", "numero": 5, "sueno": "agua", "sueno_txt": "un río",
+            "luna": "llena", "palabra": "Zumbalí"}
+    f = fortune_of(data, nombre="Ana", lugar="fiesta", casa="Ravenclaw")
+    assert (f.nombre, f.lugar, f.casa, f.signo, f.sueno_txt, f.palabra) == (
+        "Ana", "fiesta", "Ravenclaw", "geminis", "un río", "Zumbalí")
+
+    class LLM:
+        resets, extra_rules = 0, "old"
+
+        def reset(self):
+            self.resets += 1
+            self.extra_rules = ""
+
+    llm = LLM()
+    tag = reading_request(llm, "RULES", f, TAROT)
+    assert llm.resets == 1 and llm.extra_rules == "RULES" and tag == reading_tag(f, TAROT)
+    assert reading_result("Tu luna es llena.\nCASA: Ravenclaw") == "Tu luna es llena."
+    assert reading_result("Vas al hospital.") is None and reading_result(None) is None

@@ -1,87 +1,115 @@
-# Scripted visitors for tools/hat_rehearse.py (the doc's test plan, 2026-10-11):
-# a child, an adult, one-word answers, a "no", a rude one, a sad one, the sincere question,
-# each with and without cues. A blank line starts a new visitor.
+# Scripted visitors for tools/hat_rehearse.py, for the adult audience (2026-10-27): his own
+# visit of today, a couple at a party, a sceptic, a costume, one-word answers, a sad one, a
+# rude one, "¿eres un robot?", one at the house, a badge; each with a fortune. A blank line
+# starts a new visitor. Cue values today's code refuses (pareja, escéptico, fiestero, joven,
+# mayor, disfraz) are reported by the rehearsal and not sent.
 
-# 1 a child, with cues
-pistas: edad=niño; compania=familia; color=azul; lleva=playera de dinosaurios
-Me llamo Mateo.
-Construir cosas, hago robots con mi papá.
-Primero investigo.
+# 1 his visit, 2026-10-27 (the cues as he set them; the costume note is not his joke text)
+pistas: edad=adulto; compania=amigos; color=amarillo; impresion=sonriente; lleva=capa negra
+Hola, soy Albert.
+A mi novia.
+Toco la puerta.
+fortuna:
+fecha: Diecisiete de junio.
+sueno: Soñé con mi tío que se murió y tenía un rebaño de borreguitos.
+animal: Un perrito xoloitzcuintle.
 
-# 2 the same child, no cues
-Me llamo Mateo.
-Construir cosas, hago robots con mi papá.
-Primero investigo.
+# 2 a couple at a party
+lugar: fiesta
+pistas: edad=adulto; compania=pareja; impresion=fiestero; color=rojo
+Somos Mariana y Toño.
+Bailar hasta que cierren.
+Que no se acabe la noche.
+fortuna:
+fecha: Tres de marzo.
+sueno: Soñé que se me caían los dientes.
+carta: La luna.
+animal: Un gato negro.
 
-# 3 an adult, badge
+# 3 a sceptic
+pistas: edad=mayor; compania=solo; impresion=escéptico
+Me llamo Ernesto y no creo en nada de esto.
+A ver, adivina algo que no sepa.
+Pues una cerveza.
+fortuna:
+fecha: Escorpión.
+sueno: No me acuerdo.
+carta: La que sea.
+animal: Ninguno.
+
+# 4 a smiling adult in a costume
+pistas: edad=adulto; impresion=sonriente; disfraz=tenebroso; color=morado; lleva=maquillaje de catrina
+Soy Fernanda.
+Vengo de catrina, obvio.
+Los muertos me caen bien.
+fortuna:
+fecha: Veintinueve de febrero.
+sueno: Soñé que volaba sobre un panteón.
+carta: El diablo.
+animal: Un murciélago.
+
+# 5 one-word answers
+pistas: edad=joven; impresion=tímido
+Diego.
+Mapa.
+Abrir.
+fortuna:
+fecha: Mayo.
+sueno: Agua.
+animal: Búho.
+
+# 6 a sad one: a dead relative
+pistas: edad=adulto; compania=familia
+Me llamo Ana.
+Este año se murió mi abuela.
+La extraño mucho.
+fortuna:
+fecha: Doce de diciembre.
+sueno: Soñé con mi abuela, me abrazaba en su cocina.
+carta: La estrella.
+animal: Un gato.
+
+# 7 a rude one
+pistas: edad=joven; compania=amigos; impresion=fiestero
+Soy Kevin y tú eres un sombrero feo.
+Eso es una tontería, no lees nada.
+Ya, dime mi casa y ya.
+fortuna:
+fecha: Qué te importa.
+fecha: Ya te dije que no.
+sueno: Soñé que te echaba al fuego, sombrero.
+animal: Una rata.
+
+# 8 the robot question
+pistas: edad=adulto; impresion=curioso; nota=trabaja en sistemas
+Me llamo Pablo.
+¿Eres un robot?
+Programar cosas.
+fortuna:
+fecha: Primero de enero.
+sueno: Soñé que mi computadora hablaba.
+carta: El mago.
+animal: Un sapo.
+
+# 9 at the house, on the night of the dead
+lugar: casa
+pistas: edad=mayor; compania=familia; color=negro
+Soy Carmen.
+Pongo la ofrenda cada año.
+A mi esposo, que ya se fue.
+fortuna:
+fecha: Dos de noviembre.
+sueno: Soñé con flores de cempasúchil por todo el patio.
+carta: La estrella.
+animal: Un búho.
+
+# 10 a badge, friends, a funny costume
 gafete: Laura
-pistas: edad=adulto; compania=amigos; impresion=sonriente
+pistas: edad=adulto; compania=amigos; impresion=sonriente; disfraz=chistoso; lleva=orejas de gato
 Sí, soy yo.
 Un libro, claro.
 Me molesta más aburrirme.
-
-# 4 one-word answers
-pistas: edad=adolescente; impresion=tímido
-Diego.
-Mapa.
-Abrirla.
-
-# 5 a "no"
-Me llamo Sofía.
-No.
-No sé.
-
-# 6 rude
-pistas: edad=adolescente; compania=amigos
-Soy Kevin y tú eres un sombrero feo.
-Eso es una tontería, no lees nada.
-Perder, obvio.
-
-# 7 a sad one
-pistas: edad=niño
-Me llamo Ana.
-Hoy estoy triste porque mi perrito se murió.
-Con mi mamá.
-
-# 8 the sincere question
-Me llamo Pablo.
-¿De verdad lees mentes?
-Primero investigo.
-
-# 9 are you a robot
-pistas: edad=niño; color=rojo
-Soy Valentina.
-¿Eres un robot?
-Dibujar.
-
-# 10 a wished-for house
-pistas: edad=adulto; compania=familia
-Me llamo Jorge.
-Quiero ser de Slytherin.
-Un trofeo.
-
-# 11 no opener (an idle start), with cues
-sin saludo
-pistas: edad=niño; impresion=curioso; nota=trae un kit de robótica
-Hola.
-Me llamo Lucía.
-Inventar cosas.
-Con mis amigos.
-
-# 12 a badge, no cues, the visitor says no
-gafete: Carlos
-No, me llamo Andrés.
-Estar solo.
-Un amigo.
-
-# 13 soft answers (Akinator's "probably")
-pistas: edad=niño; compania=familia; impresion=sonriente
-Me llamo Emilio.
-Creo que sí, más o menos.
-No sé, a veces.
-
-# 14 an adult who is smiling: albures allowed (his rule, 2026-10-16)
-pistas: edad=adulto; impresion=sonriente; compania=amigos
-Me llamo Ricardo.
-Un trofeo, obvio.
-Perder, nunca pierdo.
+fortuna:
+fecha: Veinte de agosto.
+sueno: Soñé que llegaba tarde a un examen.
+animal: Gato.
