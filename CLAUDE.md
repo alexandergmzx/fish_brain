@@ -157,7 +157,7 @@ Changed only by a record in [`docs/adr/`](docs/adr/). Do not reopen without new 
 | LLM | Profiles; `groq` in code, `luna` on the board (ADR 0004); `claude` and `claude-sonnet` selectable through the Anthropic SDK, not the default (ADR 0018, proposed) | 2026-10-10 |
 | `master` | Untouched. On `braintip` the laptop must still run with no environment set | 2026-10-10 |
 
-Not decided: which service replaces OpenAI's speech-to-text before 2027-02-26; trimming an offline recording over 6 s so it fits the 12 s budget (ADR 0020, his call); whether the LightDM session
+Not decided: which service would replace OpenAI's speech-to-text; trimming an offline recording over 6 s so it fits the 12 s budget (ADR 0020, his call); whether the LightDM session
 stays installed with no display (to be measured). Decided 2026-10-10: the board's voice is
 Loquendo (`FISH_TTS_BACKEND=loq`). Decided 2026-10-11: tamer welcome and goodbye for the fair.
 Since 2026-10-27 the audience is adults (parties, spooky places, his parents' house, the

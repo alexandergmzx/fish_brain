@@ -72,8 +72,10 @@ Two more things surfaced the same day:
 
 - Every recording leaves the board while it is online (before: only those over 6 s, to Groq).
 - The board needs `OPENAI_API_KEY`, which it already holds for `luna` and the voice fallback.
-- OpenAI's transcription models are announced to shut down on 2027-02-26; the route is a
-  list, so another service takes its place by name.
+- The route uses `gpt-transcribe`; the 2027-02-26 shutdown announced for OpenAI's older
+  transcription models ([`BRAINTIP.md`](../BRAINTIP.md), read 2026-10-10) does not name it,
+  and no end date for it is recorded here. The route is a list, so another service takes its
+  place by name.
 - Not measured yet on the board: the online route in a real turn on the remote's microphone
   (the 2026-10-13 OpenAI figures are the RedOctane's), the fall-back with the data cut
   mid-hold, the silence end from the remote and from the phone, a 30 s hold online and
