@@ -261,3 +261,16 @@ def test_clean_reading():
     assert clean_reading("Uno. Dos. Tres. Cuatro. Cinco. Seis. Siete.") is None
     assert clean_reading("palabra " * 91) is None
     assert clean_reading("Cuatro frases.  Con   espacios. De sobra. Y fin.") == "Cuatro frases. Con espacios. De sobra. Y fin."
+
+
+def test_a_roman_numeral_by_a_month_is_the_day_but_vi_alone_is_a_word():
+    # Canary wrote "XII de octubre" on the board (docs/results/2026-10-27-fortune-answers-canary.md).
+    assert fortune.parse_birth("XII de octubre.") == (12, 10)
+    assert fortune.parse_birth("el VI de marzo") == (6, 3)
+    assert fortune.parse_birth("octubre xxiii") == (23, 10)
+    assert fortune.parse_birth("vi un gato en octubre") is None
+    assert fortune.parse_birth("XL de enero") is None            # 40 is no day
+
+
+def test_the_cup_hears_the_star_as_canary_mangles_it():
+    assert fortune.parse_shape("uña extraída.") == "estrella"

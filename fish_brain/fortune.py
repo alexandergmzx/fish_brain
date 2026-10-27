@@ -119,12 +119,44 @@ def valid_date(day: int, month: int) -> bool:
     return 1 <= month <= 12 and 1 <= day <= _MONTH_DAYS[month - 1]
 
 
+_ROMAN = {"i": 1, "v": 5, "x": 10, "l": 50}
+
+
+def _roman(w: str) -> int | None:
+    """"xii" -> 12, "xxiii" -> 23; None for anything that is not a numeral."""
+    if not w or any(c not in _ROMAN for c in w):
+        return None
+    total = 0
+    for a, b in zip(w, w[1:] + " "):
+        total += -_ROMAN[a] if b != " " and _ROMAN[a] < _ROMAN[b] else _ROMAN[a]
+    return total
+
+
+def _romans_by_a_month(ws: list[str]) -> list[str]:
+    """Canary wrote "XII de octubre" for a spoken "veintitrés de octubre" on the board
+    (2026-10-27): a Roman numeral right before "de <mes>" or next to a month word is read as
+    the day. Only there: "vi" is also a Spanish word ("vi un gato")."""
+    out = list(ws)
+    for i, w in enumerate(ws):
+        n = _roman(w)
+        if n is None or not 1 <= n <= MAX_NUMBER:
+            continue
+        after = ws[i + 1:i + 3]
+        before = ws[i - 1] if i else ""
+        by_month = (after and _month_at(after[0])) or \
+            (len(after) == 2 and after[0] in ("de", "del") and _month_at(after[1])) or \
+            (before and _month_at(before))
+        if by_month:
+            out[i] = str(n)
+    return out
+
+
 def parse_birth(text: str) -> tuple[int, int] | None:
     """(day, month) in "el 23 de octubre", "veintitrés de octubre de 2015" (the year is never
     read), "octubre 23", "23/10", "el primero de mayo", "diez del once". A month word takes
     the nearest number on its left, else on its right; without a month word, the first two
     numbers are day then month. None when no date fits."""
-    ws = tokens(text)
+    ws = _romans_by_a_month(tokens(text))
     nums = numbers_in(ws)
     month_i = next(((i, m) for i, w in enumerate(ws) if (m := _month_at(w))), None)
     if month_i is not None:
@@ -530,7 +562,7 @@ def parse_card(text: str, deck: dict) -> int | None:
 
 # ---- the cup --------------------------------------------------------------------------------
 CUP_SHAPES: tuple[Theme, ...] = (
-    Theme("estrella", "Una estrella", ("estrella*", "estrellita")),
+    Theme("estrella", "Una estrella", ("estrella*", "estrellita", "extraida")),   # "uña extraída": Canary, 2026-10-27
     Theme("corazon", "Un corazón", ("corazon*", "corazoncito")),
     Theme("luna", "Una luna", ("luna", "lunita", "media luna", "lunas")),
     Theme("anillo", "Un anillo", ("anillo*", "aro", "argolla", "circulo", "un circulo", "redondo")),
