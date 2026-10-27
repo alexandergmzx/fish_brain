@@ -147,6 +147,15 @@ def test_mic_rows():
     assert row(Facts(capture_cards=0), "mic")["level"] == "warn"
 
 
+def test_mic_out_is_what_the_page_calls_the_board_deaf():
+    assert row(Facts(), "mic")["out"] is False
+    assert row(Facts(mic_source="xw", mic_source_present=False), "mic")["out"] is True
+    assert row(Facts(mic_zeroed=True), "mic")["out"] is True
+    assert row(Facts(marks=frozenset({"mic"})), "mic")["out"] is True
+    # one quiet take is a warning, not a deaf board
+    assert row(Facts(last_rec={"samples": 100, "zero_frac": 0.0, "rms": 0.001}), "mic")["out"] is False
+
+
 def test_phone_mic_row():
     assert row(Facts(capture="host"), "phone_mic")["level"] == "off"
     need = row(Facts(capture="auto", mic_zeroed=True), "phone_mic")

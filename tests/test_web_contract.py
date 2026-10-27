@@ -277,3 +277,79 @@ def test_the_phone_microphone_ends_a_hold_on_silence_once():
     assert 'h["X-Fish-End"]' in js and "page.silence_end_s" in js and "page.quiet_rms" in js
     viz = (WEB_DIR.parent / "viz.py").read_text(encoding="utf-8")
     assert '"X-Fish-End"' in viz
+
+
+# --- the page reads the device table (ADR 0021) ---
+
+def _fn(js: str, start: str) -> str:
+    """One top-level function or block of debug.js, from `start` to its closing line."""
+    body = js[js.index(start):]
+    return body[:body.index("\n  }\n")]
+
+
+def test_the_page_reads_presence_and_failure_from_the_device_table():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    # one map by id, rebuilt only when the state changes
+    dev = _fn(js, "function dev() {")
+    assert "st !== devFor" in dev and "devMap[d.id] = d" in dev
+    # the old per-caller keys are read nowhere
+    for gone in ("t.hw ", "t.hw[", "hw = t.hw", "show_tab.hw", "mic_dead", "phone_mics", "t.capture", "page.capture",
+                 "be.capture", "be.online", "c.mic_pages"):
+        assert gone not in js, gone
+    status = _fn(js, "function renderStatus() {")
+    assert "st.devices" in status and 'd.level !== "off"' in status
+    order = [status.index(x) for x in ('"Voice"', '"Mode"', '"Lines"', '"Fortune"', '"Act"', '"Start at boot"')]
+    assert order == sorted(order) and status.index("st.devices") < order[0]
+    assert '"Network"' not in status and '"Speaker"' not in status and '"Remote"' not in status
+    assert "st.summary" in status
+    assert 'setSummary("warn", "Ready, with a warning: "' in status
+    assert 'setSummary("bad", "Check: "' in status and 'setSummary("ok", "Ready for visitors")' in status
+
+
+def test_the_warn_summary_has_its_colour():
+    css = (WEB_DIR / "debug.css").read_text(encoding="utf-8")
+    assert re.search(r"\.summary\.warn \{[^}]*var\(--hoja-aviso\)", css)
+
+
+def test_the_chips_come_from_the_table_without_their_own_thresholds():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    bar = _fn(js, "function renderBar() {")
+    for word, part in (("LINK", "motors"), ("NET", "internet"), ("TRIG", "remote"), ("MIC", "mic"), ("SPK", "speaker")):
+        assert f'"{word}"' in bar, word
+        assert f"d.{part}" in bar, part
+    assert "0.95" not in bar and "0.005" not in bar and "S.perf" not in bar and "link.health" not in bar
+
+
+def test_the_hat_says_no_internet_from_the_table():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    assert '(dev().internet || {}).present === false' in js
+    assert 'box.classList.toggle("no-net", noNet)' in js
+
+
+def test_the_hardware_marks_and_the_detected_note():
+    html = (WEB_DIR / "debug.html").read_text(encoding="utf-8")
+    setup = _panel(html, "setup")
+    assert 'id="hwNote"' in setup and setup.index('data-hw="internet"') < setup.index('id="hwNote"')
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    body = _fn(js, "function renderSetup() {")
+    assert "(d[b.dataset.hw] || {}).marked" in body and '$("hwNote")' in body
+
+
+def test_the_hold_and_the_phone_rows_read_the_table():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    assert "function boardDeaf() { return !!(dev().mic || {}).out; }" in js
+    spk = js[js.index("const phoneSpeaker = guard("):js.index("// ---- render ---")]
+    assert "d.phone_speaker" in spk and "x.pages" in spk and "x.in_use" in spk
+    assert "phoneSpeaker.status(dev())" in js and "phoneMic.status(page, dev())" in js
+    mic = js[js.index("const phoneMic = guard("):]
+    off = mic[mic.index("async function off("):]
+    off = off[:off.index("\n    }\n")]
+    assert 'switchValue("mic", "start")' in off and 'value: "host" }' not in off
+
+
+def test_the_fortune_button_waits_for_its_lines_from_show_tab_only():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    block = js[js.index("const fortuneRow = guard("):js.index("const phoneMic = guard(")]
+    assert "btn.disabled = open || wantOpen || !ready;" in block
+    assert "tabReady" not in block and "f.ready" not in block    # the view's flag no longer decides
+    assert "ready = !!ft &&" in block

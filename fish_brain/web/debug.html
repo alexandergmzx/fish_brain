@@ -216,7 +216,8 @@
             <div class="scroll" id="panels">
                 <div class="panel" id="p-status" hidden>
                     <!-- The phone as the console (ADR 0017): is the hat ready and what failed. Rows
-                         come from /debug/state's show_tab; the act row from the visit's view. -->
+                         come from /debug/state's device table (ADR 0021), then show_tab; the act
+                         row from the visit's view. -->
                     <div id="showSummary" class="summary wait" role="status" aria-live="polite">Waiting for the hat…</div>
                     <div id="goRows" class="go-rows"></div>
                 </div>
@@ -229,6 +230,7 @@
                     <div class="picks" role="group" aria-label="Mode"><button type="button" class="pick" data-mode="auto">Auto</button><button type="button" class="pick" data-mode="model">Model</button><button type="button" class="pick" data-mode="script">Script</button><button type="button" class="pick" data-mode="echo">Echo</button></div>
                     <h3>Hardware <small>tap a part when it fails; tap again when it works</small></h3>
                     <div class="picks hw" role="group" aria-label="Hardware"><button type="button" class="pick" data-hw="speaker">USB speaker</button><button type="button" class="pick" data-hw="mic">USB microphone</button><button type="button" class="pick" data-hw="remote">Remote button</button><button type="button" class="pick" data-hw="motors">Motors</button><button type="button" class="pick" data-hw="internet">Internet</button></div>
+                    <small id="hwNote" class="note" hidden></small>
                     <h3>Volume <small id="volNow"></small></h3>
                     <input type="range" id="volSlider" min="0" max="100" step="5" value="50" aria-label="Volume">
                     <h3>Network</h3>

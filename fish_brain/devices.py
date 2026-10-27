@@ -21,7 +21,8 @@ The record, one per part in this fixed order (`IDS`):
     tab       the debug view's panel where it is looked at (the hints' `panel`)
 
 `mic` also carries `capture` (as configured), `recorder` (`host` | `browser`, who records the
-next hold) and `last_rec`; the phone rows carry `pages`.
+next hold), `out` (the board cannot hear: marked, its source gone or zeros) and `last_rec`; the
+phone rows carry `pages`.
 
 Precedence, the same for every part:
 
@@ -264,7 +265,7 @@ def _mic(f: Facts) -> dict:
         present = f.mic_source_present
     else:
         present = (f.capture_cards > 0) if f.capture_cards is not None else None
-    extra = {"capture": f.capture, "recorder": who, "last_rec": dict(rec)}
+    extra = {"capture": f.capture, "recorder": who, "last_rec": dict(rec), "out": marked or out}
     common = dict(present=present, marked=marked, dead=f.mic_zeroed or zeros,
                   in_use=who == "browser", **extra)
     if marked or out:

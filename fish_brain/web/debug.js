@@ -78,6 +78,18 @@
     fill(node, pairs.filter((p) => p).flatMap(([k, v, cls]) =>
       [el("span", "k", k), el("span", "v" + (cls ? " " + cls : ""), v === undefined || v === null || v === "" ? "—" : v)]));
   }
+  // The device table (ADR 0021) as a map by id, built once per state: every row, chip, the hat
+  // and the hold read whether a part is there, failed or in use from it, never from their own test.
+  let devFor = null, devMap = {};
+  function dev() {
+    const st = S.state;
+    if (st !== devFor) {
+      devFor = st; devMap = {};
+      for (const d of (st && Array.isArray(st.devices) ? st.devices : [])) devMap[d.id] = d;
+    }
+    return devMap;
+  }
+  const MARK = { ok: "● ", warn: "▲ ", bad: "■ ", off: "○ " };
   // One place for what an action answered (the old per-panel spots are gone).
   let toastTimer = null;
   function msg(_node, text, ms) {
@@ -488,11 +500,12 @@
       errTimer = setTimeout(() => { e.hidden = true; box.classList.remove("err"); }, 8000);
     }
     function paint() {
-      const st = S.state || {}, be = st.backends || {};
+      const st = S.state || {};
       const quiet = performance.now() - lastMsgAt > 15000;
       const off = STILL === "offline" || (!STILL && (!S.connected || (quiet && !document.hidden && lastMsgAt > 0)));
       box.classList.toggle("st-offline", off);
-      box.classList.toggle("no-net", be.online === false);
+      const noNet = (dev().internet || {}).present === false;
+      box.classList.toggle("no-net", noNet);
       const w = $("fishState");
       let word;
       if (off) word = "NO STREAM";
@@ -500,7 +513,7 @@
         const s = (performance.now() - ST.since) / 1000, b = budgetS();
         word = "THINKING " + s.toFixed(1) + " s" + (ST.sub ? " · " + ST.sub : "") + (b && s > b ? " · over budget" : "");
       } else word = { waiting: (st.mode || {}).listening === false ? "BUSY" : "WAITING for a press", listening: "LISTENING", speaking: "SPEAKING" }[ST.state];
-      if (be.online === false) word += " · NO INTERNET";
+      if (noNet) word += " · NO INTERNET";
       w.textContent = word;
       w.className = off ? "offline" : ST.state;
     }
@@ -565,7 +578,8 @@
       const tab = S.state.show_tab && !S.state.show_tab.error ? S.state.show_tab : {};
       visitRow.status(page);
       fortuneRow.status(page, tab);
-      phoneMic.status(page);
+      phoneMic.status(page, dev());
+      phoneSpeaker.status(dev());
       if (page.visit && !S.visit) { S.visit = page.visit; fish.visit(page.visit, false); visitRow.view(page.visit); }
       if (page.visit && page.visit.fortune && !S.fortune) { fortuneRow.view(page.visit.fortune, page.visit); fish.fortune(page.visit.fortune, false); }
       fish.reconcile(S.state.mode);
@@ -585,8 +599,8 @@
   });
 
   // ---- the Status tab: is the hat ready; Settings and the Visit tab's place and fortune extras ---
-  // Rows from /debug/state's show_tab (and the remote, link, service sections). Green, amber or
-  // red, each with what to do in a few words. The controls post to routed actions only.
+  // Rows from /debug/state's device table (ADR 0021), then show_tab and the service. Green,
+  // amber or red, each with what to do in a few words. The controls post to routed actions only.
   const PLACE_EN = { casa: "home", fiesta: "party", universidad: "university", otro: "other" };
   function goRow(name, cls, text, fix) {
     const r = el("div", "go " + cls);
@@ -604,8 +618,8 @@
     const rows = $("goRows");
     // Never a "ready" without data: until the hat answers, and when its answer gets old, say so.
     const age = S.stateAt ? (performance.now() - S.stateAt) / 1000 : Infinity;
-    const st = S.state, t = st && st.show_tab;
-    if (!st || !t || t.error) {
+    const st = S.state;
+    if (!st || (!Array.isArray(st.devices) && (!st.show_tab || st.show_tab.error))) {
       setSummary("wait", S.stateAt ? "No answer from the hat" : "Waiting for the hat…");
       rows.replaceChildren();
       return;
@@ -614,58 +628,44 @@
       setSummary("bad", "No answer from the hat for " + Math.round(age) + " s: check the Wi-Fi");
       return;
     }
-    const hw = t.hw || {}, out = [];
-    // The USB rows first, from the device table (ADR 0021); hidden where they do not apply.
+    const t = st.show_tab && !st.show_tab.error ? st.show_tab : {};
+    const out = [], local = [];                  // local: the rows only the page decides
+    // The device rows first, in the table's order (ADR 0021): the USB rows lead on the board;
+    // a part that does not apply here is hidden.
     for (const d of Array.isArray(st.devices) ? st.devices : [])
-      if ((d.id === "usb_port" || d.id === "usb_devices") && d.level && d.level !== "off")
+      if (d.level && d.level !== "off")
         out.push(goRow(d.label, d.level, d.state + (d.reason ? " · " + d.reason : ""), d.fix || ""));
+    const row = (name, cls, text, fix) => { const r = goRow(name, cls, text, fix); out.push(r); if (cls !== "ok") local.push([cls, name + " · " + text]); };
     const v = t.voice || {};
-    out.push(goRow("Voice", v.state === "tainted" ? "bad" : "ok",
+    row("Voice", v.state === "tainted" ? "bad" : "ok",
       v.state === "tainted" ? "licence warning" : v.state === "clean" ? "clean" : "not probed",
-      v.state === "tainted" ? "restart the hat" : ""));
-    const a = t.audio || {}, route = a.route || "";
-    const where = route === "none" ? "none" : route === "phone" ? "this phone" : route.startsWith("bluez") ? "Bluetooth"
-      : route.startsWith("alsa") ? "USB" : "default";
-    out.push(goRow("Speaker", route === "none" ? "bad" : hw.speaker || route === "phone" ? "warn" : "ok", where,
-      route === "none" ? "plug in a speaker or tap 'Use this phone as a speaker'" : hw.speaker ? "USB marked failed" : ""));
-    const phoneMicOn = (t.phone_mics || 0) > 0;
-    const usbMicOut = hw.mic || t.mic_dead;
-    out.push(goRow("Microphone", usbMicOut && !phoneMicOn && t.capture !== "browser" ? "bad" : usbMicOut ? "warn" : "ok",
-      t.capture === "browser" ? "this phone" : t.mic_dead ? "remote sends silence" : "remote",
-      usbMicOut && !phoneMicOn ? "mark 'USB microphone' failed to use this phone" : ""));
-    const rem = st.remote || {};
-    if (rem.present !== undefined)
-      out.push(goRow("Remote", hw.remote || !rem.devices ? "warn" : "ok", hw.remote ? "marked failed" : rem.devices ? "connected" : "not found",
-        hw.remote || !rem.devices ? "use Hold to talk on this page" : ""));
-    const ln = st.link || {}, svc = st.service || {};
-    out.push(goRow("Motors", svc.bench ? "bad" : hw.motors || !ln.attached ? "warn" : "ok",
-      svc.bench ? "bench mode" : hw.motors ? "marked failed (muted)" : !ln.attached ? "not connected" : ln.muted ? "muted" : "connected",
-      svc.bench ? "deploy/unoq_setup.sh bench off" : !ln.attached && !hw.motors ? "the hat talks without moving" : ""));
-    const n = t.net || {};
-    const ap = n.state === "ap";
-    out.push(goRow("Network", ap || hw.internet ? "warn" : "ok",
-      ap ? "own Wi-Fi (no internet)" : n.connection ? n.connection + (n.ip ? " · " + n.ip : "") : "unknown",
-      hw.internet ? "internet marked failed: script visits" : ap ? "visits run on the script" : ""));
+      v.state === "tainted" ? "restart the hat" : "");
     const sh = t.show || {}, echo = !!((st.backends || {}).echo);
-    out.push(goRow("Mode", "ok", echo ? "echo: repeats what it hears"
-      : sh.setting === "off" ? "model" : sh.setting === "script" ? "script" : "auto: " + (sh.now === "script" ? "script" : "model") + " (" + sh.why + ")", ""));
-    if (sh.lines) out.push(goRow("Lines", sh.ready < sh.lines ? "warn" : "ok", sh.ready + " of " + sh.lines + " ready",
-      sh.ready < sh.lines ? "rendering after a restart" : ""));
+    row("Mode", "ok", echo ? "echo: repeats what it hears"
+      : sh.setting === "off" ? "model" : sh.setting === "script" ? "script" : "auto: " + (sh.now === "script" ? "script" : "model") + " (" + sh.why + ")", "");
+    if (sh.lines) row("Lines", sh.ready < sh.lines ? "warn" : "ok", sh.ready + " of " + sh.lines + " ready",
+      sh.ready < sh.lines ? "rendering after a restart" : "");
     // The fortune act: its toggles and the place, and whether its clips are rendered.
     const ft = t.fortune;
     if (ft) {
       const short = typeof ft.ready === "number" && ft.lines ? ft.ready < ft.lines : ft.ready === false;
-      out.push(goRow("Fortune", short ? "warn" : "ok",
+      row("Fortune", short ? "warn" : "ok",
         (ft.deck === "off" ? "no deck" : ft.deck || "no deck") + " · cup " + (ft.cup ? "on" : "off") + " · " + (PLACE_EN[ft.place] || ft.place || "other")
           + (typeof ft.ready === "number" && ft.lines ? " · " + ft.ready + " of " + ft.lines + " lines" : ""),
-        short ? "rendering after a restart" : ""));
+        short ? "rendering after a restart" : "");
     }
-    out.push(goRow("Act", "ok", actNow(), ""));
-    out.push(goRow("Start at boot", svc.enabled === false ? "bad" : "ok", svc.enabled === false ? "off" : "on",
-      svc.enabled === false ? "systemctl --user enable fish-brain" : ""));
+    row("Act", "ok", actNow(), "");
+    const svc = st.service || {};
+    row("Start at boot", svc.enabled === false ? "bad" : "ok", svc.enabled === false ? "off" : "on",
+      svc.enabled === false ? "systemctl --user enable fish-brain" : "");
     rows.replaceChildren(...out);
-    const bad = out.find((r) => r.classList.contains("bad"));
-    if (bad) setSummary("bad", "Check: " + bad.querySelector("b").textContent + " · " + bad.querySelector("span").textContent);
+    // The summary: the server's verdict on the devices, then the page's own rows.
+    const sum = st.summary || {}, d = dev();
+    const say = (id) => { const x = d[id] || {}; return (x.label || id) + " · " + (x.state || x.reason || ""); };
+    const bad = (sum.bad || []).map(say).concat(local.filter(([c]) => c === "bad").map(([, s]) => s));
+    const warn = (sum.warn || []).map(say).concat(local.filter(([c]) => c === "warn").map(([, s]) => s));
+    if (bad.length) setSummary("bad", "Check: " + bad.join("; "));
+    else if (warn.length) setSummary("warn", "Ready, with a warning: " + warn.join("; "));
     else setSummary("ok", "Ready for visitors");
   }
   // What is on now: a fortune, a visit, or nothing (the band says the same).
@@ -675,12 +675,12 @@
     if (v && v.stage) return (v.stage > v.of ? "verdict: " + (v.house || "—") : "visit: stage " + v.stage + " of " + v.of) + (v.first ? " · " + v.first : "");
     return "none";
   }
-  // The pressed states of the Settings tab (mode, hardware and network from show_tab) and of the
-  // Visit tab's place and fortune toggles (from the switches by name, show_tab's fortune as the
-  // fallback).
-  function switchValue(name) {
+  // The pressed states of the Settings tab (mode and network from show_tab, the hardware marks
+  // from the device table) and of the Visit tab's place and fortune toggles (from the switches by
+  // name, show_tab's fortune as the fallback). `key` "start" is the switch's value at start-up.
+  function switchValue(name, key) {
     const w = (Array.isArray((S.state || {}).switches) ? S.state.switches : []).find((x) => x.name === name);
-    return w ? w.value : undefined;
+    return w ? w[key || "value"] : undefined;
   }
   function pressed(selector, test) {
     for (const b of document.querySelectorAll(selector)) b.setAttribute("aria-pressed", test(b) ? "true" : "false");
@@ -688,12 +688,18 @@
   function renderSetup() {
     const st = S.state, t = st && st.show_tab;
     if (!st || !t || t.error) return;
-    const hw = t.hw || {}, a = t.audio || {}, n = t.net || {}, sh = t.show || {}, ft = t.fortune || {};
+    const a = t.audio || {}, n = t.net || {}, sh = t.show || {}, ft = t.fortune || {}, d = dev();
     const echo = !!((st.backends || {}).echo);
     const mode = echo ? "echo" : sh.setting === "off" ? "model" : sh.setting;
     if (typeof a.volume === "number" && !volDragging) { $("volSlider").value = Math.round(a.volume * 100); $("volNow").textContent = Math.round(a.volume * 100) + " %"; }
     pressed("[data-mode]", (b) => b.dataset.mode === mode);
-    pressed("[data-hw]", (b) => !!hw[b.dataset.hw]);
+    pressed("[data-hw]", (b) => !!(d[b.dataset.hw] || {}).marked);
+    // What the table finds failing that is not marked: the marks are his, the detection is not.
+    const seen = Array.from(document.querySelectorAll("[data-hw]"), (b) => d[b.dataset.hw])
+      .filter((x) => x && !x.marked && (x.level === "warn" || x.level === "bad") && (x.dead || x.present === false));
+    const note = $("hwNote");
+    note.textContent = seen.length ? "detected, not marked: " + seen.map((x) => x.label + " (" + (x.reason || x.state) + ")").join("; ") : "";
+    note.hidden = !seen.length;
     pressed("[data-net]", (b) => b.dataset.net === (n.pin || "auto"));
     const place = switchValue("place") || ft.place || "otro";
     pressed("[data-place]", (b) => b.dataset.place === place);
@@ -820,8 +826,18 @@
       },
       stop() { if (src) { try { src.stop(); } catch (_) {} src = null; } },
       enable() { if (!on) enable().catch(() => say("the browser refused")); },
+      // The table's phone_speaker row: how many pages are armed and whether a phone plays now.
+      status(d) {
+        const x = (d && d.phone_speaker) || {};
+        if (x.level === undefined) return;
+        const n = x.pages || 0;
+        if (on) say(x.in_use ? "on: the hat speaks through a phone now" : "ready: plays here when the other speakers fail");
+        else if (x.level === "off") say("off");
+        else if (n) say("off here · " + n + " phone" + (n > 1 ? "s" : "") + " armed");
+        else say(x.level === "warn" ? "off · " + x.reason : "off");
+      },
     };
-  }, { play() {}, stop() {}, enable() {} });
+  }, { play() {}, stop() {}, enable() {}, status() {} });
 
   // ---- render ----------------------------------------------------------------------------------
   function render() {
@@ -874,35 +890,35 @@
     if (flags.text) badges.push("TEXT");
     if (flags.no_audio) badges.push("NO-AUDIO");
     if (mode.wait) badges.push("WAIT");
-    if (be.capture === "browser") badges.push("MIC=browser");
+    const mic = dev().mic || {};
+    if (mic.capture && mic.capture !== "host") badges.push("MIC=" + mic.capture);
     if (!st.token) badges.push("no token");
     if ((st.version || {}).changed_since_start) badges.push("code changed: restart");
     fill($("hBadges"), badges.map((b) => el("span", "badge", b)));
 
-    const link = st.link || {}, remote = st.remote || {}, rec = st.rec || {}, sys = st.system || {};
+    const remote = st.remote || {}, sys = st.system || {}, d = dev();
     const t = lastTurn() || {}, times = t.times || {};
     const chips = [];
-    const health = link.health || "?";
-    chips.push(chip((health === "ok" ? "● " : "■ ") + "LINK " + (link.mock ? "mock" : health),
-                    health === "ok" ? "ok" : "bad", link.desc, "live"));
-    chips.push(chip((be.online === false ? "■ NET offline" : "● NET"), be.online === false ? "bad" : "ok", "internet", "model"));
+    // LINK, NET, TRIG, MIC and SPK from the device table (ADR 0021): the level is the row's.
+    const devChip = (x, word, short, tab) => x
+      ? chip((MARK[x.level] || "○ ") + word + (x.level === "ok" ? "" : " " + short), x.level === "off" ? "unknown" : x.level,
+             [x.state, x.reason].filter(Boolean).join(" · "), tab)
+      : chip("○ " + word, "unknown", "", tab);
+    const m = d.motors, net = d.internet, rem = d.remote, mc = d.mic, sp = d.speaker;
+    chips.push(devChip(m, "LINK", m && (m.marked ? "marked" : m.state), "live"));
+    chips.push(devChip(net, "NET", net && (net.marked ? "marked" : "offline"), "model"));
     const other = Object.keys(remote.other_keys || {}).length;
-    if (remote.present) {
-      const n = (remote.devices || []).length;
-      chips.push(chip((n ? (other ? "▲ " : "● ") : "■ ") + "TRIG" + (n ? "" : " none") + (other ? " other key" : ""),
-                      !n ? "bad" : other ? "warn" : "ok", remote.keys, "live"));
-    } else chips.push(chip("○ TRIG " + (be.ptt || "page"), "unknown", "", "live"));
-    const zeros = rec && rec.zero_frac > 0.95, quiet = rec && rec.rms !== undefined && rec.rms < 0.005;
-    chips.push(chip(rec && rec.samples ? (zeros ? "■ MIC zeros" : quiet ? "▲ MIC silent" : "● MIC")
-                    : "○ MIC", !rec || !rec.samples ? "unknown" : zeros ? "bad" : quiet ? "warn" : "ok", "the last recording", "live"));
+    if (rem && rem.level !== "off")
+      chips.push(other && rem.level === "ok" ? chip("▲ TRIG other key", "warn", remote.keys, "live")
+        : devChip(rem, "TRIG", rem.marked ? "marked" : rem.present === false ? "none" : rem.state, "live"));
+    else chips.push(chip("○ TRIG " + (be.ptt || "page"), "unknown", "", "live"));
+    chips.push(devChip(mc, "MIC", mc && (mc.marked ? "marked" : mc.dead ? "zeros" : mc.state), "live"));
     for (const k of ["stt", "llm", "tts"]) {
       const v = times[k], name = k === "llm" ? (be.echo ? "echo" : be.llm_profile) : be[k];
       chips.push(chip((v > SLOW[k] ? "▲ " : "● ") + k.toUpperCase() + " " + (name || "") + (v !== undefined ? " " + secs(v) + "s" : ""),
                       v > SLOW[k] ? "warn" : v !== undefined ? "ok" : "unknown", "last turn", k === "tts" ? "voice" : "model"));
     }
-    const perf = S.perf || {};
-    chips.push(chip(perf.result && perf.result !== "ok" ? "■ SPK " + perf.result : (be.player === "SilentPlayer" ? "○ SPK silent" : "● SPK"),
-                    perf.result && perf.result !== "ok" ? "bad" : "ok", "playback", "voice"));
+    chips.push(devChip(sp, "SPK", sp && (sp.marked ? "marked" : sp.state), "voice"));
     const hot = Math.max(0, ...(sys.thermal || []).map((z) => z.c));
     chips.push(chip((hot > 70 ? "▲ " : "● ") + (hot ? hot.toFixed(0) + " C" : "BOARD"),
                     hot > 70 ? "warn" : "ok", "the machine", "system"));
@@ -1078,10 +1094,12 @@
   // ---- inputs ----------------------------------------------------------------------------------
   function renderInputs() {
     const st = S.state || {}, remote = st.remote || {}, be = st.backends || {}, mode = st.mode || {};
+    const rem = dev().remote || {}, mic = dev().mic || {}, lvl = (x) => (x.level === "bad" ? "bad-text" : x.level === "warn" ? "warn-text" : "");
     kv($("trigFacts"), [
       ["trigger", be.ptt],
+      ["remote", rem.state ? rem.state + (rem.reason ? " · " + rem.reason : "") : "", lvl(rem)],
       ["configured keys", remote.keys, ""],
-      ["devices read", remote.present ? (remote.devices || []).map((d) => d.path.replace("/dev/input/", "") + " '" + d.name + "'").join("\n") || "NONE" : "no remote configured (FISH_PTT_DEVICE)", remote.present && !(remote.devices || []).length ? "bad-text" : ""],
+      ["devices read", remote.present ? (remote.devices || []).map((d) => d.path.replace("/dev/input/", "") + " '" + d.name + "'").join("\n") || "NONE" : "no remote configured (FISH_PTT_DEVICE)", remote.present && rem.present === false ? lvl(rem) : ""],
       remote.present ? ["button", (remote.armed ? "armed" : "not armed") + (remote.held ? " · HELD" : "") + (remote.need_release ? " · waiting for a release" : "") + " · mode " + remote.mode] : null,
       ["other keys seen", Object.entries(remote.other_keys || {}).map(([k, n]) => k + " ×" + n).join("  ") || "none", Object.keys(remote.other_keys || {}).length ? "bad-text" : ""],
       remote.text_keys ? ["text keys (not named)", remote.text_keys] : null,
@@ -1100,7 +1118,8 @@
     }
     fill($("keyRows"), rows.length ? rows : [el("tr", "", "")]);
     kv($("micFacts"), [
-      ["capture", be.capture === "browser" ? "the phone's microphone (browser)" : "this machine's microphone (host)"],
+      ["capture", (mic.capture || "host") + " · the next hold records on " + (mic.recorder === "browser" ? "a phone" : "this machine")],
+      ["microphone", mic.state ? mic.state + (mic.reason ? " · " + mic.reason : "") : "", lvl(mic)],
       ["source", be.mic_source || be.mic_device || "the sound server's default"],
       ["speech-to-text", be.stt],
     ]);
@@ -1255,9 +1274,9 @@
 
   // ---- cloud, board, config, clients -----------------------------------------------------------
   function renderCloud() {
-    const be = (S.state || {}).backends || {}, llm = be.llm || {};
+    const be = (S.state || {}).backends || {}, llm = be.llm || {}, net = dev().internet || {};
     kv($("cloudFacts"), [
-      ["internet", be.online === false ? "OFFLINE" : "online", be.online === false ? "bad-text" : ""],
+      ["internet", net.state ? net.state + (net.reason ? " · " + net.reason : "") : "", net.level === "bad" ? "bad-text" : net.level === "warn" ? "warn-text" : ""],
       ["keys", Object.entries(be.keys || {}).map(([k, ok]) => k + (ok ? " present" : " MISSING")).join("\n")],
       ["speech-to-text", be.stt + ((be.stt_online || []).length || (be.stt_long || []).length
         ? " · online first: " + ((be.stt_online || []).join(" > ") || "none") + " · long: " + ((be.stt_long || []).join(" > ") || "local") : "")],
@@ -1271,6 +1290,7 @@
   }
   function renderBoard() {
     const st = S.state || {}, sys = st.system || {}, svc = st.service || {}, mem = sys.mem_mb || {};
+    const port = dev().usb_port || {}, usb = dev().usb_devices || {};
     kv($("boardFacts"), [
       ["temperature", (sys.thermal || []).map((z) => z.name + " " + z.c + " C").join("\n") || "n/a on this machine"],
       ["load (1, 5, 15 min)", (sys.load || []).join("  ") + "  on " + (sys.cores || "?") + " cores"],
@@ -1278,7 +1298,8 @@
       ["disk", sys.disk_free_mb !== undefined ? sys.disk_free_mb + " MB free" : ""],
       ["machine up", sys.uptime_s ? ago(sys.uptime_s) : ""],
       ["Wi-Fi link", (sys.wifi || []).map((w) => w.dev + " " + w.link + "/70").join("  ") || "n/a"],
-      ["USB role", sys.usb_role || "n/a on this machine", sys.usb_role && !sys.usb_role.includes("[host]") ? "bad-text" : ""],
+      ["USB port", port.level === "off" || !port.state ? "n/a on this machine" : port.state + (port.reason ? " · " + port.reason : ""), port.level === "bad" ? "bad-text" : ""],
+      ["USB devices", usb.level === "off" || !usb.state ? "n/a on this machine" : usb.state, usb.level === "warn" ? "warn-text" : ""],
     ]);
     kv($("usbFacts"), (sys.usb || []).map((u) => [u.id, u.product]));
     kv($("svcFacts"), [
@@ -1318,7 +1339,8 @@
     const c = (S.state || {}).clients || {};
     kv($("clientFacts"), [
       ["phone pages connected", (c.pages ?? "?") + " of " + (c.max ?? 8)],
-      ["pages with their microphone ready", c.mic_pages ?? 0],
+      ["pages with their microphone ready", (dev().phone_mic || {}).pages ?? 0],
+      ["pages armed as the speaker", (dev().phone_speaker || {}).pages ?? 0],
       ["debug pages", c.debug_pages ?? 0],
       ["events a slow page missed", c.dropped ?? 0, c.dropped ? "bad-text" : ""],
       ["pages pushed out by a newer one", c.evicted ?? 0],
@@ -1553,10 +1575,7 @@
     // The board cannot hear (its microphone dead, or marked failed): a press turns this phone's
     // microphone on instead of recording silence on the board; the next press records. The
     // switch resets on every reload and every screen sleep, so this is what a cold page does.
-    function boardDeaf() {
-      const t = (S.state && S.state.show_tab) || {}, hw = t.hw || {};
-      return !!(t.mic_dead || hw.mic);
-    }
+    function boardDeaf() { return !!(dev().mic || {}).out; }   // marked, its source gone or zeros
     function send(on) {
       if (phoneMic.ready() && (on || phoneMic.holding())) { on ? phoneMic.begin() : phoneMic.end(); return; }
       if (on && phoneMic.can() && boardDeaf()) {
@@ -1770,15 +1789,15 @@
   // ---- the fortune act: "🔮 Fortune", the open question, skip and end (fortune_run.py) --------
   // The server owns the act: the row draws its view (the `visit` record's `fortune`, the page's
   // on a load) and the buttons post to /fortune. An event without the key keeps the last view.
-  // The big button is hidden unless the hat has the act, greyed until its clips are rendered
-  // (show_tab's count first, the view's flag otherwise) and off while an act is open.
+  // The big button is hidden unless the hat has the act, greyed and disabled until its clips are
+  // rendered (show_tab's fortune alone says so) and off while an act is open.
   const QUESTION_EN = { fecha: "birth date", sueno: "dreams", carta: "the card", taza: "the cup", animal: "the animal" };
   const DATA_EN = { signo: "sign", elemento: "element", numero: "lucky number", sueno: "dream", carta: "card",
                     taza: "cup", animal: "animal", luna: "moon", palabra: "magic word" };
   const fortuneRow = guard("fortune", () => {
     const row = $("fortuneRow"), btn = $("fortuneBtn"), q = $("fortuneQ"), heard = $("fortuneHeard");
     const data = $("fortuneData"), last = $("fortuneLast");
-    let open = false, ready = true, tabReady = null, wantOpen = false, btnTimer = 0, still = false, label = "🔮 Fortune";
+    let open = false, ready = false, wantOpen = false, btnTimer = 0, still = false, label = "🔮 Fortune";
     function refuse(out) {
       msg(null, out.status === 409 && out.why === "visit open" ? "refused: finish the visit first (or Force a house)"
         : out.status === 503 ? "refused: the fortune is off" : out.status === 0 ? "no connection"
@@ -1790,7 +1809,7 @@
       return !!out.ok;
     }
     function paint() {
-      btn.disabled = open || wantOpen;
+      btn.disabled = open || wantOpen || !ready;
       btn.classList.toggle("dim", !ready);
       btn.textContent = label + (ready ? "" : " · rendering…");
       btn.title = !ready ? "its lines are still rendering: wait" : open ? "a fortune is open" : "";
@@ -1814,7 +1833,6 @@
       const l = f.last || {};
       const got = Object.values(l.data || {}).filter((x) => x !== null && x !== "");
       last.textContent = l.n ? "last fortune: " + (got.length ? got.join(" · ") : "nothing heard") + (l.mode ? " (" + (l.mode === "llm" ? "model" : l.mode) + ")" : "") : "";
-      if (typeof f.ready === "boolean" && tabReady === null) ready = f.ready;
       paint();
     }
     function view(f, v) {
@@ -1854,7 +1872,7 @@
                   stage: STILL_Q > of ? "reading" : "ask", q: at, of, qid: qids[at - 1], tries: STILL_Q === 2 ? 1 : 0,
                   question: "", heard: STILL_Q > 1 ? "veintitrés de octubre" : "", first: "Ana", house: "Ravenclaw",
                   data: Object.fromEntries(Object.entries(all).slice(0, have)) };
-      S.fortune = f;
+      S.fortune = f; ready = true;
       draw(f, { n: 1, stage: 5, of: 4, first: "Ana", house: "Ravenclaw" });
       if (f.stage === "reading") fish.foresee(f.data.signo);
     }
@@ -1863,10 +1881,7 @@
         if (still) return;
         btn.hidden = !page.fortune_enabled;
         const ft = tab && tab.fortune;
-        if (ft && ft.ready !== undefined) {
-          tabReady = typeof ft.ready === "boolean" ? ft.ready : !(ft.lines && ft.ready < ft.lines);
-          ready = tabReady;
-        }
+        ready = !!ft && (typeof ft.ready === "boolean" ? ft.ready : typeof ft.ready === "number" && !(ft.lines && ft.ready < ft.lines));
         paint();
       },
       view,
@@ -1974,7 +1989,7 @@
     async function off(why) {
       busy = true;
       await release();
-      await post("/debug/set", { name: "mic", value: "host" });
+      await post("/debug/set", { name: "mic", value: switchValue("mic", "start") || "host" });   // back to how it started
       tick.checked = false; busy = false;
       say(why || "off: the board records", why ? "warn-text" : "");
       refresh();
@@ -2035,11 +2050,12 @@
       } catch (_) { msg(null, "phone mic: no connection", 5000); }
     }
     return {
-      status(page) {
+      status(page, d) {
+        const mic = (d && d.mic) || {};
         if (page.max_record_s) maxRecordS = Number(page.max_record_s) || maxRecordS;
         if (page.silence_end_s !== undefined) silenceEndS = Math.max(0, Number(page.silence_end_s) || 0);
         if (page.quiet_rms) quietRms = Number(page.quiet_rms) || quietRms;
-        if (!busy && !actx && page.capture === "browser" && !note.textContent) say("the board takes phone recordings, but this phone's microphone is off");
+        if (!busy && !actx && mic.capture === "browser" && !note.textContent) say("the board takes phone recordings, but this phone's microphone is off");
       },
       ready: () => !!actx && trackAlive(),
       can: () => CAN,
