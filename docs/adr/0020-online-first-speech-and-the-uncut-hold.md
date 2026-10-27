@@ -76,10 +76,12 @@ Two more things surfaced the same day:
   transcription models ([`BRAINTIP.md`](../BRAINTIP.md), read 2026-10-10) does not name it,
   and no end date for it is recorded here. The route is a list, so another service takes its
   place by name.
-- Not measured yet on the board: the online route in a real turn on the remote's microphone
-  (the 2026-10-13 OpenAI figures are the RedOctane's), the fall-back with the data cut
-  mid-hold, the silence end from the remote and from the phone, a 30 s hold online and
-  offline.
+- Measured on the board 2026-10-27 ([results](../results/2026-10-27-stt-online-first.md)):
+  `gpt-transcribe` on the remote's 63 takes, 0.72 s median and 6.0 % word errors (Groq turbo
+  0.41 s and 14.0 % on the same takes); through `CanaryTranscriber`, 0.8 to 1.1 s a clip and
+  3.39 s for the first call after the warm-up. Not measured yet: the online route in a real
+  turn, the fall-back with the data cut mid-hold, the silence end from the remote and from
+  the phone, a 30 s hold online and offline.
 
 ### Known limits (not changed by this record)
 

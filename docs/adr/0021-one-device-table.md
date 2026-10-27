@@ -96,5 +96,6 @@ Found wrong in the code that day:
 - The laptop with no environment: the USB, remote and phone rows are `off`, the speaker is the
   desktop's card, `motors` is the real link or the mock under `--dry-run`, `internet` is online
   until the probe says otherwise; no row is `bad` (`build(Facts())`, tested).
-- The state's build time after this change is not measured yet; `timing` and ten
-  `curl -w %{time_total}` runs on the board go in a dated results file when they are.
+- The state's build time on the board went from a median of 0.99 s to 0.06 s (53 ms in
+  `timing`), ten requests each, 2026-10-27
+  ([results](../results/2026-10-27-debug-state-cost.md)).
