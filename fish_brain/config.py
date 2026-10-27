@@ -235,6 +235,10 @@ PERSONAS: dict[str, dict] = {
                           "La sandía", "El tambor", "El gallo", "El árbol"],
             },
         },
+        # The fortune act (fortune_run.py, ADR 0019): the adult register's rules for the
+        # model's reading live in fortune_bank.FORTUNE_RULES and are filled in here on first
+        # use (_fortune_rules), so the bank is never imported just to build a config.
+        "fortune": {},
         "phrases": {
             # The visit's canned greeting (stage 1, no model): his doc's example.
             "visit_greeting": "¡Ah, llegó alguien con ganas de magia! Dime tu nombre y ayúdame a ver lo que guardas ahí dentro.",
@@ -275,6 +279,26 @@ def _show_phrases() -> dict[str, str]:
         return {}
     from .show_bank import SHOW_PHRASES
     return dict(SHOW_PHRASES)
+
+
+def _fortune_phrases() -> dict[str, str]:
+    """The fortune act's lines (fortune_bank.py), whenever the persona has a fortune (the
+    hat), with or without FISH_SHOW: the fish's set stays exactly as before."""
+    if "fortune" not in _persona():
+        return {}
+    from .fortune_bank import FORTUNE_PHRASES
+    return dict(FORTUNE_PHRASES)
+
+
+def _fortune_rules() -> str:
+    """The persona's rules for the model's reading; the bank's, filled in on first use."""
+    block = _persona().get("fortune")
+    if block is None:
+        return ""
+    if "rules" not in block:
+        from .fortune_bank import FORTUNE_RULES
+        block["rules"] = FORTUNE_RULES
+    return block["rules"]
 
 
 def _persona() -> dict:
@@ -643,6 +667,12 @@ class LLMConfig:
         for key, value in LLM_PROFILES[self.profile].items():
             if getattr(self, key) in (None, 0.0):
                 setattr(self, key, value)
+        self.provider = self.provider or "openai"
+        self.vision = bool(self.vision)
+        self.max_completion_tokens = self.max_completion_tokens or 400
+        self.timeout_s = self.timeout_s or 8.0
+        if self.thinking is not None and self.thinking not in THINKING_MODES:
+            raise ValueError(f"thinking={self.thinking!r}; choose one of {list(THINKING_MODES)}")
         # Single-field overrides from .env, applied only to the profile the fish is using
         # (so an A/B run keeps the other profile as defined). Empty FISH_LLM_REASONING = don't send.
         if self.profile == _env("FISH_LLM_PROFILE", "groq"):
@@ -676,7 +706,7 @@ class CannedConfig:
     # machine that speaks (`--prerender-canned`, or `deploy/unoq_setup.sh install`).
     phrases: dict[str, str] = field(
         default_factory=lambda: {**_FISH_PHRASES, **_persona().get("phrases", {}),
-                                 **_show_phrases()})
+                                 **_show_phrases(), **_fortune_phrases()})
 
 
 @dataclass
@@ -767,7 +797,7 @@ class VisitConfig:
     badge_note: str = field(default_factory=lambda: _persona().get("visit", {}).get("badge_note", ""))
     name_note: str = field(default_factory=lambda: _persona().get("visit", {}).get("name_note", ""))
     arrival_note: str = field(default_factory=lambda: _persona().get("visit", {}).get("arrival_note", ""))
-    greeting: str = "visit_greeting"      # the canned phrase of a "Nuevo visitante"
+    greeting: str = "visit_greeting"      # the canned phrase of a "New visitor"
     # The verdict's ingredients, picked at random (visit.future_tag). Empty = no [FUTURO] tag.
     future: dict = field(default_factory=lambda: dict(_persona().get("visit", {}).get("future", {})))
 
@@ -857,6 +887,41 @@ class ShowConfig:
     idle_s: float = 90.0         # a pause this long mid-visit means a new visitor
 
 
+def _fortune_deck() -> str:
+    deck = _env("FISH_FORTUNE_DECK", "tarot").strip().lower()
+    return deck if deck in ("tarot", "off") else "tarot"
+
+
+def _place() -> str:
+    place = _env("FISH_PLACE", "otro").strip().lower()
+    return place if place in ("casa", "fiesta", "universidad", "otro") else "otro"
+
+
+@dataclass
+class FortuneConfig:
+    """The fortune act (fortune_run.py, ADR 0019): the hat asks the birth date, a dream, a
+    card, a shape in the cup and an animal, then tells the future from clips or from the
+    model. Only for a persona with a fortune (the hat); the fish has none."""
+    deck: str = field(default_factory=_fortune_deck)      # tarot | off (no card question)
+    cup: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_CUP", False))
+    reprompts: int = 2           # per act: a question asked again at most this often
+    reading_s: float = 8.0       # the model's reading, from the end of the suspense line
+    dream_record_s: float = 10.0  # the dream's recording limit, while the long route is online
+    carry_s: float = 600.0       # a house act's name and house carry over this long
+    state: str = field(default_factory=lambda: _env(
+        "FISH_FORTUNE_STATE", str(Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
+                                  / "fish_brain" / "fortune.json")))
+    rules: str = field(default_factory=_fortune_rules)
+
+
+@dataclass
+class PlaceConfig:
+    """Where the hat is tonight (a Settings switch, not a cue): casa, fiesta, universidad or
+    otro. The free text describes "otro" and reaches the web model only."""
+    place: str = field(default_factory=_place)
+    text: str = field(default_factory=lambda: _env("FISH_PLACE_TEXT", "")[:60])
+
+
 @dataclass
 class AudioConfig:
     """Speaker routes (audio_route.py, ADR 0016). Empty routes = today's single player."""
@@ -897,6 +962,8 @@ class Config:
     record: RecordConfig = field(default_factory=RecordConfig)
     show: ShowConfig = field(default_factory=ShowConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
+    fortune: FortuneConfig = field(default_factory=FortuneConfig)
+    place: PlaceConfig = field(default_factory=PlaceConfig)
 
 
 def load() -> Config:

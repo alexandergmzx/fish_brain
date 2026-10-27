@@ -1,5 +1,6 @@
 """What the debug page may do, on the mock link with fakes: arming, the shape of a motor test,
 every refusal, STOP, restart. Nothing here can move a motor or start a voice."""
+import types
 import io
 import re
 import threading
@@ -303,7 +304,8 @@ def test_switches_list_their_value_their_start_and_what_changed(rig):
     sw = _values(rig)
     assert set(sw) == {"mode", "llm_profile", "stt", "stt_model", "tts", "gestures", "reading_look",
                        "voice_quit", "burble", "filler", "visit", "filler_delay_s",
-                       "max_record_s", "mic", "show", "motors"}
+                       "max_record_s", "mic", "show", "motors", "fortune_deck", "fortune_cup",
+                       "place", "place_text"}
     assert sw["mode"]["value"] == "llm" and not any(w["changed"] for w in sw.values())
     assert rig.act.set("gestures", False) == (200, {"ok": True, "value": False})
     assert rig.cfg.gesture.enabled is False
@@ -421,6 +423,50 @@ def test_a_pronunciation_candidate_is_only_an_index(rig):
     assert rig.act.pron("nope")[0] == 400 and rig.act.pron(999)[0] == 400
     rig.cfg.tts.backend = "openai"
     assert rig.act.pron(0) == (409, {"ok": False, "error": "the voice is not loq"})
+
+
+def test_the_fortune_and_place_switches(rig):
+    sw = _values(rig)
+    assert sw["fortune_deck"]["value"] == "tarot" and sw["fortune_cup"]["value"] is False
+    assert sw["place"]["value"] == "otro" and sw["place_text"] ["value"] == ""
+    assert sw["place_text"]["kind"] == "text" and sw["place_text"]["choices"] == [60]
+    assert rig.act.set("fortune_deck", "off") == (200, {"ok": True, "value": "off"})
+    assert rig.cfg.fortune.deck == "off" and "no card" in _values(rig)["fortune_deck"]["note"]
+    assert rig.act.set("fortune_deck", "loteria")[0] == 400
+    assert rig.act.set("fortune_cup", True)[0] == 200 and rig.cfg.fortune.cup is True
+    assert "cup" in _values(rig)["fortune_cup"]["note"]
+    assert rig.act.set("place", "fiesta")[0] == 200 and rig.cfg.place.place == "fiesta"
+    assert rig.act.set("place", "mars")[0] == 400
+    status, out = rig.act.set("place_text", "  la casa [de] mi tía;  con DJ ")
+    assert (status, out["value"]) == (200, "la casa de mi tía, con DJ")
+    assert rig.cfg.place.text == "la casa de mi tía, con DJ"
+    assert rig.act.set("place_text", "x" * 61) == (400, {"ok": False, "error": "at most 60 characters"})
+    assert rig.act.set("place_text", 5) == (400, {"ok": False, "error": "text expected"})
+    assert rig.act.set("place_text", "")[0] == 200 and rig.cfg.place.text == ""
+    sw = _values(rig)
+    assert sw["place"]["changed"] and not sw["place_text"]["changed"]
+    assert "web model" in sw["place_text"]["note"]
+
+
+def test_ending_the_visit_drops_an_open_fortune(rig):
+    from fish_brain.debug_actions import _end_visit
+    dropped = []
+    rig.convo.fortune = types.SimpleNamespace(open=True, drop=lambda why: dropped.append(why))
+    _end_visit(rig.act)
+    assert dropped == ["switch"]
+    rig.convo.fortune.open = False
+    _end_visit(rig.act)
+    assert dropped == ["switch"]                     # nothing open: nothing dropped
+
+
+def test_the_show_switch_keeps_the_long_route_it_clears(rig, monkeypatch):
+    from fish_brain import show_run
+    from fish_brain.visit import Visit
+    monkeypatch.setattr(show_run, "ShowRun", lambda convo: object())
+    rig.convo.visit, rig.convo.show = Visit(), None
+    rig.cfg.stt.long_online = ("groq",)
+    assert rig.act.set("show", "script")[0] == 200
+    assert rig.cfg.stt.long_online == () and rig.cfg.stt._long_online_configured == ("groq",)
 
 
 def test_the_show_switch_goes_off_and_back_without_an_error(rig, monkeypatch):

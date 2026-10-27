@@ -300,11 +300,15 @@ def _page(hub) -> dict:
     viz, cfg = getattr(hub, "viz", None), hub.cfg
     visit = getattr(viz, "_visit", None) if viz is not None else None
     tls = getattr(viz, "_tls_httpd", None) if viz is not None else None
-    show = getattr(getattr(hub, "convo", None), "show", None)
+    convo = getattr(hub, "convo", None)
+    show, fortune = getattr(convo, "show", None), getattr(convo, "fortune", None)
     view = visit.view() if visit is not None else None
     if view is not None and show is not None:
         view["show"] = show.view()             # the scripted visit's buttons after a reload
+    if view is not None and fortune is not None:
+        view["fortune"] = fortune.view()       # and the fortune's row
     return {"visit_enabled": visit is not None and bool(cfg.visit.enabled),
+            "fortune_enabled": fortune is not None,
             "visit": view,
             "reading": getattr(viz, "_reader", None) is not None,
             "reading_look": bool(cfg.reading.look),
@@ -372,6 +376,14 @@ def _show_tab(hub) -> dict:
                        "lines": len(names)}
     else:
         out["show"] = {"setting": cfg.show.mode, "now": "off", "why": "off", "ready": 0, "lines": 0}
+    fortune = getattr(convo, "fortune", None)
+    if fortune is not None:
+        from . import canned
+        names = [n for n in cfg.canned.phrases if n.startswith("fortune_")]
+        ready = _cached("fortune_ready", 10.0, lambda: sum(canned.cached(n, cfg) for n in names))
+        out["fortune"] = {"deck": cfg.fortune.deck, "cup": bool(cfg.fortune.cup),
+                          "place": cfg.place.place, "ready": ready, "lines": len(names),
+                          "open": fortune.open}
     out["record"] = getattr(record, "_record", None) is not None
     soak = Path.home() / "power_soak.csv"
     try:

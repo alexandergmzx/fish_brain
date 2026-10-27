@@ -325,6 +325,8 @@ def main(argv: list[str] | None = None) -> int:
                     lambda data, look: reading.read_badge(data, cfg, want_look=look))
                 if convo.visit is not None:           # the hat's visit: /visit, /cues
                     viz.register_visit(convo.visit)
+                if convo.fortune is not None:         # the fortune act: /fortune
+                    viz.register_fortune(convo.fortune)
                 if hub is not None:
                     try:
                         from .debug_actions import DebugActions

@@ -132,9 +132,17 @@ class FishConversation:
             from .show_run import ShowRun
             cfg.ptt.voice_quit = False
             cfg.ptt.max_record_s = min(cfg.ptt.max_record_s, cfg.show.max_record_s)
+            if not hasattr(cfg.stt, "_long_online_configured"):
+                cfg.stt._long_online_configured = cfg.stt.long_online   # the fortune's dream brings it back
             cfg.stt.long_online = ()
             self.visit.idle_s = max(self.visit.idle_s, cfg.show.idle_s)
             self.show = ShowRun(self)
+        # The fortune act (fortune_run.py, ADR 0019): for a persona with a visit, with or
+        # without the show; started from the page (POST /fortune, registered by app.py).
+        self.fortune = None
+        if self.visit is not None:
+            from .fortune_run import FortuneRun
+            self.fortune = FortuneRun(self)
         # Button-like push-to-talk sources (browser button, remote). Empty -> keyboard.
         self.button = None
         self.sources: list[ptt.ButtonSource] = []
@@ -166,8 +174,8 @@ class FishConversation:
     @property
     def llm(self):
         if self._llm is None:
-            from .llm import Conversation
-            self._llm = Conversation(self.cfg.llm)
+            from .llm import make_conversation
+            self._llm = make_conversation(self.cfg.llm)
         return self._llm
 
     @property
@@ -422,6 +430,15 @@ class FishConversation:
             # on the turn loop's own thread, and answers for its own errors.
             item.run_in_loop(self)
             return True
+        from .fortune_run import FortuneInput
+        if isinstance(item, FortuneInput):
+            if self.fortune is None:
+                print("[turn] a fortune tap, but this persona has no fortune", flush=True)
+                return True
+            debug.turn_set(trigger="operator", fortune=f"{item.action}")
+            return self.fortune.operator(item)
+        if isinstance(item, (NewVisit, Reading)) and self.fortune is not None and self.fortune.open:
+            self.fortune.drop("new visitor")   # silently: whoever comes next is not the act's
         if isinstance(item, Reading):
             return self._reading_turn(item)
         if isinstance(item, Utterance):
@@ -608,6 +625,8 @@ class FishConversation:
     def _finish_turn(self, user: str, times: dict[str, float]) -> bool:
         """The rest of a turn once the user's text is known (typed, transcribed here, or
         transcribed from an uploaded recording): quit words, the LLM or the echo, speaking."""
+        if self.fortune is not None and self._fortune_turn(user, times):
+            return True
         if self.show is not None and self._show_turn(user, times):
             return True
         if user.lower().strip(" .!¡") in _QUIT_WORDS and (
@@ -697,7 +716,7 @@ class FishConversation:
                   f"{self.cfg.filler.turn_timeout_s:.0f}s, {len(w['used'])} fillers said",
                   flush=True)
             self._wait = None
-            if self.show is not None:
+            if self._acts_on():
                 self._show_fault(f"timeout: {e.stage}")
                 return True
             self._say_timeout(e.stage)
@@ -705,14 +724,14 @@ class FishConversation:
         except cloud.CloudUnavailable as e:
             debug.turn_close("offline", e)
             print(f"[turn] sin señal: {e}", flush=True)
-            if self.show is not None:
+            if self._acts_on():
                 self._show_fault("offline")
             else:
                 self._apologize(self.cfg.canned.no_signal)
         except cloud.CloudMisconfigured as e:
             debug.turn_close("misconfigured", e)
             print(f"[turn] cloud setup problem: {e}", flush=True)
-            if self.show is not None:
+            if self._acts_on():
                 self._show_fault("misconfigured")
             else:
                 self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
@@ -720,7 +739,7 @@ class FishConversation:
         except ptt.MicError as e:
             debug.turn_close("mic error", e)
             print(f"[turn] {e}", flush=True)
-            if self.show is not None:
+            if self._acts_on():
                 self._show_fault("mic")
             else:
                 self._apologize(self.cfg.canned.no_mic, min_gap_s=30.0)
@@ -729,7 +748,7 @@ class FishConversation:
             debug.turn_close("error", e)
             print(f"[turn] error {type(e).__name__}: {e}", flush=True)
             traceback.print_exc()
-            if self.show is not None:
+            if self._acts_on():
                 self._show_fault(type(e).__name__)
             else:
                 self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
@@ -768,11 +787,21 @@ class FishConversation:
         self._note_fill(times)
         return True
 
+    def _acts_on(self) -> bool:
+        """A failed turn says no error line: the show is on, or a fortune act is open."""
+        return self.show is not None or (self.fortune is not None and self.fortune.open)
+
     def _show_fault(self, kind: str) -> None:
-        """A turn failed with the show on: never an error line. An open scripted visit counts
-        it as no answer and goes on; a model visit hands over to the script; else silence."""
+        """A turn failed with the show on or a fortune open: never an error line. An open act
+        counts it as no answer and goes on (a fortune mid-reading finishes from the clips); a
+        model visit hands over to the script; else silence."""
         try:
+            if self.fortune is not None and self.fortune.open:
+                self.fortune.fault(kind)
+                return
             sh = self.show
+            if sh is None:
+                return
             if sh.open:
                 sh.no_answer()
             elif self.visit is not None and self.visit.open and not self.visit.done:
@@ -781,7 +810,25 @@ class FishConversation:
                 print(f"[show] {kind}: nothing said (no visit open)", flush=True)
         except Exception as e:                      # the show must never be the problem
             print(f"[show] fault while handling {kind}: {type(e).__name__}: {e}", flush=True)
-            self.show.v = None
+            if self.show is not None:
+                self.show.v = None
+
+    # --- the fortune act (fortune_run.py) ---------------------------------------------
+    def _fortune_turn(self, user: str, times: dict[str, float]) -> bool:
+        """The fortune's part of a turn, before the show's and the model's visit: an open act
+        takes the utterance as its answer (True). One that went quiet is dropped and the
+        utterance goes on to the visit (False)."""
+        f = self.fortune
+        if not f.open:
+            return False
+        at = self._heard_at if self._heard_at is not None else self._clock()
+        if f.went_quiet(at):
+            print("[fortune] the open act went quiet: a new visitor", flush=True)
+            f.drop("quiet")
+            return False
+        f.answer(user)
+        self._note_fill(times)
+        return True
 
     # --- the hat's visit (visit.py) -------------------------------------------------
     def _visit_on(self) -> bool:
@@ -793,6 +840,8 @@ class FishConversation:
             view = self.visit.view()
             if self.show is not None:
                 view["show"] = self.show.view()
+            if self.fortune is not None:
+                view["fortune"] = self.fortune.view()
             push(**view)
 
     def _new_visit(self, first: str = "", *, forget: bool = True) -> None:
@@ -906,7 +955,7 @@ class FishConversation:
                 "spoken": spoken, "house": house, "ok": not llm.last_error}
 
     def _new_visit_turn(self, item) -> bool:
-        """"Nuevo visitante" from the sheet: a new visit and the canned greeting (stage 1,
+        """"New visitor" from the page: a new visit and the canned greeting (stage 1,
         no model). Moot when a turn already started a visit after it was asked for. In echo
         mode the hat only greets."""
         v = self.visit

@@ -49,7 +49,7 @@ CUE_ORDER = (*CUE_CHOICES, *CUE_TEXT)
 CUE_LABEL = {"edad": "edad", "compania": "compañía", "color": "color",
              "impresion": "impresión", "lleva": "lleva", "nota": "nota"}
 
-_TAG = re.compile(r"\[\s*(?:ETAPA|PISTAS|FIN|FUTURO)\b[^\]]*\]", re.IGNORECASE)
+_TAG = re.compile(r"\[\s*(?:ETAPA|PISTAS|FIN|FUTURO|ADIVINACI[ÓO]N)\b[^\]]*\]", re.IGNORECASE)
 _LINE_LEAD = re.compile(r"^[\s>*_#•·-]+")
 _CASA_LINE = re.compile(r"^casa\s*:\s*(.*)$", re.IGNORECASE)
 # The tag run into the end of the text ("… feria. CASA: Ravenclaw"): only in capitals and
@@ -97,15 +97,16 @@ def split_reply(text: str) -> tuple[str, str | None]:
     return spoken.strip(), house
 
 
-def clean_cue_text(text) -> str:
+def clean_cue_text(text, limit: int = CUE_TEXT_MAX) -> str:
     """A free-text cue, safe inside "[PISTAS: k=v; ...]": no brackets, braces, angle
-    brackets, control characters, ";" or "="; collapsed; at most 60 characters; never
-    starting with "-" (loq reads a leading "-" as an option)."""
+    brackets, control characters, ";" or "="; collapsed; at most `limit` characters (60 for
+    a cue; the fortune keeps 120 of a dream); never starting with "-" (loq reads a leading
+    "-" as an option)."""
     if not isinstance(text, str):
         return ""
     s = unicodedata.normalize("NFC", text)
     s = _CONTROL.sub(" ", _TEXT_DROP.sub(" ", s)).replace(";", ",").replace("=", " ")
-    s = " ".join(s.split())[:CUE_TEXT_MAX]
+    s = " ".join(s.split())[:limit]
     return s.strip(" -,").strip()
 
 
@@ -156,7 +157,7 @@ def begin_model(llm, rules: str) -> None:
 
 @dataclass
 class NewVisit:
-    """The operator's "Nuevo visitante" (POST /visit), an input item for the turn loop.
+    """The operator's "New visitor" (POST /visit), an input item for the turn loop.
     `at` is when it was asked for: a turn that started a visit after it makes it moot."""
     at: float = 0.0
 

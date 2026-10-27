@@ -291,7 +291,8 @@ def test_the_state_tells_the_page_about_the_visit_and_the_reader(make_hub):
     from types import SimpleNamespace
     from fish_brain.visit import Visit
     hub = make_hub()
-    assert hub.state()["page"]["visit_enabled"] is False
+    page = hub.state()["page"]
+    assert page["visit_enabled"] is False and page["fortune_enabled"] is False
     v = Visit()
     v.start("Ana")
     hub.attach(viz=SimpleNamespace(_visit=v, _reader=object(), _tls_httpd=None))
@@ -299,6 +300,17 @@ def test_the_state_tells_the_page_about_the_visit_and_the_reader(make_hub):
     page = hub.state()["page"]
     assert page["visit_enabled"] and page["visit"]["first"] == "Ana" and page["reading"]
     assert page["tls_port"] is None and page["capture"] == hub.cfg.ptt.capture
+    assert "fortune" not in page["visit"]
+    fortune = SimpleNamespace(open=True, view=lambda: {"open": True, "q": 2})
+    hub.attach(convo=SimpleNamespace(fortune=fortune, show=None),
+               viz=SimpleNamespace(_visit=v, _reader=object(), _tls_httpd=None,
+                                   mic_pages=lambda: 0))
+    st = hub.state()
+    assert st["page"]["fortune_enabled"] and st["page"]["visit"]["fortune"] == {"open": True, "q": 2}
+    f = st["show_tab"]["fortune"]
+    assert f["open"] is True and f["deck"] == "tarot" and f["cup"] is False and f["place"] == "otro"
+    assert f["lines"] == 0 and f["ready"] == 0                   # the fish: no fortune lines
+    assert "fortune" in debug._RECORD_KINDS
 
 
 def test_service_says_whether_the_unit_is_enabled_and_on_the_bench(tmp_path, monkeypatch):

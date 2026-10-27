@@ -17,7 +17,7 @@ Script: visitors separated by a blank line. In a block:
     sin saludo                    no opener: the model does stage 1 itself (an idle start)
     pistas: edad=niño; color=azul the operator's cues, from here on (keys: visit.CUE_ORDER)
     anything else                 what the visitor says, one turn per line
-Without "gafete:" or "sin saludo" the visit opens with the canned greeting (Nuevo visitante).
+Without "gafete:" or "sin saludo" the visit opens with the canned greeting (New visitor).
 
 Checks per reply: no tag spoken ("[", "CASA", "ETAPA", "PISTAS"), sentences and words; per
 visit: a house at the verdict. A summary per profile gives the seconds per stage.

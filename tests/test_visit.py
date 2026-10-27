@@ -31,6 +31,8 @@ class Clock:
     ("Bienvenido.\nCASA: Hogwarts", "Bienvenido.", None),
     ("[ETAPA 3/4] Veo algo [PISTAS: color=azul] azul.", "Veo algo azul.", None),
     ("[FIN] Adiós.", "Adiós.", None),
+    ("[ADIVINACIÓN: signo=Escorpio; luna=llena] Haz la lectura. Veo fuego.", "Haz la lectura. Veo fuego.", None),
+    ("[adivinacion: nombre=Ana] Veo un gato.", "Veo un gato.", None),
     ("CASA: Ravenclaw", "", "Ravenclaw"),
     ("", "", None),
 ])
@@ -166,6 +168,7 @@ def test_free_text_is_capped_and_never_starts_with_a_dash():
     assert len(visit.clean_cue_text("a" * 80)) == 60
     assert visit.clean_cue_text("<b>{hola}</b>") == "b hola /b"
     assert visit.clean_cue_text(None) == ""
+    assert len(visit.clean_cue_text("a" * 200, 120)) == 120          # the fortune's dream
 
 
 def test_set_cues_from_another_thread_while_preparing():

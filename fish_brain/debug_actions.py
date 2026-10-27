@@ -33,6 +33,8 @@ import time
 import wave
 from pathlib import Path
 
+from .config import LLM_PROFILES
+
 ARM_S = 60.0
 PICKUP_S = 0.5            # an offered test not started by then is dropped
 TOTAL_MS_MAX = 1500       # one test line, all its pairs together
@@ -40,6 +42,7 @@ RESTART_GRACE_S = 12.0    # after the stop signal: STOP and a hard exit if still
 LOOP_MIN_RMS = 0.02       # the bring-up script's floor for "the microphone heard it"
 LOOP_OVER_ROOM = 3.0      # and this many times the room (estimate: the remote's floor is noisy)
 VOICE_PHRASE = "Probando la voz."
+PLACE_TEXT_MAX = 60       # the free text of the place ("other"), for the web model only
 _LINE = re.compile(r"^(MOUTH|NECK|TAIL)((?: -?\d{1,3} [1-9]\d{0,3}){1,2})$")
 
 
@@ -85,7 +88,11 @@ def _key_missing(env_name: str | None) -> str:
 
 
 def _end_visit(a) -> None:
-    """The hat's open visit ends; the next utterance starts a new one with the rules."""
+    """The hat's open visit ends (and an open fortune act is dropped); the next utterance
+    starts a new one with the rules."""
+    f = getattr(a.convo, "fortune", None)
+    if f is not None and f.open:
+        f.drop("switch")
     v = getattr(a.convo, "visit", None)
     if v is not None:
         v.end()
@@ -125,8 +132,16 @@ def _set_show(a, value: str) -> str:
         from .show_run import ShowRun
         a.cfg.ptt.voice_quit = False
         a.cfg.ptt.max_record_s = min(a.cfg.ptt.max_record_s, a.cfg.show.max_record_s)
+        if not hasattr(a.cfg.stt, "_long_online_configured"):
+            a.cfg.stt._long_online_configured = a.cfg.stt.long_online
         a.cfg.stt.long_online = ()
         convo.show = ShowRun(convo)
+    return ""
+
+
+def _set_place_text(a, value: str) -> str:
+    from .visit import clean_cue_text
+    a.cfg.place.text = clean_cue_text(value, PLACE_TEXT_MAX)
     return ""
 
 
@@ -232,7 +247,7 @@ _fill, _fill_delay, _burble = (_attr("filler.enabled"), _attr("filler.delay_s"),
 SWITCHES: dict = {
     "mode": ("Mode", "choice", ("echo", "llm"),
              lambda a: "echo" if getattr(a.convo, "echo", False) else "llm", _set_mode),
-    "llm_profile": ("LLM profile", "choice", ("groq", "luna"),
+    "llm_profile": ("LLM profile", "choice", tuple(LLM_PROFILES),
                     lambda a: a.cfg.llm.profile, _set_llm_profile),
     "stt": ("Speech-to-text", "choice", ("openai", "groq", "local", "canary"),
             lambda a: a.cfg.stt.backend, _set_stt),
@@ -256,10 +271,30 @@ SWITCHES: dict = {
              lambda a: a.cfg.show.mode, _set_show),
     "motors": ("Motors", "choice", ("on", "muted"),
                lambda a: "muted" if getattr(a.link, "muted", False) else "on", _set_motors),
+    # The fortune act and its setting (ADR 0019): the next act reads them.
+    "fortune_deck": ("Fortune: the deck", "choice", ("tarot", "off"),
+                     lambda a: a.cfg.fortune.deck,
+                     lambda a, v: setattr(a.cfg.fortune, "deck", v) or ""),
+    "fortune_cup": ("Fortune: read the cup", "bool", (), lambda a: bool(a.cfg.fortune.cup),
+                    lambda a, v: setattr(a.cfg.fortune, "cup", bool(v)) or ""),
+    "place": ("Place", "choice", ("casa", "fiesta", "universidad", "otro"),
+              lambda a: a.cfg.place.place, lambda a, v: setattr(a.cfg.place, "place", v) or ""),
+    "place_text": ("Place, in words", "text", (PLACE_TEXT_MAX,), lambda a: a.cfg.place.text,
+                   _set_place_text),
 }
 
 
 def _switch_note(a, name: str, value) -> str:
+    if name == "fortune_deck":
+        return ("the hat asks for a card drawn from the tarot's major arcana" if value == "tarot"
+                else "no card question")
+    if name == "fortune_cup":
+        return "the hat asks what shape the visitor sees in the cup" if value else "no cup question"
+    if name == "place":
+        return ("the intro and the closing lines of the fortune, and what the model is told; "
+                "'otro' takes the words below")
+    if name == "place_text":
+        return "reaches the web model only, with place 'otro'; a restart reverts it"
     if name == "show" and value == "off":
         return "the model's visit only; error lines are said again"
     if name == "mode" and value == "echo":
@@ -757,6 +792,12 @@ class DebugActions:
                 return 400, {"ok": False, "error": "a number expected"}
             if not choices[0] <= value <= choices[1]:
                 return 400, {"ok": False, "error": f"{choices[0]:g} to {choices[1]:g} expected"}
+        elif kind == "text":
+            if not isinstance(value, str):
+                return 400, {"ok": False, "error": "text expected"}
+            if len(value) > choices[0]:
+                return 400, {"ok": False, "error": f"at most {choices[0]} characters"}
+            value = " ".join(value.split())
         elif value not in choices:
             return 400, {"ok": False, "error": f"one of {', '.join(choices)} expected"}
         if name == "motors" and not self._is_armed():

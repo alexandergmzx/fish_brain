@@ -859,6 +859,52 @@ def test_a_first_debug_stream_with_tail_replays_only_the_last_records(server, db
     assert status == 200 and "line 49" in text and "line 45" in text and "line 44" not in text
 
 
+def test_a_page_that_connects_gets_the_last_pushed_view_with_its_acts(server):
+    v = _visit(server)
+    v.start("Ana")
+    server.push_visit(**v.view(), show={"open": True, "qid": "A1"}, fortune={"open": True, "q": 2})
+    q = server._subscribe()
+    events = []
+    while not q.empty():
+        events.append(json.loads(q.get_nowait()))
+    seen = [e for e in events if e.get("type") == "visit"]
+    assert seen[-1]["first"] == "Ana" and seen[-1]["show"] == {"open": True, "qid": "A1"}
+    assert seen[-1]["fortune"] == {"open": True, "q": 2}
+    # The cues refresh the visit's part and keep the acts' (which only the loop knows).
+    assert post(server.url + "/cues", {"cues": {"edad": "adulto"}}, AUTH)[0] == 200
+    q = server._subscribe()
+    events = []
+    while not q.empty():
+        events.append(json.loads(q.get_nowait()))
+    seen = [e for e in events if e.get("type") == "visit"]
+    assert seen[-1]["cues"] == {"edad": "adulto"} and seen[-1]["fortune"] == {"open": True, "q": 2}
+
+
+def test_fortune_taps_need_the_token_a_fortune_and_no_live_visit(server):
+    pytest.importorskip("fish_brain.fortune_run")   # until fortune.py is in the tree
+    from fish_brain.fortune_run import FortuneInput
+    url = server.url + "/fortune"
+    assert post(url, {"action": "start"})[0] == 403
+    assert post(url, {"action": "start"}, AUTH) == (503, {"ok": False, "error": "no fortune"})
+    server.register_fortune(object())
+    assert post(url, {"action": "dance"}, AUTH)[0] == 400
+    assert post(url, {"action": "start", "value": "x" * 50}, AUTH)[0] == 400
+    assert post(url, {"action": "start", "value": 7}, AUTH)[0] == 400
+    assert post(url, {"action": "skip"}, AUTH) == (409, {"ok": False, "busy": True})
+    v = _visit(server)
+    v.start("Ana")
+    server.set_listening(True)
+    assert post(url, {"action": "start", "value": "Leo"}, AUTH) == (
+        409, {"ok": False, "busy": True, "why": "visit open"})
+    assert post(url, {"action": "end"}, AUTH) == (200, {"ok": True})     # end and skip pass
+    assert server.take_inbox() == FortuneInput("end", "")
+    v.delivered("Ravenclaw", None)                   # the verdict: a fortune may follow
+    assert post(url, {"action": "start", "value": "Leo"}, AUTH) == (200, {"ok": True})
+    assert server.take_inbox() == FortuneInput("start", "Leo")
+    assert post(url, {"action": "skip"}, AUTH) == (200, {"ok": True})
+    assert server.take_inbox() == FortuneInput("skip", "")
+
+
 def test_show_taps_need_the_token_are_checked_and_reach_the_loop(server):
     from fish_brain.show_run import ShowInput
     assert post(server.url + "/show", {"action": "answer", "value": "fiesta"})[0] == 403

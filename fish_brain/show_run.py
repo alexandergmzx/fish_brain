@@ -27,6 +27,27 @@ class ShowInput:
     value: str = ""
 
 
+def model_trusted(convo, failed_at: float | None = None, back_s: float = 0.0) -> tuple[bool, str]:
+    """Whether the model can be asked for a visitor right now, and why not: the internet
+    marked failed, echo mode, offline, the key missing, the voice tainted, or a model failure
+    at `failed_at` less than `back_s` ago. Shared by the scripted visit and the fortune act."""
+    from . import hw
+    if hw.failed("internet"):
+        return False, "internet marked failed"
+    if convo.echo:
+        return False, "echo"
+    if not cloud.is_online():
+        return False, "offline"
+    key = convo.cfg.llm.api_key_env
+    if key and cloud.missing_keys({key}):
+        return False, "no key"
+    if voice_guard.state() == voice_guard.TAINTED:
+        return False, "voice"
+    if failed_at is not None and time.monotonic() - failed_at < back_s:
+        return False, "model failed"
+    return True, "online"
+
+
 class ShowRun:
     def __init__(self, convo):
         self.c = convo
@@ -47,22 +68,8 @@ class ShowRun:
             return "script", "forced"
         if mode != "auto":
             return "llm", "off"
-        from . import hw
-        if hw.failed("internet"):
-            return "script", "internet marked failed"
-        if self.c.echo:
-            return "script", "echo"
-        if not cloud.is_online():
-            return "script", "offline"
-        key = self.c.cfg.llm.api_key_env
-        if key and cloud.missing_keys({key}):
-            return "script", "no key"
-        if voice_guard.state() == voice_guard.TAINTED:
-            return "script", "voice"
-        if self._model_failed_at is not None and \
-                time.monotonic() - self._model_failed_at < self.cfg.back_s:
-            return "script", "model failed"
-        return "llm", "online"
+        ok, why = model_trusted(self.c, self._model_failed_at, self.cfg.back_s)
+        return ("llm" if ok else "script"), why
 
     @property
     def open(self) -> bool:

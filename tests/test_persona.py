@@ -18,7 +18,9 @@ def test_hat_overrides_only_its_own_words(monkeypatch):
     monkeypatch.setenv("FISH_PERSONA", "fish"); fish = CannedConfig().phrases
     monkeypatch.setenv("FISH_PERSONA", "hat"); hat = CannedConfig().phrases
     assert set(fish) <= set(hat)                       # nothing lost
-    assert set(hat) - set(fish) == VISIT_PHRASES       # and only the visit's greeting added
+    from fish_brain.fortune_bank import FORTUNE_PHRASES
+    # And only the visit's greeting and the fortune act's lines added.
+    assert set(hat) - set(fish) == VISIT_PHRASES | set(FORTUNE_PHRASES)
     assert "pez" not in hat["welcome"] and "Sombrero" in hat["welcome"]
     assert hat["filler_first_1"] != fish["filler_first_1"]       # the hat waits in its own words
     assert hat["no_mic"] == fish["no_mic"]
@@ -71,6 +73,34 @@ def test_the_visit_is_the_hats_only(monkeypatch):
     assert VisitConfig().enabled                                     # blank = the default
     monkeypatch.setenv("FISH_VISIT_IDLE_S", "45")
     assert VisitConfig().idle_s == 45.0
+
+
+def test_the_fortune_is_the_hats_only(monkeypatch):
+    from fish_brain.config import PERSONAS, FortuneConfig, PlaceConfig
+    from fish_brain.fortune_bank import FORTUNE_PHRASES, FORTUNE_RULES
+    monkeypatch.delenv("FISH_SHOW", raising=False)
+    monkeypatch.setenv("FISH_PERSONA", "fish")
+    assert FortuneConfig().rules == ""
+    assert not any(n.startswith("fortune_") for n in CannedConfig().phrases)
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+    assert FortuneConfig().rules == FORTUNE_RULES and PERSONAS["hat"]["fortune"]["rules"] == FORTUNE_RULES
+    assert set(FORTUNE_PHRASES) <= set(CannedConfig().phrases)      # with or without the show
+    assert FortuneConfig().deck == "tarot" and FortuneConfig().cup is False
+    assert FortuneConfig().reprompts == 2 and FortuneConfig().reading_s == 8.0
+    assert FortuneConfig().state.endswith("fish_brain/fortune.json")
+    monkeypatch.setenv("FISH_FORTUNE_DECK", "off")
+    monkeypatch.setenv("FISH_FORTUNE_CUP", "true")
+    monkeypatch.setenv("FISH_FORTUNE_STATE", "/tmp/f.json")
+    assert FortuneConfig().deck == "off" and FortuneConfig().cup is True
+    assert FortuneConfig().state == "/tmp/f.json"
+    monkeypatch.setenv("FISH_FORTUNE_DECK", "loteria")
+    assert FortuneConfig().deck == "tarot"                           # unknown: the default
+    assert PlaceConfig().place == "otro" and PlaceConfig().text == ""
+    monkeypatch.setenv("FISH_PLACE", "Fiesta")
+    monkeypatch.setenv("FISH_PLACE_TEXT", "x" * 80)
+    assert PlaceConfig().place == "fiesta" and len(PlaceConfig().text) == 60
+    monkeypatch.setenv("FISH_PLACE", "mars")
+    assert PlaceConfig().place == "otro"
 
 
 def test_the_hats_future_bank_is_full_and_clean(monkeypatch):

@@ -97,6 +97,8 @@ class VizServer:
         self._speaker = None                  # speak.Speaker, registered by app.py (text box -> /speak)
         self._reader = None                   # reading.read_badge, registered by app.py (/badge)
         self._visit = None                    # visit.Visit, the hat's (/visit, /cues), by app.py
+        self._fortune = None                  # fortune_run.FortuneRun (/fortune), by the turn loop
+        self._last_visit: dict | None = None  # the last pushed visit view, with its acts, for a page that connects
         self._status_provider = None          # app.py: link, internet and backends for /status
         self._debug = None                    # debug.DebugHub, registered by app.py (/debug)
         self._started = time.monotonic()
@@ -355,11 +357,15 @@ class VizServer:
                 q.put_nowait(json.dumps(event))
             except (ValueError, queue.Full):
                 pass
+        with self._lock:
+            last = self._last_visit
         visit = self._visit
-        if visit is not None:
-            # The visit's view, read live: a phone that slept draws the current one.
+        if last is not None or visit is not None:
+            # The visit as last pushed (with the show's and the fortune's parts, which the
+            # loop alone knows), else read live: a phone that slept draws the current one.
             try:
-                q.put_nowait(json.dumps({"type": "visit", **visit.view()}))
+                q.put_nowait(json.dumps({"type": "visit", **(last if last is not None
+                                                             else visit.view())}))
             except queue.Full:
                 pass
         return q
@@ -450,11 +456,14 @@ class VizServer:
         self._publish(json.dumps({"type": "reading", "stage": stage, **fields}))
 
     def push_visit(self, **view) -> None:
-        """The hat's visit for the operator's sheet (visit.Visit.view()): its number, stage,
-        first name, house and the pending cues. On the stream, which needs the token."""
+        """The hat's visit for the operator's sheet (visit.Visit.view(), with the show's and
+        the fortune's views when they run): its number, stage, first name, house and the
+        pending cues. On the stream, which needs the token; kept for a page that connects."""
+        with self._lock:
+            self._last_visit = dict(view)
         self._publish(json.dumps({"type": "visit", **view}))
 
-    # --- the hat's visit: "Nuevo visitante" and the operator's cues (visit.py) ---
+    # --- the hat's visit: "New visitor" and the operator's cues (visit.py) ---
     def register_visit(self, visit) -> None:
         self._visit = visit
 
@@ -474,13 +483,35 @@ class VizServer:
 
     def show_input(self, body: dict) -> tuple[int, dict]:
         """`POST /show {"action": "answer"|"force"|"skip", "value": ...}`: the operator's tap
-        for the scripted visit, handed to the turn loop like "Nuevo visitante"."""
+        for the scripted visit, handed to the turn loop like "New visitor"."""
         from .show_run import ShowInput
         action, value = body.get("action"), body.get("value") or ""
         if action not in ("answer", "force", "skip") or not isinstance(value, str) \
                 or len(value) > 20:
             return 400, {"ok": False, "error": "bad show input"}
         if not self.offer(ShowInput(action, value)):
+            return 409, {"ok": False, "busy": True}
+        return 200, {"ok": True}
+
+    def register_fortune(self, fortune) -> None:
+        self._fortune = fortune
+
+    def fortune_input(self, body: dict) -> tuple[int, dict]:
+        """`POST /fortune {"action": "start"|"skip"|"end", "value": ...}`: the operator's tap
+        for the fortune act (`value`: the typed first name with `start`), handed to the turn
+        loop like the show's. A start over a live house act is refused here (the loop checks
+        again): 409 with `why: "visit open"`."""
+        from .fortune_run import FortuneInput
+        action, value = body.get("action"), body.get("value") or ""
+        if action not in ("start", "skip", "end") or not isinstance(value, str) \
+                or len(value) > 20:
+            return 400, {"ok": False, "error": "bad fortune input"}
+        if self._fortune is None:
+            return 503, {"ok": False, "error": "no fortune"}
+        visit = self._visit
+        if action == "start" and visit is not None and not visit.needs_new(time.monotonic()):
+            return 409, {"ok": False, "busy": True, "why": "visit open"}
+        if not self.offer(FortuneInput(action, value)):
             return 409, {"ok": False, "busy": True}
         return 200, {"ok": True}
 
@@ -494,7 +525,10 @@ class VizServer:
         except ValueError as e:                 # fixed words: never the text that was sent
             return 400, {"ok": False, "error": str(e)}
         view = visit.view()
-        self.push_visit(**view)                 # another open sheet follows
+        with self._lock:
+            acts = self._last_visit or {}
+        # Another open sheet follows; the acts' parts are the loop's, as last pushed.
+        self.push_visit(**{**acts, **view})
         return 200, {"ok": True, "visit": view}
 
     def _visit_request(self) -> None:
@@ -866,7 +900,7 @@ def _make_handler(server: "VizServer"):
                 self._post_debug(path, query)
                 return
             if path in ("/mic", "/ptt", "/speak", "/wait", "/badge", "/reading", "/utterance",
-                        "/micstate", "/visit", "/cues", "/show", "/speakerstate",
+                        "/micstate", "/visit", "/cues", "/show", "/fortune", "/speakerstate",
                         "/speaker/started"):
                 if not self._authorized(query):
                     self._send_json({"ok": False, "error": "bad token"}, status=403)
@@ -901,6 +935,9 @@ def _make_handler(server: "VizServer"):
                         self._send_json(out, status=status)
                     elif path == "/show":
                         status, out = server.show_input(body)
+                        self._send_json(out, status=status)
+                    elif path == "/fortune":
+                        status, out = server.fortune_input(body)
                         self._send_json(out, status=status)
                     elif path == "/speakerstate":
                         self._send_json(server.set_speaker_state(body.get("page"), body.get("ready")))
