@@ -144,13 +144,49 @@ def test_visits_rotate_question_sets_and_remember_across_restarts(make):
     assert again.show.v["set"] == "C" and again.show.v["n"] == 3
 
 
-def test_small_children_get_two_questions(make):
+def test_every_age_gets_every_question(make):
     c = make()
-    c.visit.set_cues({"edad": "niño"})
+    c.visit.set_cues({"edad": "joven"})
     say(c, "hola")
+    assert len(c.show.v["qs"]) == 3
     say(c, "fiesta")
     say(c, "jardín")
-    assert c.visit.house == "Hufflepuff" and not c.show.open
+    assert c.show.open and c.visit.house is None
+
+
+def test_the_scripts_verdict_files_the_cues_cut_before_it_speaks(make):
+    c = make()
+    clock = [1000.0]
+    c._clock = c.visit._clock = lambda: clock[0]
+    c.visit.set_cues({"color": "rojo", "disfraz": "elegante"})
+    say(c, "hola"); say(c, "la fiesta"); say(c, "un volcán")
+    spoken = c.speaker.say_sequence
+
+    def during_the_verdict(names, **kw):
+        clock[0] += 5                                       # tapped while it speaks
+        c.visit.set_cues({"color": "rojo", "edad": "mayor"})
+        clock[0] += 5
+        return spoken(names, **kw)
+    c.speaker.say_sequence = during_the_verdict
+    clock[0] += 1
+    say(c, "el mapa")
+    assert c.visit.house is not None
+    assert c.visit.view()["used"] == {"color": "rojo"}     # elegante was dropped by the tap
+    assert c.visit.pending() == {"edad": "mayor"}          # the next visitor's
+
+
+def test_a_hand_over_keeps_the_visitors_cues(make, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "x" * 12)
+    monkeypatch.setenv("GROQ_API_KEY", "x" * 12)
+    monkeypatch.setattr(cloud, "is_online", lambda: True)
+    monkeypatch.setattr(voice_guard, "_state", voice_guard.CLEAN)
+    c = make("auto", llm=NoLLM(fail=True))
+    c.cfg.tts.backend = "loq"
+    c.visit.set_cues({"color": "verde"})
+    c.visit.start("", c._clock())
+    c.visit.delivered()                                     # a greeting after the cue
+    say(c, "hola, soy Ana")
+    assert c.show.open and c.visit.pending() == {"color": "verde"}
 
 
 def test_auto_uses_the_model_when_it_can_and_the_script_when_offline(make, monkeypatch):

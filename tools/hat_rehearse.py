@@ -240,7 +240,7 @@ def run_visit(llm, cfg, visitor: dict, *, clock=None) -> dict:
             skipped += 1
             continue
         stage = v.stage
-        tagged, snap = v.prepare(value)
+        tagged, snap = v.prepare(value, place_of(cfg, visitor))
         raw = llm.reply(tagged, remember=False)
         spoken, house = visit.split_reply(raw)
         turn = {"stage": stage, "you": value, "sent": tagged, "hat": spoken, "house": house,
@@ -266,12 +266,12 @@ def run_visit(llm, cfg, visitor: dict, *, clock=None) -> dict:
 
 
 def place_of(cfg, visitor: dict) -> str:
-    """The place word the act sends: the visitor's "lugar:", else FISH_PLACE's (with the
-    free text for "otro", as fortune_run does)."""
+    """The place word the visit and the act send: the visitor's "lugar:", else FISH_PLACE's
+    as the fish says it (visit.place_word)."""
+    from fish_brain import visit
     if visitor.get("place"):
         return visitor["place"]
-    place = cfg.place
-    return place.text.strip() if place.place == "otro" and place.text.strip() else place.place
+    return visit.place_word(cfg.place)
 
 
 def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 0,

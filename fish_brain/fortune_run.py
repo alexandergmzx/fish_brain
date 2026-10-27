@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from . import canned, debug, fortune, fortune_bank, show
 from .show import ShowState
 from .show_run import model_trusted
-from .visit import begin_model, clean_cue_text, split_reply
+from .visit import begin_model, clean_cue_text, place_word, split_reply
 
 DREAM_TEXT_MAX = 120     # characters of the visitor's own words that reach the model
 NAME_MAX = 20            # the typed first name, as the page sends it
@@ -288,6 +288,9 @@ class FortuneRun:
             if since is not None and now - since <= self.cfg.carry_s:
                 house = visit.house
                 first = first or clean_cue_text(visit.first_name, NAME_MAX)
+        if visit is not None:
+            # The house act's visitor: its cues lit again; anyone else: a new visitor's prune.
+            visit.next_act(carry=house is not None, now=now)
         n = self._next_n()
         self.v = {"n": n, "qs": qs, "i": 0, "tries": 0, "reprompts": 0, "data": {}, "heard": [],
                   "why": why, "deck": deck, "place": place, "first": first, "house": house,
@@ -357,9 +360,8 @@ class FortuneRun:
     # ---- the reading ---------------------------------------------------------------------------
     def _fortune(self) -> fortune.Fortune:
         v = self.v
-        place = self.c.cfg.place
-        lugar = place.text.strip() if place.place == "otro" and place.text.strip() else place.place
-        return fortune_of(v["data"], nombre=v["first"], lugar=lugar, casa=v["house"])
+        return fortune_of(v["data"], nombre=v["first"], lugar=place_word(self.c.cfg.place),
+                          casa=v["house"])
 
     def _ending(self, lead: list, *, clips_only: bool = False) -> bool:
         """The reading: the moon and the magic word join the data; the model's reading when
@@ -467,8 +469,16 @@ class FortuneRun:
         debug.turn_set(fortune=f"#{v['n']} reading ({how})", outcome=f"fortune: reading ({how})")
         self._last = {"n": v["n"], "mode": how, "why": v["mode_why"], "data": data}
         self.v = None
+        self._close_cues(v)
         self.c._push_visit()
         return True
+
+    def _close_cues(self, v: dict) -> None:
+        """The act's cues are filed, cut at the end of its last line (never "now": a drop
+        comes when the next visitor is already there, with chips tapped for them)."""
+        visit = self.c.visit
+        if visit is not None:
+            visit.close(v["last_s"])
 
     # ---- ends that are not the reading --------------------------------------------------------
     def went_quiet(self, at: float) -> bool:
@@ -492,6 +502,7 @@ class FortuneRun:
                    seconds=round(time.monotonic() - v["t0"], 1))
         debug.turn_set(fortune=f"#{v['n']} dropped ({why})", outcome=f"dropped ({why})")
         self._last = {"n": v["n"], "mode": "dropped", "why": why, "data": data}
+        self._close_cues(v)
         self.c._push_visit()
 
     def fault(self, kind: str) -> None:

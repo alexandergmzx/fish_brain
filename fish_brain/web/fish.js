@@ -883,7 +883,7 @@
     })();
 
     // The hat's visit (visit.py, console only): "Nuevo visitante" and the operator's cues.
-    // The server owns the cues: a lit chip is one the hat has not used yet, and the row
+    // The server owns the cues: a lit chip is what the hat knows about this visitor, and the row
     // draws the server's view (the POST /cues answer, the `visit` event) unless an edit of
     // its own is still on its way.
     const visitRow = (() => {
@@ -912,7 +912,7 @@
         const who = v.first ? " · " + v.first : "";
         state.textContent = !v.stage ? "Sin visitante"
           : v.stage > v.of ? `Veredicto: ${v.house || "—"}${who}` : `Etapa ${v.stage} de ${v.of}${who}`;
-        const s = Object.values(v.sent || {});
+        const s = Object.values(v.used || {});
         used.textContent = s.length ? "Usadas: " + s.join(" · ") : "";
         if (rev !== postedRev || inflight || timer) { latest = v; return; }
         latest = null;

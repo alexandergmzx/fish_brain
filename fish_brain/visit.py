@@ -8,9 +8,16 @@ from the visitor's own words and a short line about the rest of the fair, closed
 run the same steps:
 
     needs_new(at) -> start(first, now)       a new visitor (the model's history is reset)
-    prepare(text) -> (tagged, snapshot)      "[ETAPA n/4] [PISTAS: ...] " + what was said
+    prepare(text, lugar) -> (tagged, snap)   "[ETAPA n/4] [PISTAS: lugar=…; …] " + what was said
     split_reply(reply) -> (spoken, house)    before anything is said or shown
     delivered(house, snapshot, now)          only once the reply was spoken (or drafted)
+
+The cues belong to the visitor being served when they are set, and every turn carries all of
+them (the latest win). Turns never use them up: the act's close files them (the page's
+"used:" line) and clears the row up to the cut, the moment the verdict was asked for (a
+fortune: the end of its last line), so chips tapped for the next visitor during the verdict
+survive. A new visitor keeps only the cues stamped after that cut; a restart for the same
+visitor (`start(keep_cues=True)`: the script taking over, the model rebuilt) keeps them all.
 
 A stage counts only when it was delivered, so the counter always equals the hat's answers in
 the model's history (the loop remembers an answer after it was spoken, never before).
@@ -38,16 +45,24 @@ _HOUSE_PREFIXES = (("gryf", "Gryffindor"), ("grif", "Gryffindor"), ("huf", "Huff
 # The operator's cues (the sheet's chips): key -> allowed values. Keys are ASCII for the page;
 # the tag uses the labels.
 CUE_CHOICES: dict[str, tuple[str, ...]] = {
-    "edad": ("niño", "adolescente", "adulto"),
-    "compania": ("solo", "amigos", "familia"),
+    "edad": ("joven", "adulto", "mayor"),
+    "compania": ("solo", "pareja", "amigos", "familia"),
     "color": ("rojo", "azul", "verde", "amarillo", "negro", "blanco", "rosa", "morado"),
-    "impresion": ("tímido", "sonriente", "curioso"),
+    "impresion": ("tímido", "sonriente", "curioso", "escéptico", "fiestero"),
+    "disfraz": ("tenebroso", "chistoso", "elegante"),
 }
 CUE_TEXT = ("lleva", "nota")          # short free text: something worn or carried, a note
 CUE_TEXT_MAX = 60
 CUE_ORDER = (*CUE_CHOICES, *CUE_TEXT)
 CUE_LABEL = {"edad": "edad", "compania": "compañía", "color": "color",
-             "impresion": "impresión", "lleva": "lleva", "nota": "nota"}
+             "impresion": "impresión", "disfraz": "disfraz", "lleva": "lleva", "nota": "nota"}
+# How a value is said in the tag, when not as itself: the impression as a noun, so the hat
+# never echoes a gendered adjective about the visitor.
+CUE_SAID: dict[str, dict[str, str]] = {
+    "impresion": {"tímido": "timidez", "sonriente": "sonrisa", "curioso": "curiosidad",
+                  "escéptico": "escepticismo", "fiestero": "ganas de fiesta"},
+}
+PLACE_IDS = ("casa", "fiesta", "universidad")   # said as themselves; "otro" by its text
 
 _TAG = re.compile(r"\[\s*(?:ETAPA|PISTAS|FIN|FUTURO|ADIVINACI[ÓO]N)\b[^\]]*\]", re.IGNORECASE)
 _LINE_LEAD = re.compile(r"^[\s>*_#•·-]+")
@@ -122,6 +137,18 @@ def say_hour(minutes: int) -> str:
     return f"{art} {h12}" + (f" y {m}" if m else " en punto")
 
 
+def place_word(place) -> str:
+    """The place as the tags say it (`place` is the config's PlaceConfig, live through the
+    page's switches): the id for casa, fiesta and universidad, the cleaned free text for
+    "otro", "" when "otro" has no text."""
+    pid = getattr(place, "place", "") or ""
+    if pid in PLACE_IDS:
+        return pid
+    if pid == "otro":
+        return clean_cue_text(getattr(place, "text", "") or "")
+    return ""
+
+
 def future_tag(bank: dict | None, rng) -> str:
     """The verdict's ingredients, picked at random (the model alone settles on the same few):
     `[FUTURO: hora=…; lugar=…; …] `. `bank` is the persona's: {"hours": [from, to] as "H:MM",
@@ -179,11 +206,12 @@ class Visit:
         self.house: str | None = None
         self.started_at: float | None = None
         self.last_s: float | None = None     # the end of the hat's last speech in this visit
-        self._last_reply: float | None = None   # the last delivered turn, any visit
+        self._said_at: float | None = None   # this visit's last delivered turn
         # The page's side, under the lock.
         self._lock = threading.Lock()
         self._cues: dict[str, tuple[str, float]] = {}   # key -> (value, when it was set)
-        self._sent: dict[str, str] = {}
+        self._cut: float | None = None        # the last act's close: older cues were its own
+        self._last: dict[str, str] = {}      # the cues the last act closed with ("used:")
         self._request_at: float | None = None
 
     # ---- where the visit is ---------------------------------------------------------------
@@ -210,21 +238,53 @@ class Visit:
         since = self.last_s if self.last_s is not None else self.started_at
         return bool(self.idle_s > 0 and since is not None and at - since > self.idle_s)
 
-    def start(self, first_name: str = "", now: float | None = None) -> None:
+    def start(self, first_name: str = "", now: float | None = None, *,
+              keep_cues: bool = False) -> None:
+        """A visit begins. A new visitor keeps only the cues set after the last act closed
+        (during a badge read, the greeting, or tapped before "New visitor"); the same
+        visitor's restart (`keep_cues`) keeps them all."""
         now = self._clock() if now is None else now
         with self._lock:
-            # Cues set before the previous visitor's last answer were that visitor's; the
-            # ones set since (during a badge read, or the greeting) are for this one.
-            edge = self._last_reply
-            if edge is not None:
-                self._cues = {k: (v, t) for k, (v, t) in self._cues.items() if t > edge}
-            self._sent = {}
+            if not keep_cues:
+                self._prune_locked()
             if self._request_at is not None and self._request_at <= now:
                 self._request_at = None
         self.n += 1
         self.open, self.said, self.house = True, 0, None
+        self._said_at = None
         self.first_name = first_name or ""
         self.started_at = self.last_s = now
+
+    def _prune_locked(self) -> None:
+        """A new visitor (under the lock): the cues stamped up to the cut were the last
+        act's; `_last` is forgotten. A visit left without a verdict cuts at its last
+        delivered turn (cues set before it were that visitor's)."""
+        edge = self._cut
+        if self.open and not self.done and self._said_at is not None:
+            edge = self._said_at if edge is None else max(edge, self._said_at)
+        if edge is not None:
+            self._cues = {k: (v, t) for k, (v, t) in self._cues.items() if t > edge}
+        self._last = {}
+
+    def close(self, cut: float) -> None:
+        """An act ended (the verdict, a fortune's closing or drop): the cues stamped up to
+        `cut` are filed as `_last` and leave the row; newer ones stay for the next visitor."""
+        with self._lock:
+            self._last = {k: v for k, (v, t) in self._cues.items() if t <= cut}
+            self._cues = {k: (v, t) for k, (v, t) in self._cues.items() if t > cut}
+            self._cut = cut if self._cut is None else max(self._cut, cut)
+
+    def next_act(self, carry: bool, now: float | None = None) -> None:
+        """Another act begins (the fortune) without a visit start. `carry`: the same visitor
+        as the last act, whose filed cues are lit again under the current ones; otherwise a
+        new visitor's prune."""
+        now = self._clock() if now is None else now
+        with self._lock:
+            if carry:
+                relit = {k: (v, now) for k, v in self._last.items()}
+                self._cues = {**relit, **self._cues}
+            else:
+                self._prune_locked()
 
     def end(self) -> None:
         self.open = False
@@ -234,34 +294,37 @@ class Visit:
         if self.open:
             self.last_s = self._clock() if now is None else now
 
-    def prepare(self, text: str) -> tuple[str, dict]:
-        """The text for the model: the stage tag, the pending cues, what was said. The
-        snapshot goes back to `delivered` so only the cues that reached the model are used."""
+    def prepare(self, text: str, lugar: str = "") -> tuple[str, dict]:
+        """The text for the model: the stage tag, the place and every lit cue, what was
+        said. The snapshot (when it was asked, the cues sent) goes back to `delivered`: a
+        verdict closes the act at the moment it was asked for."""
         n = min(self.said + 1, self.stages)
+        asked = self._clock()
         with self._lock:
-            snapshot = dict(self._cues)
+            cues = {k: v for k, (v, _t) in self._cues.items()}
         tag = f"[ETAPA {n}/{self.stages}] "
         if n == self.stages:
             tag += future_tag(self.future, self._rng)
-        cues = [f"{CUE_LABEL[k]}={snapshot[k][0]}" for k in CUE_ORDER if k in snapshot]
-        if cues:
-            tag += "[PISTAS: " + "; ".join(cues) + "] "
-        return tag + (text or ""), snapshot
+        parts = [f"lugar={lugar}"] if lugar else []
+        parts += [f"{CUE_LABEL[k]}={CUE_SAID.get(k, {}).get(cues[k], cues[k])}"
+                  for k in CUE_ORDER if k in cues]
+        if parts:
+            tag += "[PISTAS: " + "; ".join(parts) + "] "
+        return tag + (text or ""), {"at": asked, "cues": cues}
 
     def delivered(self, house: str | None = None, snapshot: dict | None = None,
-                  now: float | None = None) -> None:
-        """The hat's turn was spoken: the stage moves on; a house closes the visit."""
+                  now: float | None = None, *, cut: float | None = None) -> None:
+        """The hat's turn was spoken: the stage moves on; a house (or the last stage) closes
+        the visit, cut at `cut`, else when the turn was asked for (the snapshot), else `now`."""
         now = self._clock() if now is None else now
         self.said += 1
         if house:
             self.house = house
-        self.last_s = self._last_reply = now
-        if snapshot:
-            with self._lock:
-                for k, vt in snapshot.items():
-                    if self._cues.get(k) == vt:     # re-tapped meanwhile: it stays pending
-                        del self._cues[k]
-                self._sent = {k: v for k, (v, _t) in snapshot.items()}
+        self.last_s = self._said_at = now
+        if self.done:
+            if cut is None:
+                cut = snapshot["at"] if snapshot and "at" in snapshot else now
+            self.close(cut)
 
     # ---- the page's side ------------------------------------------------------------------
     def request_new(self, at: float) -> None:
@@ -310,7 +373,7 @@ class Visit:
         """What the operator's sheet shows. Never sent to /status."""
         with self._lock:
             cues = {k: v for k, (v, _t) in self._cues.items()}
-            sent = dict(self._sent)
+            used = dict(self._last)
         return {"n": self.n, "stage": self.stage, "of": self.stages,
                 "first": self.first_name if self.open else "", "house": self.house,
-                "cues": cues, "sent": sent}
+                "cues": cues, "used": used}

@@ -1717,8 +1717,9 @@
   }, { busy: () => false, name: () => "" });
 
   // ---- the hat's visit: "New visitor" and the cues (visit.py) --------------------------------
-  // The server owns the cues: a lit chip is one the hat has not used yet, and the row draws the
-  // server's view (the POST /cues answer, the `visit` record) unless an edit of its own is on its way.
+  // The server owns the cues: a lit chip is what the hat knows about this visitor (every turn
+  // carries it until the act closes; "used:" is what the last act closed with), and the row draws
+  // the server's view (the POST /cues answer, the `visit` record) unless an edit of its own is on its way.
   const visitRow = guard("visit", () => {
     const row = $("cVisit"), btn = $("visitNew"), note = $("visitMsg"), used = $("visitSent");
     const texts = [$("cueLleva"), $("cueNota")];
@@ -1777,7 +1778,7 @@
       const who = v.first ? " · " + v.first : "";
       $("visitState").textContent = !v.stage ? "no visitor"
         : v.stage > v.of ? "verdict: " + (v.house || "—") + who : "stage " + v.stage + " of " + v.of + who;
-      const s = Object.entries(v.sent || {}).map(([k, val]) => label[k + ":" + val] || val);
+      const s = Object.entries(v.used || {}).map(([k, val]) => label[k + ":" + val] || val);
       used.textContent = s.length ? "used: " + s.join(" · ") : "";
       if (rev !== postedRev || inflight || timer) { latest = v; return; }
       latest = null;

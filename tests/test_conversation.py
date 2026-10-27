@@ -482,25 +482,69 @@ def test_a_verdict_past_the_budget_stays_at_stage_four(hat, monkeypatch):
     convo.visit.set_cues({"color": "azul"})
     for _ in range(3):
         convo.turn()
-    assert convo.visit.pending() == {}
-    convo.visit.set_cues({"edad": "niño"})
+    assert convo.visit.pending() == {"color": "azul"}
+    convo.visit.set_cues({"color": "azul", "edad": "joven"})
 
     def too_late(stage, fn, **kw):
         raise TurnTimeout(stage)
     monkeypatch.setattr(convo, "_await", too_late)
     assert convo.turn() is True
     assert convo.visit.stage == 4 and len(llm.remembered) == 3
-    assert convo.visit.pending() == {"edad": "niño"}
+    assert convo.visit.pending() == {"color": "azul", "edad": "joven"}   # nothing closed
 
 
-def test_cues_go_once_with_the_next_turn(hat):
-    convo, viz, llm, spoken = hat(["hola", "Ana"], ["¿Nombre?", "Ana..."])
+def test_cues_go_with_every_turn_until_the_verdict_files_them(hat):
+    clock = Clock()
+    convo, viz, llm, spoken = hat(["hola", "Ana", "libro", "investigo", "gracias"],
+                                  ["¿Nombre?", "Ana...", "Libros.", VERDICT, "Hola."],
+                                  clock=clock)
     convo.turn()
-    convo.visit.set_cues({"edad": "niño", "lleva": "gorra"})
+    convo.visit.set_cues({"edad": "mayor", "lleva": "gorra", "impresion": "fiestero"})
     convo.turn()
-    assert llm.replies[1] == "[ETAPA 2/4] [PISTAS: edad=niño; lleva=gorra] Ana"
-    assert convo.visit.pending() == {} and viz.visits[-1]["sent"] == {"edad": "niño",
-                                                                      "lleva": "gorra"}
+    convo.turn()
+    tag = "[PISTAS: edad=mayor; impresión=ganas de fiesta; lleva=gorra] "
+    assert llm.replies[1] == "[ETAPA 2/4] " + tag + "Ana"
+    assert llm.replies[2] == "[ETAPA 3/4] " + tag + "libro"
+    assert viz.visits[-1]["cues"] == {"edad": "mayor", "lleva": "gorra", "impresion": "fiestero"}
+    assert viz.visits[-1]["used"] == {}
+    convo.turn()                                              # the verdict
+    assert llm.replies[3].endswith(tag + "investigo")
+    assert convo.visit.pending() == {}
+    assert viz.visits[-1]["used"] == {"edad": "mayor", "lleva": "gorra", "impresion": "fiestero"}
+    clock.t += 1
+    convo.turn()                                              # the next visitor: no cues
+    assert llm.replies[4] == "[ETAPA 1/4] gracias" and viz.visits[-1]["used"] == {}
+
+
+def test_the_place_rides_every_turn_first(hat, monkeypatch):
+    monkeypatch.setenv("FISH_PLACE", "otro")
+    monkeypatch.setenv("FISH_PLACE_TEXT", "el panteón; de noche")
+    convo, viz, llm, spoken = hat(["hola", "Ana"], ["1", "2"])
+    convo.turn()
+    convo.visit.set_cues({"compania": "pareja"})
+    convo.cfg.place.place = "fiesta"                          # the Settings switch, live
+    convo.turn()
+    assert llm.replies[0] == "[ETAPA 1/4] [PISTAS: lugar=el panteón, de noche] hola"
+    assert llm.replies[1] == "[ETAPA 2/4] [PISTAS: lugar=fiesta; compañía=pareja] Ana"
+
+
+def test_otro_without_text_sends_no_place(hat, monkeypatch):
+    monkeypatch.setenv("FISH_PLACE", "otro")
+    convo, viz, llm, spoken = hat(["hola"], ["1"])
+    convo.turn()
+    assert llm.replies[0] == "[ETAPA 1/4] hola"
+
+
+def test_a_rebuilt_model_keeps_the_visitors_cues(hat):
+    clock = Clock()
+    convo, viz, llm, spoken = hat(["hola", "Ana"], ["1"], clock=clock)
+    convo.visit.set_cues({"color": "negro"})
+    convo.turn()
+    clock.t += 1
+    fresh = ScriptLLM(["2"])
+    convo._llm = fresh                             # what debug_actions._fresh_llm leads to
+    convo.turn()
+    assert fresh.replies == ["[ETAPA 1/4] [PISTAS: color=negro] Ana"]
 
 
 def test_idle_starts_a_new_visitor(hat):

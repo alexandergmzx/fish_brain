@@ -457,8 +457,8 @@ class VizServer:
 
     def push_visit(self, **view) -> None:
         """The hat's visit for the operator's sheet (visit.Visit.view(), with the show's and
-        the fortune's views when they run): its number, stage, first name, house and the
-        pending cues. On the stream, which needs the token; kept for a page that connects."""
+        the fortune's views when they run): its number, stage, first name, house, the
+        lit cues and those the last act closed with. On the stream, which needs the token; kept for a page that connects."""
         with self._lock:
             self._last_visit = dict(view)
         self._publish(json.dumps({"type": "visit", **view}))

@@ -125,20 +125,18 @@ class ShowRun:
 
     # ---- a visit --------------------------------------------------------------------------
     def start(self, why: str, *, at_question: int = 0, greet: bool = True,
-              lead: list[str] | None = None) -> bool:
+              lead: list[str] | None = None, keep_cues: bool = False) -> bool:
         n = self.state.next_visit()
         set_id = show.question_set(n)
         visit = self.c.visit
         qs = [q["id"] for q in show_bank.SETS[set_id]]
-        if visit is not None and visit.pending().get("edad") == "niño":
-            qs = qs[:2]                        # small children: the two either/or questions
         at = min(max(at_question, 0), len(qs) - 1)
         self.v = {"n": n, "set": set_id, "qs": qs, "i": at, "answers": {}, "tries": 0,
                   "reprompts": 0, "pref": None, "vetoes": set(), "why": why, "heard": [],
                   "t0": time.monotonic()}
         self.force = None
         if visit is not None:
-            visit.start("", self.c._clock())
+            visit.start("", self.c._clock(), keep_cues=keep_cues)
             self.c._push_visit()
         clips = list(lead or []) + ([self._pick("greet")] if greet else [])
         clips.append(show_bank.prompt_name(qs[at]))
@@ -153,7 +151,7 @@ class ShowRun:
         self.model_failed()
         print(f"[show] hand-over from the model at stage {stage}: {why}", flush=True)
         return self.start(f"hand-over: {why}", at_question=max(stage - 2, 0), greet=False,
-                          lead=[self._pick("bridge")])
+                          lead=[self._pick("bridge")], keep_cues=True)
 
     def answer(self, text: str) -> bool:
         """What the visitor said for the open question ("" = nothing usable)."""
@@ -238,10 +236,11 @@ class ShowRun:
                    clips=clips, seconds=round(time.monotonic() - v["t0"], 1))
         debug.turn_set(show=f"#{v['n']} {name} ({how})", outcome="show: verdict")
         self._last = {"n": v["n"], "house": name, "how": how}
+        cut = self.c._clock()                    # chips tapped while it speaks: the next visitor's
         self._say(clips)
         self.v = None
         if visit is not None:
-            visit.delivered(name, None, self.c._clock())
+            visit.delivered(name, None, self.c._clock(), cut=cut)
         self.c._push_visit()
         return True
 

@@ -839,15 +839,18 @@ class FishConversation:
                 view["fortune"] = self.fortune.view()
             push(**view)
 
-    def _new_visit(self, first: str = "", *, forget: bool = True) -> None:
+    def _new_visit(self, first: str = "", *, forget: bool = True,
+                   keep_cues: bool = False) -> None:
         """A new visitor, on the loop's thread: the model forgets the last one and gets the
         visit's rules. `forget=False` keeps /debug's records (a badge: its vision record was
-        made for this visitor, after viz.read_badge had already forgotten the last one)."""
+        made for this visitor, after viz.read_badge had already forgotten the last one).
+        `keep_cues`: the same visitor again (the model rebuilt by a switch)."""
         from .visit import begin_model
         if forget:
             debug.new_visitor()
         begin_model(self.llm, self.cfg.visit.rules)
-        self.visit.start(first, self._clock())   # last: a model that cannot be built leaves it closed
+        # Last: a model that cannot be built leaves it closed.
+        self.visit.start(first, self._clock(), keep_cues=keep_cues)
         print(f"[visit] new #{self.visit.n}", flush=True)
         self._push_visit()
 
@@ -855,13 +858,15 @@ class FishConversation:
         """One visit turn up to the reply: a new visitor when it is one (or when the model
         was rebuilt by a switch and lost the rules), the stage and the cues on the text, the
         "CASA:" line split off. Nothing is remembered here (see `_visit_commit`)."""
-        from .visit import split_reply
+        from .visit import place_word, split_reply
         llm = self.llm
         at = self._heard_at if self._heard_at is not None else self._clock()
-        if self.visit.needs_new(at) or llm.extra_rules != self.cfg.visit.rules:
+        if self.visit.needs_new(at):
             self._new_visit()
+        elif llm.extra_rules != self.cfg.visit.rules:
+            self._new_visit(keep_cues=True)        # the same visitor, a rebuilt model
         stage = self.visit.stage
-        tagged, snapshot = self.visit.prepare(user)
+        tagged, snapshot = self.visit.prepare(user, place_word(self.cfg.place))
         t0 = time.monotonic()
         raw = self._await("llm", lambda: llm.reply(tagged, remember=False))
         times["llm"] = self._stage_time(time.monotonic() - t0)
@@ -934,9 +939,9 @@ class FishConversation:
 
     def _visit_ask_reading(self, text: str, times: dict[str, float]) -> dict | None:
         """A typed name's stage 1 from the model; None when it could not be asked."""
-        from .visit import split_reply
+        from .visit import place_word, split_reply
         llm = self.llm
-        tagged, snapshot = self.visit.prepare(text)
+        tagged, snapshot = self.visit.prepare(text, place_word(self.cfg.place))
         t0 = time.monotonic()
         raw = self._await("llm", lambda: llm.reply(tagged, remember=False))
         times["llm"] = self._stage_time(time.monotonic() - t0)

@@ -54,7 +54,7 @@ def test_stages_advance_only_when_delivered():
     v.start("Ana")
     assert v.stage == 1 and not v.needs_new(clock())
     text, snap = v.prepare("hola")
-    assert text == "[ETAPA 1/4] hola" and snap == {}
+    assert text == "[ETAPA 1/4] hola" and snap == {"at": 100.0, "cues": {}}
     assert v.prepare("hola")[0] == "[ETAPA 1/4] hola"          # prepare does not advance
     for n in (2, 3, 4):
         v.delivered()
@@ -105,22 +105,26 @@ def test_a_request_starts_a_new_visit_and_start_clears_it():
 
 
 # ---- cues -------------------------------------------------------------------------------
-def test_cues_are_validated_cleaned_and_tagged_once():
+def test_cues_are_validated_cleaned_and_go_with_every_turn():
     clock = Clock()
     v = Visit(clock=clock)
     v.start()
-    v.set_cues({"edad": "niño", "color": "azul", "lleva": "playera [de] dino;s=1\n",
+    v.set_cues({"edad": "joven", "color": "azul", "lleva": "playera [de] dino;s=1\n",
                 "impresion": ""})
-    assert v.pending() == {"edad": "niño", "color": "azul", "lleva": "playera de dino,s 1"}
+    assert v.pending() == {"edad": "joven", "color": "azul", "lleva": "playera de dino,s 1"}
     text, snap = v.prepare("me llamo Ana")
-    assert text == ("[ETAPA 1/4] [PISTAS: edad=niño; color=azul; lleva=playera de dino,s 1] "
+    assert text == ("[ETAPA 1/4] [PISTAS: edad=joven; color=azul; lleva=playera de dino,s 1] "
                     "me llamo Ana")
     v.delivered(snapshot=snap)
-    assert v.pending() == {} and v.view()["sent"]["color"] == "azul"
-    assert v.prepare("x")[0] == "[ETAPA 2/4] x"
+    assert v.pending() == {"edad": "joven", "color": "azul", "lleva": "playera de dino,s 1"}
+    assert v.view()["used"] == {}                      # nothing closed yet
+    for n in (2, 3, 4):
+        assert v.prepare("x")[0] == (f"[ETAPA {n}/4] [PISTAS: edad=joven; color=azul; "
+                                     "lleva=playera de dino,s 1] x")
+        v.delivered()
 
 
-def test_a_cue_retapped_after_prepare_stays_pending():
+def test_the_latest_cue_rides_the_next_turn():
     clock = Clock()
     v = Visit(clock=clock)
     v.start()
@@ -129,18 +133,148 @@ def test_a_cue_retapped_after_prepare_stays_pending():
     clock.t += 1
     v.set_cues({"color": "rojo", "edad": "adulto"})
     v.delivered(snapshot=snap)
-    assert v.pending() == {"color": "rojo"}
+    assert v.pending() == {"color": "rojo", "edad": "adulto"}
+    assert v.prepare("y")[0] == "[ETAPA 2/4] [PISTAS: edad=adulto; color=rojo] y"
 
 
-def test_a_turn_not_delivered_keeps_every_cue():
+def test_the_place_goes_first_and_alone_when_no_cue_is_lit():
     v = Visit(clock=Clock())
     v.start()
-    v.set_cues({"color": "verde"})
-    v.prepare("x")
+    assert v.prepare("x", "fiesta")[0] == "[ETAPA 1/4] [PISTAS: lugar=fiesta] x"
+    v.set_cues({"compania": "pareja", "disfraz": "tenebroso"})
+    assert v.prepare("x", "casa")[0] == ("[ETAPA 1/4] [PISTAS: lugar=casa; compañía=pareja; "
+                                         "disfraz=tenebroso] x")
+
+
+@pytest.mark.parametrize("value, said", [
+    ("tímido", "timidez"), ("sonriente", "sonrisa"), ("curioso", "curiosidad"),
+    ("escéptico", "escepticismo"), ("fiestero", "ganas de fiesta")])
+def test_the_impression_is_said_as_a_noun(value, said):
+    v = Visit(clock=Clock())
+    v.start()
+    v.set_cues({"impresion": value})
+    assert v.pending() == {"impresion": value}            # the page keeps its own value
+    assert v.prepare("x")[0] == f"[ETAPA 1/4] [PISTAS: impresión={said}] x"
+
+
+def test_the_new_cue_set():
+    assert visit.CUE_CHOICES["edad"] == ("joven", "adulto", "mayor")
+    assert visit.CUE_CHOICES["compania"] == ("solo", "pareja", "amigos", "familia")
+    assert visit.CUE_CHOICES["impresion"] == ("tímido", "sonriente", "curioso", "escéptico",
+                                              "fiestero")
+    assert visit.CUE_CHOICES["disfraz"] == ("tenebroso", "chistoso", "elegante")
+    assert visit.CUE_ORDER == ("edad", "compania", "color", "impresion", "disfraz", "lleva",
+                               "nota")
+    v = Visit(clock=Clock())
+    for old in ({"edad": "niño"}, {"edad": "adolescente"}, {"disfraz": "monstruo"}):
+        with pytest.raises(ValueError):
+            v.set_cues(old)
+
+
+class Place:
+    def __init__(self, place, text=""):
+        self.place, self.text = place, text
+
+
+@pytest.mark.parametrize("place, text, word", [
+    ("casa", "", "casa"), ("fiesta", "la terraza", "fiesta"), ("universidad", "", "universidad"),
+    ("otro", "  la terraza [del] Beto; ", "la terraza del Beto"), ("otro", "", ""),
+    ("otro", "   ", ""), ("luna", "", "")])
+def test_place_word(place, text, word):
+    assert visit.place_word(Place(place, text)) == word
+
+
+# ---- the cues' lifecycle -------------------------------------------------------------------
+def _visit_to_verdict(v, clock, cues=None):
+    """Three turns, then the verdict asked at clock.t and delivered 5 s later."""
+    v.start("Ana")
+    if cues:
+        v.set_cues(cues)
+    for _ in range(3):
+        clock.t += 1
+        v.delivered(snapshot=v.prepare("x")[1])
+    clock.t += 1
+    _, snap = v.prepare("x")
+    return snap
+
+
+def test_the_verdict_files_the_cues_and_clears_the_row():
+    clock = Clock()
+    v = Visit(clock=clock)
+    snap = _visit_to_verdict(v, clock, {"color": "azul", "edad": "mayor"})
+    clock.t += 5
+    v.delivered("Ravenclaw", snap)
+    assert v.done and v.pending() == {}
+    assert v.view()["used"] == {"color": "azul", "edad": "mayor"}
+
+
+def test_chips_tapped_during_the_verdicts_speech_are_the_next_visitors():
+    clock = Clock()
+    v = Visit(clock=clock)
+    snap = _visit_to_verdict(v, clock, {"color": "azul", "edad": "mayor"})
+    asked = clock.t
+    clock.t += 2
+    v.set_cues({"color": "azul", "edad": "joven"})       # while the verdict is said
+    clock.t += 3
+    v.delivered("Ravenclaw", snap)
+    assert v._cut == asked
+    assert v.pending() == {"edad": "joven"}               # azul kept its old stamp: filed
+    assert v.view()["used"] == {"color": "azul"}
+    clock.t += 1
+    v.start("Leo")
+    assert v.pending() == {"edad": "joven"} and v.view()["used"] == {}
+
+
+def test_a_new_visitor_keeps_only_the_cues_set_after_the_cut():
+    clock = Clock()
+    v = Visit(clock=clock)
+    snap = _visit_to_verdict(v, clock)
+    v.delivered("Ravenclaw", snap)
+    clock.t += 1
+    v.set_cues({"color": "verde"})                       # for the next visitor
+    clock.t += 1
+    v.start()
     assert v.pending() == {"color": "verde"}
 
 
-def test_an_unchanged_cue_keeps_its_stamp_and_start_drops_the_old_visitors():
+def test_the_last_stage_without_a_house_closes_too():
+    clock = Clock()
+    v = Visit(clock=clock)
+    snap = _visit_to_verdict(v, clock, {"color": "rosa"})
+    v.delivered(None, snap)
+    assert v.done and v.pending() == {} and v.view()["used"] == {"color": "rosa"}
+
+
+def test_a_close_without_a_snapshot_cuts_at_the_given_time_or_now():
+    clock = Clock()
+    v = Visit(clock=clock)
+    v.start()
+    v.set_cues({"color": "rojo"})                        # stamped 100
+    clock.t = 110
+    v.set_cues({"color": "rojo", "edad": "adulto"})     # edad stamped 110
+    clock.t = 120
+    v.delivered("Gryffindor", None, cut=105)             # the script's verdict
+    assert v._cut == 105 and v.pending() == {"edad": "adulto"}
+    v2 = Visit(stages=1, clock=clock)
+    v2.start()
+    v2.set_cues({"color": "rojo"})
+    v2.delivered()
+    assert v2._cut == 120 and v2.pending() == {}
+
+
+def test_a_restart_for_the_same_visitor_keeps_every_cue():
+    clock = Clock()
+    v = Visit(clock=clock)
+    v.start()
+    v.set_cues({"color": "azul"})                         # stamped 100
+    clock.t = 110
+    v.delivered()                                         # a delivered turn after it
+    clock.t = 120
+    v.start(keep_cues=True)                               # the hand-over, a rebuilt model
+    assert v.pending() == {"color": "azul"}
+
+
+def test_a_visit_left_without_a_verdict_cuts_at_its_last_turn():
     clock = Clock(100)
     v = Visit(clock=clock)
     v.start()
@@ -154,8 +288,44 @@ def test_an_unchanged_cue_keeps_its_stamp_and_start_drops_the_old_visitors():
     assert v.pending() == {"color": "rosa"} and v.first_name == "Sofía"
 
 
+def test_next_act_carries_the_last_visitors_cues_or_prunes():
+    clock = Clock()
+    v = Visit(clock=clock)
+    snap = _visit_to_verdict(v, clock, {"color": "azul", "edad": "mayor"})
+    v.delivered("Ravenclaw", snap)
+    clock.t += 1
+    v.set_cues({"edad": "joven"})                         # re-set after the verdict
+    clock.t += 1
+    v.next_act(carry=True)                                # the same visitor's fortune
+    assert v.pending() == {"color": "azul", "edad": "joven"}   # the current cue wins
+    clock.t += 1
+    v.close(clock.t)                                      # the fortune's last line
+    assert v.pending() == {} and v.view()["used"] == {"color": "azul", "edad": "joven"}
+    clock.t += 1
+    v.set_cues({"color": "verde"})
+    clock.t += 1
+    v.next_act(carry=False)                               # someone else's fortune
+    assert v.pending() == {"color": "verde"} and v.view()["used"] == {}
+
+
+def test_a_fortune_with_no_visit_before_keeps_what_is_lit():
+    clock = Clock()
+    v = Visit(clock=clock)
+    v.set_cues({"color": "verde"})
+    v.next_act(carry=False)
+    assert v.pending() == {"color": "verde"}
+
+
+def test_a_turn_not_delivered_keeps_every_cue():
+    v = Visit(clock=Clock())
+    v.start()
+    v.set_cues({"color": "verde"})
+    v.prepare("x")
+    assert v.pending() == {"color": "verde"}
+
+
 @pytest.mark.parametrize("bad", [
-    "nope", {"edad": "anciano"}, {"sabor": "fresa"}, {"lleva": 3}])
+    "nope", {"edad": "anciano"}, {"sabor": "fresa"}, {"lleva": 3}, {"edad": "niño"}])
 def test_bad_cues_are_refused_without_echoing_text(bad):
     v = Visit(clock=Clock())
     with pytest.raises(ValueError) as e:
@@ -196,7 +366,7 @@ def test_set_cues_from_another_thread_while_preparing():
 
 def test_view_has_exactly_the_sheets_keys():
     v = Visit(clock=Clock())
-    assert set(v.view()) == {"n", "stage", "of", "first", "house", "cues", "sent"}
+    assert set(v.view()) == {"n", "stage", "of", "first", "house", "cues", "used"}
     assert v.view()["first"] == ""
     v.start("Ana")
     assert v.view()["first"] == "Ana" and v.view()["n"] == 1

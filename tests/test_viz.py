@@ -827,17 +827,19 @@ def test_cues_are_set_checked_and_never_in_status(server):
     v = _visit(server)
     v.start("Ana")
     status, out = post(server.url + "/cues",
-                       {"cues": {"edad": "niño", "lleva": "gorra [roja]"}}, AUTH)
-    assert status == 200 and out["visit"]["cues"] == {"edad": "niño", "lleva": "gorra roja"}
-    assert v.pending() == {"edad": "niño", "lleva": "gorra roja"}
+                       {"cues": {"edad": "mayor", "lleva": "gorra [roja]"}}, AUTH)
+    assert status == 200 and out["visit"]["cues"] == {"edad": "mayor", "lleva": "gorra roja"}
+    assert v.pending() == {"edad": "mayor", "lleva": "gorra roja"}
+    status, out = post(server.url + "/cues", {"cues": {"edad": "niño"}}, AUTH)
+    assert status == 400                                                # the old set is refused
     status, out = post(server.url + "/cues", {"cues": {"sabor": "fresa secreta"}}, AUTH)
     assert status == 400 and "fresa" not in json.dumps(out)
     assert post(server.url + "/cues", {"cues": "nope"}, AUTH)[0] == 400
-    assert v.pending() == {"edad": "niño", "lleva": "gorra roja"}       # a refusal changes nothing
+    assert v.pending() == {"edad": "mayor", "lleva": "gorra roja"}      # a refusal changes nothing
     st = get(server.url + "/status")[1].decode()
     assert json.loads(st)["visit_enabled"] is True
     text = json.dumps(json.loads(st), ensure_ascii=False)
-    assert not any(x in text for x in ("gorra", "Ana", "niño"))
+    assert not any(x in text for x in ("gorra", "Ana", "mayor"))
 
 
 def test_status_says_visit_only_when_registered(server):

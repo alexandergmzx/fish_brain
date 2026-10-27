@@ -52,7 +52,7 @@ def test_a_visit_reaches_its_house(monkeypatch):
     assert llm.extra_rules == cfg.visit.rules and llm.resets == 1
     assert llm.remembered[0][0].startswith("[ETAPA 1/4]")
     assert llm.sent[0] == "[ETAPA 2/4] [PISTAS: color=azul] Ana"
-    assert llm.sent[1] == "[ETAPA 3/4] Libro"
+    assert llm.sent[1] == "[ETAPA 3/4] [PISTAS: color=azul] Libro"   # every turn carries them
     assert rec["turns"][-1]["hat"] == "¡Ravenclaw! Hoy verás un robot."
 
 
@@ -105,11 +105,21 @@ def test_refused_cue_values_are_reported_not_raised(monkeypatch):
     monkeypatch.setenv("FISH_PERSONA", "hat")
     llm = ScriptLLM(["a?", "b?", "¡Ravenclaw!\nCASA: Ravenclaw"])
     visitor = {"badge": None, "greet": True, "place": None, "fortune": None,
-               "steps": [("cues", {"edad": "joven", "color": "azul", "disfraz": "tenebroso"}),
+               "steps": [("cues", {"edad": "niño", "color": "azul", "disfraz": "monstruo"}),
                          ("say", "x"), ("say", "y"), ("say", "z")]}
     rec = hat_rehearse.run_visit(llm, Config(), visitor)
-    assert rec["refused"] == ["edad=joven", "disfraz=tenebroso"]
+    assert rec["refused"] == ["edad=niño", "disfraz=monstruo"]
     assert llm.sent[0] == "[ETAPA 2/4] [PISTAS: color=azul] x"
+
+
+def test_the_visitors_place_rides_every_visit_turn(monkeypatch):
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+    llm = ScriptLLM(["a?", "b?"])
+    visitor = {"badge": None, "greet": True, "place": "casa", "fortune": None,
+               "steps": [("cues", {"compania": "pareja"}), ("say", "x"), ("say", "y")]}
+    hat_rehearse.run_visit(llm, Config(), visitor)
+    assert llm.sent == ["[ETAPA 2/4] [PISTAS: lugar=casa; compañía=pareja] x",
+                        "[ETAPA 3/4] [PISTAS: lugar=casa; compañía=pareja] y"]
 
 
 def test_banned_words_in_a_visit_reply_are_problems():

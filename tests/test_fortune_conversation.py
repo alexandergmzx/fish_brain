@@ -563,3 +563,67 @@ def test_a_record_is_made_for_the_reading_and_the_drop(make, monkeypatch):
     kind, rec = records[-1]
     assert kind == "fortune" and rec["dropped"] == "test" and rec["n"] == 2
     assert "fortune" in debug._RECORD_KINDS
+
+
+# ---- the visitor's cues (visit.py's lifecycle) -----------------------------------------------
+
+def _house_act(c, clock=None):
+    for text in ("hola", "la fiesta", "un volcán", "el mapa"):
+        if clock is not None:
+            clock.t += 1
+        say(c, text)
+    assert c.visit.house == "Gryffindor"
+
+
+def test_the_house_visitors_cues_are_lit_again_for_their_fortune(make):
+    clock = Clock()
+    c = make(clock=clock)
+    c.visit.set_cues({"color": "rojo", "impresion": "escéptico"})
+    _house_act(c, clock)
+    assert c.visit.pending() == {}
+    assert c.visit.view()["used"] == {"color": "rojo", "impresion": "escéptico"}
+    clock.t += 1
+    c.visit.set_cues({"impresion": "sonriente"})            # re-set after the verdict
+    clock.t += 1
+    start(c)
+    assert c.fortune.view()["house"] == "Gryffindor"
+    assert c.visit.pending() == {"color": "rojo", "impresion": "sonriente"}
+    clock.t += 1
+    answer_all(c)
+    assert not c.fortune.open and c.visit.pending() == {}
+    assert c.visit.view()["used"] == {"color": "rojo", "impresion": "sonriente"}
+
+
+def test_a_fortune_for_someone_else_starts_from_the_cues_set_since(make):
+    clock = Clock()
+    c = make(clock=clock)
+    c.visit.set_cues({"color": "rojo"})
+    _house_act(c, clock)
+    clock.t += c.cfg.fortune.carry_s + 1
+    c.visit.set_cues({"edad": "mayor"})
+    clock.t += 1
+    start(c)
+    assert c.fortune.view()["house"] is None
+    assert c.visit.pending() == {"edad": "mayor"} and c.visit.view()["used"] == {}
+
+
+def test_a_fortune_with_no_visit_before_keeps_what_is_lit(make):
+    c = make()
+    c.visit.set_cues({"disfraz": "chistoso"})
+    start(c)
+    assert c.visit.pending() == {"disfraz": "chistoso"}
+
+
+def test_a_dropped_fortune_cuts_at_its_last_line_not_at_the_drop(make):
+    clock = Clock()
+    c = make(clock=clock)
+    c.visit.set_cues({"color": "azul"})
+    start(c)
+    clock.t += 1
+    say(c, "23 de octubre")                                     # its last line ends here
+    clock.t += 10
+    c.visit.set_cues({"color": "azul", "edad": "joven"})       # for the next visitor
+    clock.t += 1
+    c._handle_item(NewVisit(c._clock()))
+    assert not c.fortune.open and c.show.open
+    assert c.visit.pending() == {"edad": "joven"}
