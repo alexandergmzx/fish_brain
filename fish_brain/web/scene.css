@@ -48,6 +48,13 @@
 #hatBox.study.h-ravenclaw { --house: rgba(60, 110, 230, 0.85); }
 #hatBox.study.h-slytherin { --house: rgba(40, 170, 90, 0.8); }
 #hatBox.study[class*="h-"] .scene::after { opacity: 1; }
+/* the fortune's reading: the room goes violet and the candle's halo swells for 12 s */
+#hatBox.study.h-fortune { --house: rgba(150, 80, 230, 0.8); }
+#hatBox.study.reading .vela .halo { animation: pulso 1.3s var(--sine) infinite alternate; }
+@keyframes pulso {
+    from { transform: scale(1); opacity: 0.3; }
+    to   { transform: scale(1.6); opacity: 0.75; }
+}
 .study .scene svg { position: absolute; overflow: visible; }
 .study .ventana { width: 19cqw; height: 25cqw; top: 22%; left: 4%; }
 .study #stars { animation: deriva 40s var(--sine) infinite alternate; }

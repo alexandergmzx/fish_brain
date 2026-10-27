@@ -201,7 +201,9 @@
 
         <section class="col" id="colPanels">
             <nav id="tabs">
-                <button data-tab="show" data-panels="show visit">Show</button>
+                <button data-tab="visit" data-panels="visit">Visit</button>
+                <button data-tab="status" data-panels="status">Status</button>
+                <button data-tab="setup" data-panels="setup">Settings</button>
                 <button data-tab="turns" data-col="colTurns" class="phone">Turns</button>
                 <button data-tab="checks" data-panels="checks" class="on">Checks</button>
                 <button data-tab="live" data-panels="inputs motors">Live</button>
@@ -212,11 +214,16 @@
                 <button data-tab="log" data-col="colLog" class="phone">Log</button>
             </nav>
             <div class="scroll" id="panels">
-                <div class="panel" id="p-show" hidden>
-                    <!-- The phone as the console (ADR 0017): is the hat ready, what failed, and the
-                         few things changed during a show. Rows come from /debug/state's show_tab. -->
+                <div class="panel" id="p-status" hidden>
+                    <!-- The phone as the console (ADR 0017): is the hat ready and what failed. Rows
+                         come from /debug/state's show_tab; the act row from the visit's view. -->
                     <div id="showSummary" class="summary wait" role="status" aria-live="polite">Waiting for the hat…</div>
                     <div id="goRows" class="go-rows"></div>
+                </div>
+                <div class="panel" id="p-setup" hidden>
+                    <!-- The evening's settings: the mode, the hardware he marks failed, the volume,
+                         the network, this phone as a speaker, the place and the fortune's extras.
+                         Each posts to a routed action; nothing is written to .env. -->
                     <h3>Mode</h3>
                     <div class="picks" role="group" aria-label="Mode"><button type="button" class="pick" data-mode="auto">Auto</button><button type="button" class="pick" data-mode="model">Model</button><button type="button" class="pick" data-mode="script">Script</button><button type="button" class="pick" data-mode="echo">Echo</button></div>
                     <h3>Hardware <small>tap a part when it fails; tap again when it works</small></h3>
@@ -227,40 +234,58 @@
                     <div class="picks" role="group" aria-label="Network"><button type="button" class="pick" data-net="auto">Known Wi-Fi</button><button type="button" class="pick" data-net="ap">Own Wi-Fi</button></div>
                     <h3>Phone speaker <small id="spkState">off</small></h3>
                     <button type="button" class="pick" id="spkBtn">🔊 Use this phone as a speaker</button>
-                    <span id="showMsg" class="note"></span>
+                    <h3>Place <small>where the hat is tonight: the intro and the closing follow it</small></h3>
+                    <div class="picks" role="group" aria-label="Place"><button type="button" class="pick" data-place="casa">Home</button><button type="button" class="pick" data-place="fiesta">Party</button><button type="button" class="pick" data-place="universidad">University</button><button type="button" class="pick" data-place="otro">Other</button></div>
+                    <div id="placeOther" hidden>
+                        <input type="text" id="placeText" maxlength="60" placeholder="Where… (a bar in Coyoacán)" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+                        <span class="note">the text reaches the web model only</span>
+                    </div>
+                    <h3>Fortune <small>the extras the hat asks for</small></h3>
+                    <div class="picks" role="group" aria-label="Deck"><button type="button" class="pick" data-fortune="deck" data-val="tarot">Tarot deck</button><button type="button" class="pick" data-fortune="deck" data-val="off">No deck</button><button type="button" class="pick" disabled title="a lotería deck comes later">Lotería (later)</button></div>
+                    <div class="picks"><button type="button" class="pick" id="cupBtn" data-fortune="cup" aria-pressed="false">☕ Read the cup</button></div>
+                    <span id="setupMsg" class="note"></span>
+                    <p class="note">The running hat only: a restart brings back what .env and the unit say.</p>
                 </div>
                 <div class="panel" id="p-visit" hidden>
                     <h3>Visit <small id="visitState">no visitor</small></h3>
+                    <!-- The fortune act (fortune_run.py): the open question, what was heard, the
+                         data so far, skip and end. Shown only while a fortune is open. -->
+                    <div class="c-show" id="fortuneRow" hidden>
+                        <span id="fortuneQ" class="act-q">Question</span>
+                        <span id="fortuneHeard" class="note"></span>
+                        <div id="fortuneData" class="picks data"></div>
+                        <div class="picks" role="group" aria-label="Fortune"><button type="button" class="pick" id="fortuneSkip">Skip question</button><button type="button" class="pick" id="fortuneEnd">End act</button></div>
+                    </div>
+                    <!-- The scripted visit (FISH_SHOW): the open question's answers, a house now,
+                         or the next question. Shown only while a scripted visit is open. -->
+                    <div class="c-show" id="showRow" hidden>
+                        <div class="cue-group" role="group" aria-label="Answer"><span id="showQ">Question</span><span id="showAnswers" class="picks"></span></div>
+                        <div class="cue-group" role="group" aria-label="Force a house"><span>Force a house</span><button type="button" class="pick" data-house="G">Gryffindor</button><button type="button" class="pick" data-house="H">Hufflepuff</button><button type="button" class="pick" data-house="R">Ravenclaw</button><button type="button" class="pick" data-house="S">Slytherin</button><button type="button" class="pick" id="showSkip">Skip question</button></div>
+                        <span id="showHeard" class="note"></span>
+                    </div>
+                    <!-- The fortune for this visitor: hidden unless the hat has the act, greyed until
+                         its lines are rendered, off while one is open. -->
+                    <button id="fortuneBtn" type="button" class="act" hidden>🔮 Fortune</button>
+                    <span id="fortuneLast" class="note"></span>
                     <!-- The hat's visit (visit.py): the cues the hat turns into "visions". A lit chip
-                         is one the hat has not used yet; the row draws what the server holds. -->
+                         is one the hat has not used yet; the row draws what the server holds. The
+                         labels are English, the values the host's Spanish. -->
                     <div class="c-visit" id="cVisit" hidden>
-                        <div class="cue-group" role="group" aria-label="Edad"><span>Edad</span><button type="button" class="cue" data-cue="edad" data-val="niño" aria-pressed="false">Niño</button><button type="button" class="cue" data-cue="edad" data-val="adolescente" aria-pressed="false">Adolescente</button><button type="button" class="cue" data-cue="edad" data-val="adulto" aria-pressed="false">Adulto</button></div>
-                        <div class="cue-group" role="group" aria-label="Viene con"><span>Viene con</span><button type="button" class="cue" data-cue="compania" data-val="solo" aria-pressed="false">Solo</button><button type="button" class="cue" data-cue="compania" data-val="amigos" aria-pressed="false">Amigos</button><button type="button" class="cue" data-cue="compania" data-val="familia" aria-pressed="false">Familia</button></div>
-                        <div class="cue-group" role="group" aria-label="Color"><span>Color</span><button type="button" class="cue" data-cue="color" data-val="rojo" aria-pressed="false">Rojo</button><button type="button" class="cue" data-cue="color" data-val="azul" aria-pressed="false">Azul</button><button type="button" class="cue" data-cue="color" data-val="verde" aria-pressed="false">Verde</button><button type="button" class="cue" data-cue="color" data-val="amarillo" aria-pressed="false">Amarillo</button><button type="button" class="cue" data-cue="color" data-val="negro" aria-pressed="false">Negro</button><button type="button" class="cue" data-cue="color" data-val="blanco" aria-pressed="false">Blanco</button><button type="button" class="cue" data-cue="color" data-val="rosa" aria-pressed="false">Rosa</button><button type="button" class="cue" data-cue="color" data-val="morado" aria-pressed="false">Morado</button></div>
-                        <div class="cue-group" role="group" aria-label="Impresión"><span>Impresión</span><button type="button" class="cue" data-cue="impresion" data-val="tímido" aria-pressed="false">Tímido</button><button type="button" class="cue" data-cue="impresion" data-val="sonriente" aria-pressed="false">Sonriente</button><button type="button" class="cue" data-cue="impresion" data-val="curioso" aria-pressed="false">Curioso</button></div>
-                        <input type="text" id="cueLleva" data-cue="lleva" maxlength="60" placeholder="Lleva… (playera de dinosaurios)" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
-                        <input type="text" id="cueNota" data-cue="nota" maxlength="60" placeholder="Nota (trae un kit de robótica)" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
-                        <!-- The scripted visit (FISH_SHOW): the open question's answers, a house now,
-                             or the next question. Shown only while a scripted visit is open. -->
-                        <div class="c-show" id="showRow" hidden>
-                            <div class="cue-group" role="group" aria-label="Answer"><span id="showQ">Question</span><span id="showAnswers" class="picks"></span></div>
-                            <div class="cue-group" role="group" aria-label="Force a house"><span>Force a house</span><button type="button" class="pick" data-house="G">Gryffindor</button><button type="button" class="pick" data-house="H">Hufflepuff</button><button type="button" class="pick" data-house="R">Ravenclaw</button><button type="button" class="pick" data-house="S">Slytherin</button><button type="button" class="pick" id="showSkip">Skip question</button></div>
-                            <span id="showHeard" class="note"></span>
-                        </div>
+                        <div class="cue-group" role="group" aria-label="Age"><span>Age</span><button type="button" class="cue" data-cue="edad" data-val="niño" aria-pressed="false">Child</button><button type="button" class="cue" data-cue="edad" data-val="adolescente" aria-pressed="false">Teen</button><button type="button" class="cue" data-cue="edad" data-val="adulto" aria-pressed="false">Adult</button></div>
+                        <div class="cue-group" role="group" aria-label="With"><span>With</span><button type="button" class="cue" data-cue="compania" data-val="solo" aria-pressed="false">Alone</button><button type="button" class="cue" data-cue="compania" data-val="amigos" aria-pressed="false">Friends</button><button type="button" class="cue" data-cue="compania" data-val="familia" aria-pressed="false">Family</button></div>
+                        <div class="cue-group" role="group" aria-label="Colour"><span>Colour</span><button type="button" class="cue" data-cue="color" data-val="rojo" aria-pressed="false">Red</button><button type="button" class="cue" data-cue="color" data-val="azul" aria-pressed="false">Blue</button><button type="button" class="cue" data-cue="color" data-val="verde" aria-pressed="false">Green</button><button type="button" class="cue" data-cue="color" data-val="amarillo" aria-pressed="false">Yellow</button><button type="button" class="cue" data-cue="color" data-val="negro" aria-pressed="false">Black</button><button type="button" class="cue" data-cue="color" data-val="blanco" aria-pressed="false">White</button><button type="button" class="cue" data-cue="color" data-val="rosa" aria-pressed="false">Pink</button><button type="button" class="cue" data-cue="color" data-val="morado" aria-pressed="false">Purple</button></div>
+                        <div class="cue-group" role="group" aria-label="Impression"><span>Impression</span><button type="button" class="cue" data-cue="impresion" data-val="tímido" aria-pressed="false">Shy</button><button type="button" class="cue" data-cue="impresion" data-val="sonriente" aria-pressed="false">Smiling</button><button type="button" class="cue" data-cue="impresion" data-val="curioso" aria-pressed="false">Curious</button></div>
+                        <input type="text" id="cueLleva" data-cue="lleva" maxlength="60" placeholder="Wearing… (a vampire cape)" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+                        <input type="text" id="cueNota" data-cue="nota" maxlength="60" placeholder="Note (came for the tarot)" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
                         <span id="showLast" class="note"></span>
                         <span id="visitSent" class="note"></span>
                         <span id="visitMsg" class="note"></span>
                     </div>
-                    <h3>Badge or name <small>the hat asks "¿Tú eres…?"</small></h3>
+                    <h3>Name <small>the hat asks "¿Tú eres…?"; the fortune takes it too</small></h3>
                     <div class="c-read" id="cRead">
-                        <button id="badgeBtn" type="button">📷 Badge photo</button>
-                        <button id="galleryBtn" type="button">🖼️ Gallery</button>
-                        <label id="lookWrap" hidden><input type="checkbox" id="lookTick"> Describe the look (with consent)</label>
                         <input type="text" id="readName" placeholder="Name" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="go">
-                        <button id="readBtn" type="button">Read</button>
+                        <button id="readBtn" type="button">Tell the hat</button>
                         <span id="readMsg" class="note" role="status" aria-live="polite"></span>
-                        <input type="file" id="badgeCam" accept="image/jpeg,image/*" capture="environment" hidden>
-                        <input type="file" id="badgeFile" accept="image/jpeg,image/*" hidden>
                     </div>
                 </div>
                 <div class="panel" id="p-checks">
@@ -294,10 +319,6 @@
                     <h3>Voice</h3>
                     <table class="feed"><thead><tr><th>time</th><th>s</th><th>voice</th><th>text</th></tr></thead>
                         <tbody id="ttsRows"></tbody></table>
-                    <h3>Badge reading <small>never the photo</small></h3>
-                    <table class="feed"><thead><tr><th>time</th><th>s</th><th>tokens</th><th>result</th><th>asked</th></tr></thead>
-                        <tbody id="visionRows"></tbody></table>
-                    <details><summary>The badge prompt</summary><pre id="badgePrompt"></pre></details>
                 </div>
                 <div class="panel" id="p-inputs" hidden>
                     <h3>Trigger</h3>
@@ -407,7 +428,8 @@
                through Python: they are in the journal only.</p>
         </section>
     </main>
-    <!-- Within the thumb's reach: a new visitor, and the backup for the remote's button. -->
+    <!-- Within the thumb's reach: a new visitor (the house act), and the backup for the remote's
+         button. The fortune's button sits on the Visit tab. -->
     <nav id="thumbBar">
         <button id="visitNew" type="button" hidden>✨ New visitor</button>
         <button id="pttButton" type="button">🎙 Hold to talk</button>

@@ -5,8 +5,8 @@
  *   GET /debug/state        the slow state, every 5 s while the page is shown and after an action
  *   GET /debug/events       every record the fish keeps (log lines, keys, turns, lines sent,
  *                           the page's own events); a first load gets only the last ones
- *   POST /debug/...         the tests, the arm, STOP;  /visit /cues /badge /reading /ptt /speak
- *                           /wait /micstate /utterance: the operator's tools
+ *   POST /debug/...         the tests, the arm, STOP;  /visit /cues /show /fortune /reading /ptt
+ *                           /speak /wait /micstate /utterance: the operator's tools
  * Text from the fish only ever enters the page through textContent. Records replayed on
  * connect only set state (the visit, the last lines); what moves the hat, buzzes the phone or
  * starts a recording runs only for records that arrive live (S.caughtUp).
@@ -47,7 +47,8 @@
 
   // ---- store -------------------------------------------------------------------------------
   const S = { state: null, boot: "", log: [], keys: [], presses: {}, turns: [], tx: [], acts: [],
-              llm: [], stt: [], tts: [], vision: [], modelOnly: null, helloSeq: 0, caughtUp: false, openCalls: new Set(), seenCall: 0,
+              llm: [], stt: [], tts: [], modelOnly: null, helloSeq: 0, caughtUp: false, openCalls: new Set(), seenCall: 0,
+              visit: null, fortune: null,
               levels: [], sel: null, live: "", logOff: new Set(), logPaused: false,
               logWindow: null, armedUntil: 0, lastSeq: 0, missed: 0, connected: false };
   const dirty = new Set(["all"]);
@@ -195,7 +196,7 @@
         push(S.log, { kind: "log", t: Date.now() / 1000, mark: true,
                       text: "──── the fish restarted (pid " + r.pid + ") ────" }, CAP.log);
         S.turns = []; S.keys = []; S.tx = []; S.lastSeq = 0; S.sel = null;
-        S.llm = []; S.stt = []; S.tts = []; S.vision = []; S.modelOnly = null; S.openCalls.clear();
+        S.llm = []; S.stt = []; S.tts = []; S.modelOnly = null; S.openCalls.clear();
         mark("all");
       }
       S.boot = r.boot;
@@ -220,9 +221,9 @@
       case "level": S.levels.push(r.rms); if (S.levels.length > 200) S.levels.shift();
                     if (live) fish.listening(); mark("pipe"); wakeLevel(); break;
       case "action": case "http": push(S.acts, r, CAP.act); mark("clients"); break;
-      case "llm": case "stt": case "tts": case "vision": push(S[r.kind], r, 50); mark("model"); break;
-      case "visitor":                              // a reading started: the earlier visitor's records go
-        S.llm = []; S.stt = []; S.tts = []; S.vision = []; S.modelOnly = null; S.openCalls.clear();
+      case "llm": case "stt": case "tts": push(S[r.kind], r, 50); mark("model"); break;
+      case "visitor":                              // a new visitor: the earlier one's records go
+        S.llm = []; S.stt = []; S.tts = []; S.modelOnly = null; S.openCalls.clear();
         mark("model"); break;
       case "page": {
         const ev = r.ev || {};
@@ -233,7 +234,10 @@
             else $("saidLine").textContent = ev.text ? "said: " + ev.text : "";
             break;
           case "speak": if (live) fish.speak(ev, ageOf(r), r.t); break;
-          case "visit": S.visit = ev; fish.visit(ev, live); visitRow.view(ev); mark("bar"); break;
+          case "visit":                           // the visit's view, with the show's and the fortune's
+            S.visit = ev; fish.visit(ev, live); visitRow.view(ev);
+            fortuneRow.view(ev.fortune, ev); fish.fortune(ev.fortune, live);
+            mark("bar", "panels"); break;
           case "draft": if (live) voiceDraft(ev.text || ""); break;
           case "reading": if (live) fish.thinking("model"); break;
           case "ptt": if (live) ptt.event(ev); break;
@@ -437,12 +441,31 @@
     function reveal(house) {
       const key = HOUSE[house] || "";
       for (const k of Object.values(HOUSE)) box.classList.toggle("h-" + k, k === key);
+      box.classList.remove("h-fortune", "reading");
       box.classList.remove("reveal"); void box.offsetWidth; box.classList.add("reveal");
       $("hatHouse").textContent = "¡" + house + "!";
       $("hatHouse").hidden = false;
       buzz([40, 40, 40, 40, 40, 40, 120]);
       clearTimeout(houseTimer);
       houseTimer = setTimeout(() => { $("hatHouse").hidden = true; box.classList.remove("reveal"); for (const k of Object.values(HOUSE)) box.classList.remove("h-" + k); }, 10000);
+    }
+    // The fortune: a live edge into its reading turns the room violet, swells the candle's
+    // halo and shows the sign for 12 s (the ending is the act's reveal).
+    let lastFortune = null;
+    function fortune(f, live) {
+      if (!f) return;
+      const prev = lastFortune; lastFortune = f;
+      if (live && f.open && f.stage === "reading" && prev && prev.n === f.n && prev.open && prev.stage !== "reading") foresee((f.data || {}).signo || "");
+    }
+    function foresee(sign) {
+      for (const k of Object.values(HOUSE)) box.classList.remove("h-" + k);
+      box.classList.add("h-fortune", "reading");
+      box.classList.remove("reveal"); void box.offsetWidth; box.classList.add("reveal");
+      $("hatHouse").textContent = sign ? "✦ " + sign + " ✦" : "✦";
+      $("hatHouse").hidden = false;
+      buzz([40, 40, 40, 40, 120]);
+      clearTimeout(houseTimer);
+      houseTimer = setTimeout(() => { $("hatHouse").hidden = true; box.classList.remove("reveal", "h-fortune", "reading"); }, 12000);
     }
     // A turn that died: a shake and where it died; a turn that heard nothing: amber, no shake.
     function turnEnded(t) {
@@ -518,12 +541,12 @@
       stillMouth = Math.max(0, Math.min(1, Number(PARAMS.get("mouth")) || 0));
       draw(stillMouth, performance.now());
     }
-    const api = { speak, line, state, listening, listen, heard, thinking, reconcile, visit, turnEnded,
+    const api = { speak, line, state, listening, listen, heard, thinking, reconcile, visit, turnEnded, fortune, foresee,
                   perk(ms) { perkUntil = performance.now() + ms; wake(); } };
     if (stillMode) for (const k of ["listening", "listen", "heard", "thinking", "reconcile"]) api[k] = () => {};
     return api;
   }, { speak() {}, line() {}, state() {}, listening() {}, listen() {}, heard() {}, thinking() {},
-       reconcile() {}, visit() {}, turnEnded() {}, perk() {} });
+       reconcile() {}, visit() {}, turnEnded() {}, fortune() {}, foresee() {}, perk() {} });
 
   // ---- the slow state --------------------------------------------------------------------------
   let stateTimer = null;
@@ -539,10 +562,12 @@
       const armed = (S.state.mode || {}).armed_s || 0;
       setArmed(armed);
       const page = S.state.page && !S.state.page.error ? S.state.page : {};
+      const tab = S.state.show_tab && !S.state.show_tab.error ? S.state.show_tab : {};
       visitRow.status(page);
-      reader.status(page);
+      fortuneRow.status(page, tab);
       phoneMic.status(page);
       if (page.visit && !S.visit) { S.visit = page.visit; fish.visit(page.visit, false); visitRow.view(page.visit); }
+      if (page.visit && page.visit.fortune && !S.fortune) { fortuneRow.view(page.visit.fortune, page.visit); fish.fortune(page.visit.fortune, false); }
       fish.reconcile(S.state.mode);
     } catch (_) { S.state = S.state || null; S.stateAt = 0; }
     mark("bar", "hints", "panels");
@@ -559,9 +584,10 @@
     refresh(); connect();
   });
 
-  // ---- the Show tab: is the hat ready, and the few things changed during a show ----------------
+  // ---- the Status tab: is the hat ready; the Settings tab: the few things changed in an evening --
   // Rows from /debug/state's show_tab (and the remote, link, service sections). Green, amber or
   // red, each with what to do in a few words. The controls post to routed actions only.
+  const PLACE_EN = { casa: "home", fiesta: "party", universidad: "university", otro: "other" };
   function goRow(name, cls, text, fix) {
     const r = el("div", "go " + cls);
     r.appendChild(el("b", "", name));
@@ -574,7 +600,7 @@
     s.className = "summary " + cls;
     s.textContent = text;
   }
-  function renderShow() {
+  function renderStatus() {
     const rows = $("goRows");
     // Never a "ready" without data: until the hat answers, and when its answer gets old, say so.
     const age = S.stateAt ? (performance.now() - S.stateAt) / 1000 : Infinity;
@@ -617,21 +643,62 @@
       ap ? "own Wi-Fi (no internet)" : n.connection ? n.connection + (n.ip ? " · " + n.ip : "") : "unknown",
       hw.internet ? "internet marked failed: script visits" : ap ? "visits run on the script" : ""));
     const sh = t.show || {}, echo = !!((st.backends || {}).echo);
-    const mode = echo ? "echo" : sh.setting === "off" ? "model" : sh.setting;
     out.push(goRow("Mode", "ok", echo ? "echo: repeats what it hears"
       : sh.setting === "off" ? "model" : sh.setting === "script" ? "script" : "auto: " + (sh.now === "script" ? "script" : "model") + " (" + sh.why + ")", ""));
     if (sh.lines) out.push(goRow("Lines", sh.ready < sh.lines ? "warn" : "ok", sh.ready + " of " + sh.lines + " ready",
       sh.ready < sh.lines ? "rendering after a restart" : ""));
+    // The fortune act: its toggles and the place, and whether its clips are rendered.
+    const ft = t.fortune;
+    if (ft) {
+      const short = typeof ft.ready === "number" && ft.lines ? ft.ready < ft.lines : ft.ready === false;
+      out.push(goRow("Fortune", short ? "warn" : "ok",
+        (ft.deck === "off" ? "no deck" : ft.deck || "no deck") + " · cup " + (ft.cup ? "on" : "off") + " · " + (PLACE_EN[ft.place] || ft.place || "other")
+          + (typeof ft.ready === "number" && ft.lines ? " · " + ft.ready + " of " + ft.lines + " lines" : ""),
+        short ? "rendering after a restart" : ""));
+    }
+    out.push(goRow("Act", "ok", actNow(), ""));
     out.push(goRow("Start at boot", svc.enabled === false ? "bad" : "ok", svc.enabled === false ? "off" : "on",
       svc.enabled === false ? "systemctl --user enable fish-brain" : ""));
     rows.replaceChildren(...out);
     const bad = out.find((r) => r.classList.contains("bad"));
     if (bad) setSummary("bad", "Check: " + bad.querySelector("b").textContent + " · " + bad.querySelector("span").textContent);
     else setSummary("ok", "Ready for visitors");
+  }
+  // What is on now: a fortune, a visit, or nothing (the band says the same).
+  function actNow() {
+    const v = S.visit, f = S.fortune;
+    if (f && f.open) return (f.stage === "reading" ? "fortune: reading the future" : "fortune: question " + f.q + " of " + f.of) + (f.first ? " · " + f.first : "");
+    if (v && v.stage) return (v.stage > v.of ? "verdict: " + (v.house || "—") : "visit: stage " + v.stage + " of " + v.of) + (v.first ? " · " + v.first : "");
+    return "none";
+  }
+  // The pressed states of the Settings tab: mode, hardware and network from show_tab; the place
+  // and the fortune's toggles from the switches by name (show_tab's fortune as the fallback).
+  function switchValue(name) {
+    const w = (Array.isArray((S.state || {}).switches) ? S.state.switches : []).find((x) => x.name === name);
+    return w ? w.value : undefined;
+  }
+  function pressed(selector, test) {
+    for (const b of document.querySelectorAll(selector)) b.setAttribute("aria-pressed", test(b) ? "true" : "false");
+  }
+  function renderSetup() {
+    const st = S.state, t = st && st.show_tab;
+    if (!st || !t || t.error) return;
+    const hw = t.hw || {}, a = t.audio || {}, n = t.net || {}, sh = t.show || {}, ft = t.fortune || {};
+    const echo = !!((st.backends || {}).echo);
+    const mode = echo ? "echo" : sh.setting === "off" ? "model" : sh.setting;
     if (typeof a.volume === "number" && !volDragging) { $("volSlider").value = Math.round(a.volume * 100); $("volNow").textContent = Math.round(a.volume * 100) + " %"; }
-    for (const b of document.querySelectorAll("[data-mode]")) b.setAttribute("aria-pressed", b.dataset.mode === mode ? "true" : "false");
-    for (const b of document.querySelectorAll("[data-hw]")) b.setAttribute("aria-pressed", hw[b.dataset.hw] ? "true" : "false");
-    for (const b of document.querySelectorAll("[data-net]")) b.setAttribute("aria-pressed", b.dataset.net === (n.pin || "auto") ? "true" : "false");
+    pressed("[data-mode]", (b) => b.dataset.mode === mode);
+    pressed("[data-hw]", (b) => !!hw[b.dataset.hw]);
+    pressed("[data-net]", (b) => b.dataset.net === (n.pin || "auto"));
+    const place = switchValue("place") || ft.place || "otro";
+    pressed("[data-place]", (b) => b.dataset.place === place);
+    $("placeOther").hidden = place !== "otro";
+    const text = switchValue("place_text"), field = $("placeText");
+    if (text !== undefined && document.activeElement !== field) field.value = text || "";
+    const deck = switchValue("fortune_deck") || ft.deck || "tarot";
+    pressed('[data-fortune="deck"]', (b) => b.dataset.val === deck);
+    const cup = switchValue("fortune_cup");
+    $("cupBtn").setAttribute("aria-pressed", (cup !== undefined ? cup : ft.cup) ? "true" : "false");
   }
   setInterval(() => mark("panels"), 5000);      // the stale check runs even when nothing arrives
   let volDragging = false, volTimer = 0;
@@ -641,7 +708,7 @@
     clearTimeout(volTimer);
     volTimer = setTimeout(async () => {
       const out = await post("/debug/volume", { value: Number($("volSlider").value) });
-      $("showMsg").textContent = out.ok ? "" : "the volume could not be changed";
+      $("setupMsg").textContent = out.ok ? "" : "the volume could not be changed";
       volDragging = false; soon();
     }, 250);
   });
@@ -653,10 +720,39 @@
       const a1 = await post("/debug/set", { name: "show", value: show });
       const a2 = await post("/debug/set", { name: "mode", value: mode });
       const bad = [a1, a2].find((o) => !o.ok);
-      $("showMsg").textContent = bad ? "refused: " + (bad.error || bad.status) : "";
+      $("setupMsg").textContent = bad ? "refused: " + (bad.error || bad.status) : "";
       soon();
     });
   }
+  // One switch set from a button: the tap shows at once, the state confirms it.
+  async function setFromTap(name, value) {
+    const out = await post("/debug/set", { name, value });
+    $("setupMsg").textContent = out.ok ? "" : "refused: " + (out.error === "busy" ? "the hat is mid-turn, try again when it waits" : out.error || out.status);
+    soon();
+  }
+  // The place: a setting for the evening (the intro and the closing of the fortune follow it);
+  // "Other" opens a text the web model alone is told.
+  for (const b of document.querySelectorAll("[data-place]")) {
+    b.addEventListener("click", () => {
+      pressed("[data-place]", (o) => o === b);
+      $("placeOther").hidden = b.dataset.place !== "otro";
+      setFromTap("place", b.dataset.place);
+    });
+  }
+  $("placeText").addEventListener("change", () => setFromTap("place_text", $("placeText").value.trim().slice(0, 60)));
+  $("placeText").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("placeText").blur(); } });
+  // The fortune's extras: the deck the visitor draws from (or none) and the cup.
+  for (const b of document.querySelectorAll('[data-fortune="deck"]')) {
+    b.addEventListener("click", () => {
+      pressed('[data-fortune="deck"]', (o) => o === b);
+      setFromTap("fortune_deck", b.dataset.val);
+    });
+  }
+  $("cupBtn").addEventListener("click", () => {
+    const on = $("cupBtn").getAttribute("aria-pressed") !== "true";
+    $("cupBtn").setAttribute("aria-pressed", on ? "true" : "false");
+    setFromTap("fortune_cup", on);
+  });
   // Hardware he marks failed. Marking the speaker or the microphone failed also arms this phone
   // for it in the same tap (a browser lets sound and the microphone start only from a tap).
   for (const b of document.querySelectorAll("[data-hw]")) {
@@ -666,14 +762,14 @@
       if (failed && part === "mic") phoneMic.arm();
       b.setAttribute("aria-pressed", failed ? "true" : "false");
       const out = await post("/debug/hw", { part, failed });
-      $("showMsg").textContent = out.ok ? "" : "refused: " + (out.error || out.status);
+      $("setupMsg").textContent = out.ok ? "" : "refused: " + (out.error || out.status);
       soon();
     });
   }
   for (const b of document.querySelectorAll("[data-net]")) {
     b.addEventListener("click", async () => {
       const out = await post("/debug/net", { pin: b.dataset.net });
-      $("showMsg").textContent = out.ok ? (b.dataset.net === "ap" ? "the hat raises its own Wi-Fi" : "the hat looks for its known networks") : "refused";
+      $("setupMsg").textContent = out.ok ? (b.dataset.net === "ap" ? "the hat raises its own Wi-Fi" : "the hat looks for its known networks") : "refused";
       soon();
     });
   }
@@ -739,7 +835,7 @@
     if (d("log") && col("colLog")) run(renderLog);
     if ((d("panels") || d("keys")) && shown("inputs")) run(renderInputs);
     if ((d("panels") || d("motors") || d("tx")) && shown("motors")) run(renderMotors);
-    if (d("panels")) { run(renderShow); run(renderVoice); run(renderCloud); run(renderBoard); run(renderConfig); run(renderChecks); run(renderSwitches); }
+    if (d("panels")) { run(renderStatus); run(renderSetup); run(renderVoice); run(renderCloud); run(renderBoard); run(renderConfig); run(renderChecks); run(renderSwitches); }
     if ((d("panels") || d("model")) && shown("model")) run(renderModel);
     if (d("panels") || d("clients")) run(renderClients);
   }
@@ -1371,17 +1467,6 @@
       tr.appendChild(el("td", r.error ? "bad wrap" : "wrap", r.error ? r.error.type + ": " + r.error.text : r.text));
       return tr;
     }));
-    fill($("visionRows"), pick(S.vision).map((r) => {
-      const tr = el("tr");
-      tr.appendChild(el("td", "dim", clockMs(r.t)));
-      tr.appendChild(el("td", "", secs(r.seconds)));
-      tr.appendChild(el("td", "", r.tokens ?? ""));
-      tr.appendChild(el("td", r.error || !r.found ? "bad wrap" : "wrap", r.error ? r.error.type + ": " + r.error.text
-        : r.found ? r.name + " (says: " + r.name_for_speech + ", " + r.confidence + ")" + (r.look ? " · look: " + r.look : "") : "not found"));
-      tr.appendChild(el("td", "dim wrap", r.ask));
-      return tr;
-    }));
-    $("badgePrompt").textContent = mo.badge_prompt || "";
   }
   $("modelClear").addEventListener("click", () => { S.modelOnly = null; mark("model"); });
 
@@ -1391,9 +1476,13 @@
     const a = $("hAgo");
     a.textContent = ago === null ? "" : ago < 2 ? "now" : ago + " s ago";
     a.className = "chip " + (ago === null ? "unknown" : ago > 15 ? "bad" : ago > 8 ? "warn" : "ok");
-    const v = S.visit, b = $("bandVisit");
-    b.hidden = !v || !v.stage;
-    if (v && v.stage) {
+    const v = S.visit, f = S.fortune, b = $("bandVisit");
+    const fortune = !!(f && f.open);
+    b.hidden = !fortune && !(v && v.stage);
+    if (fortune) {                                // the act on now; a tap opens the Visit tab
+      b.textContent = (f.stage === "reading" ? "Fortune: reading" : "Fortune " + f.q + "/" + f.of) + (f.first ? " · " + f.first : "");
+      b.className = "chip warn";
+    } else if (v && v.stage) {
       b.textContent = v.stage > v.of ? "Verdict: " + (v.house || "—") + (v.first ? " · " + v.first : "")
                                      : "Stage " + v.stage + "/" + v.of + (v.first ? " · " + v.first : "");
       b.className = "chip " + (v.stage > v.of ? "ok" : "warn");
@@ -1412,6 +1501,7 @@
     wake.paint();
   }
   setInterval(() => { if (!document.hidden) renderBand(); }, 1000);
+  $("bandVisit").addEventListener("click", () => showTab("visit"));
 
   // ---- wait-to-speak: a draft lands in the Voice tab's box --------------------------------------
   function voiceDraft(text) {
@@ -1502,74 +1592,12 @@
     return { event, releaseNow };
   }, { event() {}, releaseNow() {} });
 
-  // ---- the badge photo and the typed name (ADR 0007): "¿Tú eres X?" -----------------------------
+  // ---- the typed name (ADR 0007, the photo gone): "¿Tú eres X?"; the fortune reads it too ------
   const reader = guard("reader", () => {
-    const cam = $("badgeCam"), file = $("badgeFile"), lookWrap = $("lookWrap"), lookTick = $("lookTick"),
-          name = $("readName"), note = $("readMsg"), badgeBtn = $("badgeBtn"), galleryBtn = $("galleryBtn"), readBtn = $("readBtn");
-    const LONG_EDGE = 1024;
+    const name = $("readName"), note = $("readMsg"), readBtn = $("readBtn");
     let busy = false;
     function say(text, cls) { note.textContent = text || ""; note.className = "note " + (cls || ""); }
-    function setBusy(on) { busy = on; for (const b of [badgeBtn, galleryBtn, readBtn]) b.disabled = on; }
-    // One decode: createImageBitmap honours the EXIF orientation and resizes; an older browser
-    // gets an Image and a canvas.
-    async function toJpeg(f) {
-      let w, h, source, bitmap = null, resized = null;
-      try {
-        bitmap = await createImageBitmap(f, { imageOrientation: "from-image" });
-        const sc = Math.min(1, LONG_EDGE / Math.max(bitmap.width, bitmap.height));
-        w = Math.max(1, Math.round(bitmap.width * sc)); h = Math.max(1, Math.round(bitmap.height * sc));
-        resized = sc < 1 ? await createImageBitmap(bitmap, { resizeWidth: w, resizeHeight: h, resizeQuality: "high" }) : bitmap;
-        source = resized;
-      } catch (_) {
-        source = await new Promise((ok, no) => {
-          const img = new Image();
-          img.onload = () => ok(img);
-          img.onerror = () => no(new Error("decode"));
-          img.src = URL.createObjectURL(f);
-        });
-        const sc = Math.min(1, LONG_EDGE / Math.max(source.naturalWidth, source.naturalHeight));
-        w = Math.max(1, Math.round(source.naturalWidth * sc)); h = Math.max(1, Math.round(source.naturalHeight * sc));
-      }
-      const c = document.createElement("canvas");
-      c.width = w; c.height = h;
-      const g = c.getContext("2d");
-      g.imageSmoothingQuality = "high";
-      g.drawImage(source, 0, 0, w, h);
-      if (resized && resized !== bitmap) resized.close();
-      if (bitmap) bitmap.close();
-      if (source instanceof HTMLImageElement) URL.revokeObjectURL(source.src);
-      return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error("jpeg"))), "image/jpeg", 0.8));
-    }
-    async function sendBadge(f) {
-      if (!f || busy) return;
-      setBusy(true);
-      say("Reading the badge…", "busy");
-      fish.thinking("badge");
-      try {
-        const blob = await toJpeg(f);
-        const h = headers(false);
-        h["Content-Type"] = "image/jpeg";
-        if (lookTick.checked && !lookWrap.hidden) h["X-Fish-Look"] = "1";
-        const r = await fetch("/badge", { method: "POST", headers: h, body: blob });
-        let out = {};
-        try { out = await r.json(); } catch (_) {}
-        if (r.status === 409) say("The hat is busy", "bad-text");
-        else if (r.status === 503 && out.error === "offline") say("No internet to read the badge", "bad-text");
-        else if (r.status === 503) say("No badge reader: type the name", "bad-text");
-        else if (!r.ok) say("Could not read it: type the name", "bad-text");
-        else if (out.found) {
-          name.value = "";
-          const conf = { high: "sure", medium: "fairly sure", low: "unsure" }[out.confidence] || out.confidence;
-          say((out.first_name || out.name) + " · " + conf + " · the hat asks", out.confidence === "high" ? "" : "warn-text");
-        } else { say("Could not read it: type the name", "bad-text"); name.focus(); }
-      } catch (_) {
-        say("Could not send the photo", "bad-text");
-      } finally {
-        lookTick.checked = false;               // consent is per visitor
-        cam.value = ""; file.value = "";
-        setBusy(false);
-      }
-    }
+    function setBusy(on) { busy = on; readBtn.disabled = on; }
     async function sendName() {
       const n = name.value.trim();
       if (!n || busy) { name.focus(); return; }
@@ -1582,22 +1610,10 @@
       else { say("Sent: the hat greets " + n, ""); name.value = ""; name.blur(); }
       setBusy(false);
     }
-    badgeBtn.addEventListener("click", () => cam.click());
-    galleryBtn.addEventListener("click", () => file.click());
-    cam.addEventListener("change", () => sendBadge(cam.files[0]));
-    file.addEventListener("change", () => sendBadge(file.files[0]));
     readBtn.addEventListener("click", sendName);
     name.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sendName(); } });
-    return {
-      status(page) {
-        lookWrap.hidden = !page.reading_look;
-        const off = page.reading === false;
-        badgeBtn.disabled = galleryBtn.disabled = off || busy;
-        badgeBtn.title = off ? "no badge reader" : "";
-      },
-      busy: () => busy,
-    };
-  }, { status() {}, busy: () => false });
+    return { busy: () => busy, name: () => name.value.trim() };
+  }, { busy: () => false, name: () => "" });
 
   // ---- the hat's visit: "New visitor" and the cues (visit.py) --------------------------------
   // The server owns the cues: a lit chip is one the hat has not used yet, and the row draws the
@@ -1606,6 +1622,8 @@
     const row = $("cVisit"), btn = $("visitNew"), note = $("visitMsg"), used = $("visitSent");
     const texts = [$("cueLleva"), $("cueNota")];
     const chips = Array.from(row.querySelectorAll(".cue"));
+    const label = {};                              // the host's Spanish value → the chip's English
+    for (const c of chips) label[c.dataset.cue + ":" + c.dataset.val] = c.textContent;
     let on = false, rev = 0, postedRev = 0, inflight = false, timer = 0;
     let latest = null, lastN = -1, wantN = null, btnTimer = 0;
     function say(text, cls) { note.textContent = text || ""; note.className = "note " + (cls || ""); }
@@ -1659,7 +1677,7 @@
       const who = v.first ? " · " + v.first : "";
       $("visitState").textContent = !v.stage ? "no visitor"
         : v.stage > v.of ? "verdict: " + (v.house || "—") + who : "stage " + v.stage + " of " + v.of + who;
-      const s = Object.values(v.sent || {});
+      const s = Object.entries(v.sent || {}).map(([k, val]) => label[k + ":" + val] || val);
       used.textContent = s.length ? "used: " + s.join(" · ") : "";
       if (rev !== postedRev || inflight || timer) { latest = v; return; }
       latest = null;
@@ -1711,6 +1729,7 @@
         $("heardLine").textContent = ""; $("saidLine").textContent = "";
         wantN = lastN + 1;                          // enabled again by the new visit's view
         btnTimer = setTimeout(() => { wantN = null; btn.disabled = false; }, 3000);
+        showTab("visit");
         return;
       }
       msg(null, out.status === 409 ? "refused: the hat is busy · wait until it finishes"
@@ -1722,6 +1741,112 @@
       view, flush, on: () => on,
     };
   }, { status() {}, view() {}, flush() {}, on: () => false });
+
+  // ---- the fortune act: "🔮 Fortune", the open question, skip and end (fortune_run.py) --------
+  // The server owns the act: the row draws its view (the `visit` record's `fortune`, the page's
+  // on a load) and the buttons post to /fortune. An event without the key keeps the last view.
+  // The big button is hidden unless the hat has the act, greyed until its clips are rendered
+  // (show_tab's count first, the view's flag otherwise) and off while an act is open.
+  const QUESTION_EN = { fecha: "birth date", sueno: "dreams", carta: "the card", taza: "the cup", animal: "the animal" };
+  const DATA_EN = { signo: "sign", elemento: "element", numero: "lucky number", sueno: "dream", carta: "card",
+                    taza: "cup", animal: "animal", luna: "moon", palabra: "magic word" };
+  const fortuneRow = guard("fortune", () => {
+    const row = $("fortuneRow"), btn = $("fortuneBtn"), q = $("fortuneQ"), heard = $("fortuneHeard");
+    const data = $("fortuneData"), last = $("fortuneLast");
+    let open = false, ready = true, tabReady = null, wantOpen = false, btnTimer = 0, still = false, label = "🔮 Fortune";
+    function refuse(out) {
+      msg(null, out.status === 409 && out.why === "visit open" ? "refused: finish the visit first (or Force a house)"
+        : out.status === 503 ? "refused: the fortune is off" : out.status === 0 ? "no connection"
+        : out.busy || out.status === 409 ? "refused: the hat is busy" : "refused: " + (out.error || out.status), 6000);
+    }
+    async function tap(action, value) {
+      const out = await post("/fortune", { action, value: value || "" });
+      if (!out.ok) refuse(out);
+      return !!out.ok;
+    }
+    function paint() {
+      btn.disabled = open || wantOpen;
+      btn.classList.toggle("dim", !ready);
+      btn.textContent = label + (ready ? "" : " · rendering…");
+      btn.title = !ready ? "its lines are still rendering: wait" : open ? "a fortune is open" : "";
+    }
+    function draw(f, v) {
+      open = !!f.open;
+      if (open && wantOpen) { wantOpen = false; clearTimeout(btnTimer); }
+      row.hidden = !open;
+      const who = f.first ? " · " + f.first : "";
+      if (open) {
+        q.textContent = f.stage === "reading" ? "Reading the future…" + who
+          : "Question " + f.q + " of " + f.of + " · " + (QUESTION_EN[f.qid] || f.qid || "") + (f.tries ? " (asked again)" : "") + who;
+        heard.textContent = f.heard ? "heard: " + f.heard : "";
+        const d = f.data || {};
+        fill(data, Object.keys(DATA_EN).filter((k) => d[k] !== undefined && d[k] !== null && d[k] !== "").map((k) => {
+          const c = el("span", "datum", d[k]); c.title = DATA_EN[k]; return c;
+        }));
+        $("visitState").textContent = (f.stage === "reading" ? "fortune: reading" : "fortune: question " + f.q + " of " + f.of) + who;
+      }
+      label = "🔮 Fortune" + (v && v.stage > v.of && v.first ? " for " + v.first : "");
+      const l = f.last || {};
+      const got = Object.values(l.data || {}).filter((x) => x !== null && x !== "");
+      last.textContent = l.n ? "last fortune: " + (got.length ? got.join(" · ") : "nothing heard") + (l.mode ? " (" + (l.mode === "llm" ? "model" : l.mode) + ")" : "") : "";
+      if (typeof f.ready === "boolean" && tabReady === null) ready = f.ready;
+      paint();
+    }
+    function view(f, v) {
+      if (still) return;
+      if (f === undefined) f = S.fortune;          // an event without the key: the last view stays
+      if (!f) return;
+      S.fortune = f;
+      draw(f, v);
+    }
+    btn.addEventListener("click", async () => {
+      if (btn.disabled || reader.busy()) return;
+      visitRow.flush();
+      wantOpen = true; paint();
+      msg(null, "calling the hat…", 3000);
+      const out = await post("/fortune", { action: "start", value: reader.name().slice(0, 20) });
+      if (out.ok) {
+        $("heardLine").textContent = ""; $("saidLine").textContent = "";
+        btnTimer = setTimeout(() => { wantOpen = false; paint(); }, 3000);   // or the open view, sooner
+        showTab("visit");
+        return;
+      }
+      wantOpen = false; paint();
+      refuse(out);
+    });
+    $("fortuneSkip").addEventListener("click", () => tap("skip"));
+    $("fortuneEnd").addEventListener("click", () => tap("end"));
+    // ?fortune=<1..6>: a still at that question (6 = the reading), for screenshots.
+    const STILL_Q = Number(PARAMS.get("fortune")) || 0;
+    if (STILL_Q) {
+      still = true;
+      btn.hidden = false;
+      const qids = Object.keys(QUESTION_EN), of = qids.length, at = Math.min(STILL_Q, of);
+      const all = { signo: "Escorpio", elemento: "agua", numero: "6", sueno: "dientes", carta: "La Muerte",
+                    taza: "una estrella", animal: "el gato negro", luna: "llena", palabra: "Zumbalí" };
+      const have = [0, 3, 4, 5, 6, 9][Math.min(STILL_Q, 6) - 1];
+      const f = { on: true, ready: true, open: true, deck: "tarot", cup: true, place: "fiesta", last: null, n: 1,
+                  stage: STILL_Q > of ? "reading" : "ask", q: at, of, qid: qids[at - 1], tries: STILL_Q === 2 ? 1 : 0,
+                  question: "", heard: STILL_Q > 1 ? "veintitrés de octubre" : "", first: "Ana", house: "Ravenclaw",
+                  data: Object.fromEntries(Object.entries(all).slice(0, have)) };
+      S.fortune = f;
+      draw(f, { n: 1, stage: 5, of: 4, first: "Ana", house: "Ravenclaw" });
+      if (f.stage === "reading") fish.foresee(f.data.signo);
+    }
+    return {
+      status(page, tab) {
+        if (still) return;
+        btn.hidden = !page.fortune_enabled;
+        const ft = tab && tab.fortune;
+        if (ft && ft.ready !== undefined) {
+          tabReady = typeof ft.ready === "boolean" ? ft.ready : !(ft.lines && ft.ready < ft.lines);
+          ready = tabReady;
+        }
+        paint();
+      },
+      view,
+    };
+  }, { status() {}, view() {} });
 
   // ---- the phone's microphone: off unless he turns it on (the Voice tab) --------------------------
   // On: the permission prompt (inside the tap), then the board is told to take recordings from
@@ -1931,10 +2056,19 @@
 
   // ---- tabs, arm, STOP ---------------------------------------------------------------------------
   // A tab names panels (data-panels) or, on a phone only, a whole column (data-col: turns, log).
+  // A name a phone still holds from before (the Show tab) maps to today's; an unknown one falls
+  // to the default without a second look-up.
+  const TAB_ALIAS = { show: "status" };
+  const defaultTab = () => (PHONE.matches ? "status" : "checks");
+  function tabButton(name) {
+    for (const b of $("tabs").children) if (b.dataset.tab === name && (PHONE.matches || !b.dataset.col)) return b;
+    return null;
+  }
   function showTab(name) {
-    let target = null;
-    for (const b of $("tabs").children) if (b.dataset.tab === name && (PHONE.matches || !b.dataset.col)) target = b;
-    if (!target) return showTab(PHONE.matches ? "show" : "checks");
+    name = TAB_ALIAS[name] || name;
+    const target = tabButton(name) || tabButton(defaultTab());
+    if (!target) return;
+    name = target.dataset.tab;
     for (const b of $("tabs").children) b.classList.toggle("on", b === target);
     document.body.dataset.col = target.dataset.col || "colPanels";
     if (target.dataset.panels) {
@@ -1959,8 +2093,9 @@
     }
   }
   place();
-  PHONE.addEventListener("change", () => { place(); showTab(localStorage.getItem("fishDebugTab") || "show"); });
-  try { showTab(localStorage.getItem("fishDebugTab") || (PHONE.matches ? "show" : "checks")); } catch (_) { showTab("checks"); }
+  const storedTab = () => { try { return localStorage.getItem("fishDebugTab") || ""; } catch (_) { return ""; } };
+  PHONE.addEventListener("change", () => { place(); showTab(storedTab() || defaultTab()); });
+  showTab(PARAMS.get("tab") || storedTab() || defaultTab());        // ?tab=<name> for a look or a still
 
   refresh().then(() => connect());
 })();

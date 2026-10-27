@@ -330,9 +330,29 @@ body.still .perch, body.still #tip, body.still #eyes, body.still #tipPose { anim
 #pttButton.held { background: var(--hoja-bien); border-color: var(--hoja-bien); color: var(--hoja); transform: scale(0.96); }
 #tabs button.phone { display: none; }
 
-/* ---- the visit tab: cues and the badge ------------------------------------------------------- */
+/* ---- the visit tab: the two acts, the cues and the name ---------------------------------------- */
 .c-visit, .c-read { display: flex; flex-direction: column; gap: 8px; }
 .c-read { flex-flow: row wrap; align-items: center; }
+/* the fortune's button: big, parchment on violet; dashed and dim until its lines are rendered */
+.act {
+    display: block;
+    width: 100%;
+    min-height: 52px;
+    margin: 8px 0 4px;
+    padding: 8px 16px;
+    border: 2px solid #c9a46a;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #3b2a6b, #2a1d4d);
+    color: #fff;
+    font: 700 17px/1.2 var(--ui);
+}
+.act.dim { opacity: 0.55; border-style: dashed; }
+.act:disabled { opacity: 0.4; }
+.act-q { font-weight: 600; }
+#fortuneHeard, #fortuneLast { margin: 0; }
+#fortuneRow { border-top: 0; padding-top: 0; }
+.picks.data:empty { display: none; }
+.datum { padding: 4px 10px; border: 1px solid #c9a46a; border-radius: 999px; font: 13px/1.3 var(--mono); color: #ecd9a8; }
 .cue-group { display: flex; flex-wrap: wrap; gap: 6px; }
 .cue-group > span { flex-basis: 100%; font-size: 12px; color: var(--hoja-tenue); }
 .cue { min-height: 40px; min-width: 40px; padding: 0 14px; border: 2px solid var(--hoja-linea); border-radius: 999px; background: none; font-size: 15px; }
@@ -341,9 +361,11 @@ body.still .perch, body.still #tip, body.still #eyes, body.still #tipPose { anim
 .picks { display: flex; flex-wrap: wrap; gap: 6px; }
 .pick { min-height: 44px; min-width: 44px; padding: 0 14px; border: 2px solid #6b46c1; border-radius: 999px; background: none; font-size: 15px; }
 .pick:active { background: #6b46c1; color: #fff; }
-#cVisit input[type="text"], #readName { min-height: 44px; padding: 6px 10px; border: 1px solid var(--hoja-linea); border-radius: 8px; background: var(--hoja-campo); font-size: 16px; }
+#cVisit input[type="text"], #readName, #placeText { min-height: 44px; padding: 6px 10px; border: 1px solid var(--hoja-linea); border-radius: 8px; background: var(--hoja-campo); font-size: 16px; }
 #readName { flex: 1 1 140px; min-width: 0; }
 .c-read button { min-height: 44px; }
+#placeOther { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+#placeOther .note { margin: 0; }
 
 /* ---- his phone (Galaxy S24 Ultra: about 384 × 832 CSS px): one column at a time ------------- */
 @media (max-width: 700px) {
@@ -377,7 +399,7 @@ body.still .perch, body.still #tip, body.still #eyes, body.still #tipPose { anim
     #toast { bottom: calc(84px + env(safe-area-inset-bottom)); max-width: 92vw; }
 }
 
-/* The Show tab: go / no-go rows a thumb can read. */
+/* The Status tab: go / no-go rows a thumb can read; the Settings tab shares the pick buttons. */
 .go-rows { display: flex; flex-direction: column; gap: 4px; }
 .go { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 8px; background: rgba(127,127,127,.08); }
 .go b { min-width: 7.5em; }
@@ -388,7 +410,7 @@ body.still .perch, body.still #tip, body.still #eyes, body.still #tipPose { anim
 #volSlider { width: 100%; min-height: 40px; }
 .pick[aria-pressed="true"] { background: #6b46c1; color: #fff; }
 
-/* The Show tab's summary: one line, the first thing to do. */
+/* The Status tab's summary: one line, the first thing to do. */
 .summary { padding: 10px 12px; border-radius: 10px; font-weight: 600; margin-bottom: 6px; background: rgba(127,127,127,.12); }
 .summary.ok { background: rgba(126,226,168,.16); color: var(--hoja-bien); }
 .summary.bad { background: rgba(255,138,138,.16); color: var(--hoja-mal); }
