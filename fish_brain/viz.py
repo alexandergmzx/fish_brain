@@ -599,10 +599,15 @@ class VizServer:
         return 200, {"ok": True, "name": clean}
 
     # --- the phone's microphone: an uploaded recording becomes an input item ---
-    def take_utterance(self, data: bytes, hold_s: float, upload_s: float) -> tuple[int, dict]:
+    _ENDS = ("release", "silence", "limit")
+
+    def take_utterance(self, data: bytes, hold_s: float, upload_s: float,
+                       ended: str = "") -> tuple[int, dict]:
         """`POST /utterance`: check the WAV (mono, 16-bit, 8 to 48 kHz, no longer than the
         recording limit), write it as `ptt._record_until` does and offer an `Utterance` to
-        the turn loop. Returns (status, body). The audio is never logged."""
+        the turn loop. `ended` is how the page ended the hold (the `X-Fish-End` header:
+        release, silence or limit; anything else is dropped). Returns (status, body). The
+        audio is never logged."""
         from .reading import Utterance
         try:
             with wave.open(io.BytesIO(data), "rb") as w:
@@ -627,10 +632,11 @@ class VizServer:
         except OSError as e:
             path.unlink(missing_ok=True)
             return 500, {"ok": False, "error": type(e).__name__}
-        print(f"[utt] {rate} Hz {duration:.1f} s {len(data)} B upload={upload_s:.2f}s",
-              flush=True)
+        ended = ended if ended in self._ENDS else ""
+        print(f"[utt] {rate} Hz {duration:.1f} s {len(data)} B upload={upload_s:.2f}s"
+              + (f" ended={ended}" if ended else ""), flush=True)
         item = Utterance(path=path, hold_s=max(0.0, float(hold_s)),
-                         upload_s=max(0.0, float(upload_s)))
+                         upload_s=max(0.0, float(upload_s)), ended=ended)
         if not self.offer(item):
             path.unlink(missing_ok=True)
             return 409, {"ok": False, "busy": True}
@@ -1106,7 +1112,8 @@ def _make_handler(server: "VizServer"):
             except ValueError:
                 hold_s = 0.0
             try:
-                status, out = server.take_utterance(data, hold_s, upload_s)
+                ended = (self.headers.get("X-Fish-End") or "").strip().lower()
+                status, out = server.take_utterance(data, hold_s, upload_s, ended)
             except Exception as e:     # never take the handler down
                 print(f"[utt] failed: {type(e).__name__}", flush=True)
                 status, out = 500, {"ok": False, "error": type(e).__name__}

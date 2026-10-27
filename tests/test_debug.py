@@ -327,6 +327,9 @@ def test_the_state_tells_the_page_about_the_visit_and_the_reader(make_hub):
     page = hub.state()["page"]
     assert page["visit_enabled"] and page["visit"]["first"] == "Ana" and page["reading"]
     assert page["tls_port"] is None and page["capture"] == hub.cfg.ptt.capture
+    assert page["silence_end_s"] == 0.0 and page["quiet_rms"] == 0.04     # off on the laptop
+    hub.cfg.ptt.silence_end_s = 10.0
+    assert hub.state()["page"]["silence_end_s"] == 10.0
     assert "fortune" not in page["visit"]
     fortune = SimpleNamespace(open=True, view=lambda: {"open": True, "q": 2})
     hub.attach(convo=SimpleNamespace(fortune=fortune, show=None),

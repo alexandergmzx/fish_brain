@@ -215,16 +215,10 @@ def test_a_dead_stream_ends_the_recording(monkeypatch, tmp_path):
     path.unlink()
 
 
-def test_a_pause_after_speech_ends_the_recording(monkeypatch):
-    """Tap, talk, stop talking: a pause longer than FISH_PTT_PAUSE_S ends the recording."""
+def _fake_stream(monkeypatch, chunks):
+    """A sounddevice stand-in that serves `chunks` (float32) 10 ms apart, then nothing."""
     import queue as queue_mod
     import types
-    cfg = PTTConfig()
-    cfg.pause_s = 0.15
-    cfg.quiet_rms = 0.04
-    loud = np.full(160, 0.3, dtype="float32")
-    quiet = np.full(160, 0.01, dtype="float32")          # room noise, never exact zeros
-    chunks = [quiet] * 3 + [loud] * 4 + [quiet] * 300
     served = {"n": 0}
 
     class FakeStream:
@@ -239,6 +233,7 @@ def test_a_pause_after_speech_ends_the_recording(monkeypatch):
 
     def fake_get(self, timeout=None):
         if served["n"] >= len(chunks):
+            time.sleep(0.01)
             raise queue_mod.Empty
         c = chunks[served["n"]]
         served["n"] += 1
@@ -249,11 +244,100 @@ def test_a_pause_after_speech_ends_the_recording(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "sounddevice", types.SimpleNamespace(InputStream=FakeStream))
     monkeypatch.setattr(queue_mod.Queue, "get", fake_get)
     monkeypatch.setattr(queue_mod.Queue, "empty", lambda self: True)
+
+
+LOUD = np.full(160, 0.3, dtype="float32")
+QUIET = np.full(160, 0.01, dtype="float32")             # room noise, never exact zeros
+
+
+def test_silence_after_speech_ends_the_recording(monkeypatch):
+    """Talk, stop talking: FISH_PTT_SILENCE_END_S of nothing at or above quiet_rms ends it."""
+    cfg = PTTConfig()
+    cfg.silence_end_s = 0.15
+    cfg.quiet_rms = 0.04
+    _fake_stream(monkeypatch, [QUIET] * 3 + [LOUD] * 10 + [QUIET] * 300)
     t0 = time.monotonic()
     path = _REAL_RECORD_UNTIL(lambda: False, cfg)
     assert time.monotonic() - t0 < 2.0
-    assert 0.05 < ptt.wav_duration_s(path) < 0.4
+    assert 0.1 < ptt.wav_duration_s(path) < 0.5        # the speech and a short quiet tail
+    assert ptt.last_info()["ended"] == "silence"
     path.unlink()
+
+
+def test_silence_from_the_start_ends_the_recording(monkeypatch):
+    """Counted from the start too: a hold where nobody speaks ends by itself."""
+    cfg = PTTConfig()
+    cfg.silence_end_s = 0.15
+    cfg.quiet_rms = 0.04
+    _fake_stream(monkeypatch, [QUIET] * 300)
+    t0 = time.monotonic()
+    path = _REAL_RECORD_UNTIL(lambda: False, cfg)
+    assert time.monotonic() - t0 < 1.0
+    assert ptt.wav_duration_s(path) < 0.3
+    assert ptt.last_info()["ended"] == "silence"
+    path.unlink()
+
+
+def test_the_silence_end_is_off_by_default(monkeypatch):
+    cfg = PTTConfig()
+    assert cfg.silence_end_s == 0.0 and cfg.quiet_rms == 0.04
+    _fake_stream(monkeypatch, [QUIET] * 40)
+    end = time.monotonic() + 0.3
+    path = _REAL_RECORD_UNTIL(lambda: time.monotonic() > end, cfg)
+    assert ptt.last_info()["ended"] == "release"
+    path.unlink()
+
+
+def test_the_silence_end_counts_from_the_last_sound():
+    cfg = PTTConfig()
+    cfg.silence_end_s = 0.3
+    q16 = (QUIET * 32767).astype(np.int16)
+    l16 = (LOUD * 32767).astype(np.int16)
+    s = ptt._SilenceEnd(cfg)
+    assert not s.over(q16)
+    time.sleep(0.2)
+    assert not s.over(l16)                             # a sound restarts the count
+    time.sleep(0.2)
+    assert not s.over(q16)                             # 0.2 s since the sound
+    time.sleep(0.2)
+    assert s.over(q16)
+
+
+def test_a_silence_end_clears_the_button_and_is_not_a_cut(monkeypatch, tmp_path, capsys):
+    out = tmp_path / "x.wav"
+    cfg = PTTConfig()
+    cfg.silence_end_s = 10.0
+
+    def fake(stop, cfg, on_level=None):
+        ptt._info["ended"] = "silence"
+        return out
+    monkeypatch.setattr(ptt, "_record_until", fake)
+    flag = Flag()
+    flag.held = True
+    src = ptt.ButtonSource(lambda: flag.held, reset=flag.reset, name="remote")
+    # Held at the start reads as stale: release it, then press again in a moment.
+    threading.Timer(0.05, lambda: setattr(flag, "held", True)).start()
+    flag.held = False
+    got = ptt.record_multi(cfg, [src], inbox=lambda: None)
+    assert got == out
+    assert flag.resets >= 1 and not flag.held          # cleared at once, still pressed or not
+    assert not ptt.last_recording_was_cut()             # the LLM is not told it was cut
+    assert "[ptt] silence end: nothing heard for 10 s" in capsys.readouterr().out
+
+
+def test_pw_record_capture_ends_on_silence(monkeypatch, tmp_path):
+    import stat
+    fake = tmp_path / "pw-record"
+    fake.write_text("#!/bin/sh\nhead -c 64000 /dev/zero\nsleep 30\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setattr("shutil.which", lambda name: str(fake) if name == "pw-record" else None)
+    cfg = PTTConfig()
+    cfg.backend, cfg.source, cfg.silence_end_s = "pw-record", "mic", 0.3
+    t0 = time.monotonic()
+    wav = _REAL_RECORD_UNTIL(lambda: time.monotonic() - t0 > 5.0, cfg)
+    assert time.monotonic() - t0 < 2.5
+    assert ptt.last_info()["ended"] == "silence"
+    wav.unlink()
 
 
 def test_pw_record_capture_never_hangs_and_ends_its_process(monkeypatch, tmp_path):

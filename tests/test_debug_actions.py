@@ -346,7 +346,7 @@ def test_switches_list_their_value_their_start_and_what_changed(rig):
     sw = _values(rig)
     assert set(sw) == {"mode", "llm_profile", "stt", "stt_online", "stt_model", "tts", "gestures", "reading_look",
                        "voice_quit", "burble", "filler", "visit", "filler_delay_s",
-                       "max_record_s", "mic", "show", "motors", "fortune_deck", "fortune_cup",
+                       "max_record_s", "silence_end_s", "mic", "show", "motors", "fortune_deck", "fortune_cup",
                        "place", "place_text"}
     assert sw["mode"]["value"] == "llm" and not any(w["changed"] for w in sw.values())
     assert rig.act.set("gestures", False) == (200, {"ok": True, "value": False})
@@ -369,6 +369,16 @@ def test_switches_list_their_value_their_start_and_what_changed(rig):
     assert rig.act.set("filler_delay_s", 3.5)[1]["value"] == 3.5 and rig.cfg.filler.delay_s == 3.5
     assert rig.act.set("filler_delay_s", 60)[0] == 400
     assert "HTTPS" in _values(rig)["mic"]["note"]
+
+
+def test_the_silence_end_switch(rig):
+    sw = _values(rig)["silence_end_s"]
+    assert sw["kind"] == "number" and sw["choices"] == [0.0, 30.0]
+    assert sw["value"] == 0.0 and sw["note"].startswith("off")
+    assert rig.act.set("silence_end_s", 10)[1]["value"] == 10.0 and rig.cfg.ptt.silence_end_s == 10.0
+    assert "10 s" in _values(rig)["silence_end_s"]["note"]
+    assert rig.act.set("silence_end_s", 31)[0] == 400 and rig.act.set("silence_end_s", -1)[0] == 400
+    assert rig.act.set("silence_end_s", 0)[0] == 200 and rig.cfg.ptt.silence_end_s == 0.0
 
 
 def test_a_switch_refuses_what_it_cannot_do(rig, monkeypatch):

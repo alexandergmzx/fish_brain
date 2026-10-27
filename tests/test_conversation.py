@@ -189,6 +189,17 @@ def test_uploaded_recording_is_a_voice_turn(make, tmp_path, capsys):
     assert ("user", "hola") in viz.transcripts
 
 
+def test_an_uploaded_recording_names_how_the_hold_ended(make, tmp_path, monkeypatch):
+    from fish_brain import conversation as conv_mod
+    seen = []
+    monkeypatch.setattr(conv_mod.debug, "turn_set", lambda **f: seen.append(f))
+    wav = loud_wav(tmp_path / "fish_in_end.wav")
+    convo, viz, spoken = make(Utterance(path=wav, hold_s=10.4, upload_s=0.1, ended="silence"))
+    convo._stt = FakeSTT("hola")
+    assert convo.turn() is True
+    assert {"trigger": "phone microphone", "ended": "silence"} in seen
+
+
 def test_uploaded_recording_with_a_quit_word_ends_the_loop(make, tmp_path):
     wav = loud_wav(tmp_path / "fish_in_quit.wav")
     convo, viz, spoken = make(Utterance(path=wav, hold_s=0.5, upload_s=0.1))

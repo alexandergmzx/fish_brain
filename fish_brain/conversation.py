@@ -456,7 +456,7 @@ class FishConversation:
         it is a normal voice turn: the hold plus the upload stand for the recording time."""
         times: dict[str, float] = {"rec": u.hold_s + u.upload_s}
         self._heard_at = self._clock() - times["rec"]
-        debug.turn_set(trigger="phone microphone")
+        debug.turn_set(trigger="phone microphone", ended=getattr(u, "ended", "") or "")
         t0 = time.monotonic()
         self._start_wait(self._clock(), burble=True)
         try:

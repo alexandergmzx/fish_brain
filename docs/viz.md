@@ -243,15 +243,20 @@ EOF (`--text`), or Ctrl-C quit.
   samples are downsampled from the context's rate to 16 kHz by linear interpolation (44.1 and
   48 kHz both), clamped to Int16 and prefixed with a 44-byte RIFF/WAVE header (PCM, mono,
   16-bit, 16 kHz). A hold longer than `/status.max_record_s` ends itself and uploads, like
-  a host recording. The page hidden (lock screen, another app) drops the clip, stops the
+  a host recording; so does a hold with no chunk at or above `page.quiet_rms` for
+  `page.silence_end_s` seconds (the silence end, `FISH_PTT_SILENCE_END_S`, 0 = off),
+  counted from the press and from the last sound. Both go through one path that drops the
+  button first and runs once per hold (a release after it is ignored). The page hidden (lock screen, another app) drops the clip, stops the
   tracks and shows the gate again; a track that reports `ended` or `muted` at the next
   `pointerdown` does the same, and that hold goes to the host.
 - **The upload**: `fetch("POST /utterance")` (a beacon caps its body at 64 KiB) with
-  `X-Fish-Token`, `Content-Type: audio/wav` and `X-Fish-Hold-Ms` (the hold's length). The
+  `X-Fish-Token`, `Content-Type: audio/wav`, `X-Fish-Hold-Ms` (the hold's length) and
+  `X-Fish-End` (`release`, `silence` or `limit`: how the hold ended; another word is
+  dropped; it reaches the `[utt] … ended=` line and the turn record's `ended`). The
   host answers `403` without the token, `413` over 1 MiB, `400` with a short reason when
   the body is not a WAV, is not mono 16-bit, is outside 8 to 48 kHz or is longer than
   `FISH_PTT_MAX_S + 1`, `409 busy` when the turn loop is not listening (the file is
-  removed), `200 {ok}` when the `Utterance(path, hold_s, upload_s)` entered the inbox. The
+  removed), `200 {ok}` when the `Utterance(path, hold_s, upload_s, ended)` entered the inbox. The
   WAV is written with `tempfile.mkstemp(suffix=".wav", prefix="fish_in_")`, exactly as a
   host recording, and the turn loop transcribes it on the same path and unlinks it. The
   journal shows `[utt] 16000 Hz 4.9 s 160044 B upload=0.21s` (never the audio) and a

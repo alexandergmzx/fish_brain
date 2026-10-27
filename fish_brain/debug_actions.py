@@ -259,6 +259,7 @@ _gest, _look, _quit, _limit = (_attr("gesture.enabled"), _attr("reading.look"),
                                _attr("ptt.voice_quit"), _attr("ptt.max_record_s"))
 _fill, _fill_delay, _burble = (_attr("filler.enabled"), _attr("filler.delay_s"),
                                _attr("burble.enabled"))
+_silence_end = _attr("ptt.silence_end_s")
 SWITCHES: dict = {
     "mode": ("Mode", "choice", ("echo", "llm"),
              lambda a: "echo" if getattr(a.convo, "echo", False) else "llm", _set_mode),
@@ -282,6 +283,8 @@ SWITCHES: dict = {
                        lambda a: float(_fill_delay[0](a)), _fill_delay[1]),
     "max_record_s": ("Recording limit (s)", "number", (3.0, 60.0),
                      lambda a: float(_limit[0](a)), _limit[1]),
+    "silence_end_s": ("End a recording after silence (s, 0 = off)", "number", (0.0, 30.0),
+                      lambda a: float(_silence_end[0](a)), _silence_end[1]),
     "mic": ("Microphone", "choice", ("host", "browser", "auto"), lambda a: a.cfg.ptt.capture,
             lambda a, v: setattr(a.cfg.ptt, "capture", v) or ""),
     "show": ("Scripted visit", "choice", ("off", "auto", "script"),
@@ -330,6 +333,12 @@ def _switch_note(a, name: str, value) -> str:
             return "Canary hears every short recording; nothing is uploaded first"
         return (f"every recording goes to {value} while online; Canary when it is offline, "
                 "refuses or takes over 4 s")
+    if name == "silence_end_s":
+        if not value:
+            return "off: the release or the recording limit ends a recording"
+        return (f"a recording ends after {value:g} s with nothing at or above "
+                f"{a.cfg.ptt.quiet_rms:g} RMS, from the remote and from the phone; "
+                "the clip is answered")
     if name == "stt_model":
         used = {"local": "", "canary": "used for the long recordings when nothing online answers · "}.get(
             a.cfg.stt.backend, "not in use (speech-to-text is not local) · ")

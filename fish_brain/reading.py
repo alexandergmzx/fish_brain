@@ -75,10 +75,12 @@ class Utterance:
     """An input item for the turn loop: a recording the page made with the phone's
     microphone and uploaded (`POST /utterance`). `path` is a temporary WAV the loop
     unlinks after transcribing; `hold_s` how long the target was held, `upload_s` how long
-    the body took to arrive (together they stand for the turn's `rec` time)."""
+    the body took to arrive (together they stand for the turn's `rec` time); `ended` how the
+    page ended the hold (`release`, `silence`, `limit`; empty when the page did not say)."""
     path: Path
     hold_s: float = 0.0
     upload_s: float = 0.0
+    ended: str = ""
 
 
 _NAME_CHARS = re.compile(r"[^A-Za-zÀ-ÖØ-öø-ÿ' -]+")

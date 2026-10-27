@@ -1880,7 +1880,11 @@
     const tick = $("phoneMic"), note = $("phoneMicMsg");
     const CAN = window.isSecureContext && !!navigator.mediaDevices && !!navigator.mediaDevices.getUserMedia;
     const TARGET_RATE = 16000, RING_MS = 600, TAIL_MS = 250, MIN_HOLD_MS = 350, QUIET_RMS = 0.003, KEEPALIVE_MS = 20000;
-    let maxRecordS = 15, stream = null, actx = null, node = null, source = null, sink = null;
+    // The silence end (page.silence_end_s, 0 = off): a hold with nothing at or above
+    // page.quiet_rms for that long, from the start or from the last sound, ends as the limit
+    // does (the holdTimer path); the upload says how it ended (X-Fish-End).
+    let maxRecordS = 15, silenceEndS = 0, quietRms = 0.04, quietSince = 0, ending = false, endedBy = "release";
+    let stream = null, actx = null, node = null, source = null, sink = null;
     let ring = [], ringLen = 0, clip = null, clipLen = 0, holdAt = 0, holdTimer = null, tailTimer = null;
     let holding = false, peak = 0, lastEmit = 0, announced = false, keepTimer = null, busy = false;
     function say(text, cls) { note.textContent = text || ""; note.className = "note " + (cls || ""); }
@@ -1915,6 +1919,8 @@
         if (rms > peak) peak = rms;
         const now = performance.now();
         if (now - lastEmit >= 40) { lastEmit = now; S.levels.push(rms); if (S.levels.length > 200) S.levels.shift(); wakeLevel(); }
+        if (rms >= quietRms) quietSince = now;
+        else if (silenceEndS > 0 && !ending && now - quietSince >= silenceEndS * 1000) endHold("silence");
       } else {
         ring.push(data); ringLen += data.length;
         const keep = (actx ? actx.sampleRate : 48000) * RING_MS / 1000;
@@ -1970,17 +1976,26 @@
       refresh();
     }
     tick.addEventListener("change", () => { if (busy) return; tick.checked ? on() : off(); });
+    // The page itself ends the hold (the limit, the silence end): the button drops, then finish.
+    function endHold(why) {
+      if (!holding || ending) return;
+      endedBy = why;
+      ptt.event({ held: false });
+      finish();
+      if (why === "silence") msg(null, "phone mic: nothing heard for " + silenceEndS + " s, the clip is answered", 4000);
+    }
     function finish() {
-      if (!holding) return;
+      if (!holding || ending) return;         // once per hold: a release after the page ended it
+      ending = true;
       clearTimeout(holdTimer);
-      const heldMs = Math.round(performance.now() - holdAt);
+      const heldMs = Math.round(performance.now() - holdAt), ended = endedBy;
       tailTimer = setTimeout(() => {           // the last word is still in the pipeline
-        holding = false;
+        holding = false; ending = false;
         const chunks = clip || [], total = clipLen;
         clip = null; clipLen = 0;
         if (heldMs < MIN_HOLD_MS) { msg(null, "phone mic: too short", 3000); return; }
         if (peak < QUIET_RMS) { msg(null, "phone mic: silence (is it the right microphone?)", 5000); return; }
-        upload(toWav(chunks, total, actx ? actx.sampleRate : 48000), heldMs);
+        upload(toWav(chunks, total, actx ? actx.sampleRate : 48000), heldMs, ended);
         fish.thinking("hearing");
       }, TAIL_MS);
     }
@@ -2007,9 +2022,9 @@
       new Int16Array(buf, 44).set(pcm);
       return new Blob([buf], { type: "audio/wav" });
     }
-    async function upload(blob, heldMs) {
+    async function upload(blob, heldMs, ended) {
       const h = headers(false);
-      h["Content-Type"] = "audio/wav"; h["X-Fish-Hold-Ms"] = String(heldMs);
+      h["Content-Type"] = "audio/wav"; h["X-Fish-Hold-Ms"] = String(heldMs); h["X-Fish-End"] = ended || "release";
       try {
         const r = await fetch("/utterance", { method: "POST", headers: h, body: blob });
         if (!r.ok) msg(null, r.status === 409 ? "phone mic: the hat is busy" : "phone mic: refused " + r.status, 5000);
@@ -2018,6 +2033,8 @@
     return {
       status(page) {
         if (page.max_record_s) maxRecordS = Number(page.max_record_s) || maxRecordS;
+        if (page.silence_end_s !== undefined) silenceEndS = Math.max(0, Number(page.silence_end_s) || 0);
+        if (page.quiet_rms) quietRms = Number(page.quiet_rms) || quietRms;
         if (!busy && !actx && page.capture === "browser" && !note.textContent) say("the board takes phone recordings, but this phone's microphone is off");
       },
       ready: () => !!actx && trackAlive(),
@@ -2029,11 +2046,12 @@
         clearTimeout(tailTimer);
         clip = ring.slice(); clipLen = ringLen; ring = []; ringLen = 0;   // the ring first: the first syllable
         peak = 0; holding = true; holdAt = performance.now(); lastEmit = 0;
+        quietSince = holdAt; ending = false; endedBy = "release";
         fish.listening();
-        holdTimer = setTimeout(() => { if (holding) { ptt.event({ held: false }); finish(); } }, maxRecordS * 1000);
+        holdTimer = setTimeout(() => endHold("limit"), maxRecordS * 1000);
       },
       end: finish,
-      abort() { clearTimeout(holdTimer); clearTimeout(tailTimer); holding = false; clip = null; clipLen = 0; },
+      abort() { clearTimeout(holdTimer); clearTimeout(tailTimer); holding = false; ending = false; clip = null; clipLen = 0; },
       hidden() { if (actx) { release(true); tick.checked = false; say("released when the screen slept: turn it on again", "warn-text"); } },
       arm() { if (!tick.checked && !busy) { tick.checked = true; on(); } },   // the Hardware tap
     };

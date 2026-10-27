@@ -620,7 +620,25 @@ def test_utterance_lands_in_the_inbox(server, capsys):
     assert wav_duration_s(item.path) == 0.5
     assert item.hold_s == 1.2 and 0.0 <= item.upload_s < 2.0
     line = capsys.readouterr().out
-    assert "[utt] 16000 Hz 0.5 s" in line and "upload=" in line
+    assert "[utt] 16000 Hz 0.5 s" in line and "upload=" in line and "ended=" not in line
+    assert item.ended == ""
+    item.path.unlink()
+
+
+def test_the_upload_says_how_the_hold_ended(server, capsys):
+    server.set_listening(True)
+    status, _ = post_utt(server, wav_bytes(0.5),
+                         headers={**AUTH, "X-Fish-Hold-Ms": "10400", "X-Fish-End": "silence"})
+    assert status == 200
+    item = server.take_inbox()
+    assert item.ended == "silence"
+    assert "ended=silence" in capsys.readouterr().out
+    item.path.unlink()
+    server.set_listening(True)
+    assert post_utt(server, wav_bytes(0.5), headers={**AUTH, "X-Fish-End": "<script>"})[0] == 200
+    item = server.take_inbox()
+    assert item.ended == ""                          # an unknown word is dropped, never logged
+    assert "<script>" not in capsys.readouterr().out
     item.path.unlink()
 
 

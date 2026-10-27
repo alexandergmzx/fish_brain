@@ -267,3 +267,13 @@ def test_the_operator_page_links_the_scene_and_it_is_served():
     html = (WEB_DIR / "debug.html").read_text(encoding="utf-8")
     assert 'href="/scene.css"' in html and 'class="sign"' in html and 'class="banco"' in html
     assert '"/scene.css"' in (WEB_DIR.parent / "viz.py").read_text(encoding="utf-8")
+
+
+def test_the_phone_microphone_ends_a_hold_on_silence_once():
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    # The silence end and the limit share one path; the release after it is ignored.
+    assert 'endHold("silence")' in js and 'endHold("limit")' in js
+    assert "if (!holding || ending) return;" in js
+    assert 'h["X-Fish-End"]' in js and "page.silence_end_s" in js and "page.quiet_rms" in js
+    viz = (WEB_DIR.parent / "viz.py").read_text(encoding="utf-8")
+    assert '"X-Fish-End"' in viz

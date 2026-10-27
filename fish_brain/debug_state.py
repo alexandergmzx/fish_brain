@@ -320,6 +320,9 @@ def _page(hub) -> dict:
             "reading": getattr(viz, "_reader", None) is not None,
             "reading_look": bool(cfg.reading.look),
             "max_record_s": float(cfg.ptt.max_record_s),
+            # The silence end (0 = off) and its level: the phone's microphone follows them.
+            "silence_end_s": float(cfg.ptt.silence_end_s),
+            "quiet_rms": float(cfg.ptt.quiet_rms),
             "capture": cfg.ptt.capture,
             "tls_port": cfg.viz.tls_port if tls is not None else None,
             "tls_error": getattr(viz, "tls_error", None) if viz is not None else None}

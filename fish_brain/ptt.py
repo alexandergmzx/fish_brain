@@ -220,6 +220,30 @@ def _note_take(frames) -> None:
         _zero_takes += 1
 
 
+class _SilenceEnd:
+    """The silence end (cfg.silence_end_s, 0 = off): a recording ends once no chunk has reached
+    cfg.quiet_rms for that long, counted from the start of the recording and from the last
+    chunk at or above the level. The level sits over the remote's room floor (0.01 to 0.03
+    RMS, 2026-10-12) and under speech (0.10 and up)."""
+
+    def __init__(self, cfg: PTTConfig):
+        self.after_s = float(cfg.silence_end_s or 0.0)
+        self.level = float(cfg.quiet_rms)
+        self.last_sound = time.monotonic()
+
+    def over(self, chunk: np.ndarray | None) -> bool:
+        """Feed one int16 chunk (None: a poll that brought nothing, which counts as quiet);
+        True when the recording should end here."""
+        if self.after_s <= 0:
+            return False
+        now = time.monotonic()
+        f = chunk.astype(np.float32) / 32768.0 if chunk is not None else None
+        if f is not None and f.size and float(np.sqrt(np.mean(f * f))) >= self.level:
+            self.last_sound = now
+            return False
+        return now - self.last_sound >= self.after_s
+
+
 def _record_until(stop_predicate, cfg: PTTConfig,
                   on_level: Callable[[float], None] | None = None) -> Path:
     """Record from the mic until `stop_predicate()` returns True.
@@ -249,8 +273,7 @@ def _record_until(stop_predicate, cfg: PTTConfig,
     # Dead-stream rule (cfg.dead_s): exact zeros after sound mean the device stopped streaming.
     heard = False
     last_sound = time.monotonic()
-    spoke = False
-    last_speech = time.monotonic()
+    silence = _SilenceEnd(cfg)
     try:
         stream = sd.InputStream(samplerate=samplerate, channels=cfg.channels,
                                 dtype="float32", device=device, callback=callback)
@@ -261,6 +284,9 @@ def _record_until(stop_predicate, cfg: PTTConfig,
             try:
                 chunk = q.get(timeout=0.1)
             except queue.Empty:
+                if silence.over(None):
+                    _info["ended"] = "silence"
+                    break
                 continue
             frames.append(chunk)
             if cfg.dead_s > 0:
@@ -270,14 +296,9 @@ def _record_until(stop_predicate, cfg: PTTConfig,
                 elif heard and time.monotonic() - last_sound >= cfg.dead_s:
                     _info["ended"] = "dead stream"
                     break                      # the microphone went dead: the key was released
-            if cfg.pause_s > 0:
-                f = chunk.astype(np.float32) / 32768.0
-                if float(np.sqrt(np.mean(f * f))) >= cfg.quiet_rms:
-                    spoke = True
-                    last_speech = time.monotonic()
-                elif spoke and time.monotonic() - last_speech >= cfg.pause_s:
-                    _info["ended"] = "pause"
-                    break                      # the visitor stopped talking
+            if silence.over(chunk):
+                _info["ended"] = "silence"
+                break                          # nothing heard for silence_end_s
             if on_level is not None:
                 now = time.monotonic()
                 if now - last_level >= min_dt:
@@ -301,16 +322,20 @@ def _save(frames, samplerate) -> Path:
 
 def _record_pw(stop_predicate, cfg: PTTConfig, on_level=None) -> Path:
     """The same recording through pw-record (see _PwRecord): the release, the dead-stream and
-    pause rules, the level meter."""
+    silence-end rules, the level meter."""
     _info.update(device=f"pw-record {cfg.source}", rate=int(cfg.samplerate), ended="release")
     src = _PwRecord(cfg)
     frames: list[np.ndarray] = []
-    heard, last_sound, spoke, last_speech = False, time.monotonic(), False, time.monotonic()
+    heard, last_sound = False, time.monotonic()
+    silence = _SilenceEnd(cfg)
     last_level, min_dt = 0.0, 1.0 / _LEVEL_HZ
     try:
         while not stop_predicate():
             chunk = src.get(0.1)
             if chunk is None:
+                if silence.over(None):
+                    _info["ended"] = "silence"
+                    break
                 continue
             frames.append(chunk)
             if cfg.dead_s > 0:
@@ -319,13 +344,9 @@ def _record_pw(stop_predicate, cfg: PTTConfig, on_level=None) -> Path:
                 elif heard and time.monotonic() - last_sound >= cfg.dead_s:
                     _info["ended"] = "dead stream"
                     break
-            if cfg.pause_s > 0:
-                f = chunk.astype(np.float32) / 32768.0
-                if float(np.sqrt(np.mean(f * f))) >= cfg.quiet_rms:
-                    spoke, last_speech = True, time.monotonic()
-                elif spoke and time.monotonic() - last_speech >= cfg.pause_s:
-                    _info["ended"] = "pause"
-                    break
+            if silence.over(chunk):
+                _info["ended"] = "silence"
+                break
             if on_level is not None:
                 now = time.monotonic()
                 if now - last_level >= min_dt:
@@ -404,7 +425,8 @@ def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
     Starts only on a fresh press: a source that already reads "held" when we begin waiting
     (a lost release, a tap while the fish was talking) must be released first. A recording
     longer than `cfg.max_record_s` is cut, and every source is then reset so a stuck button
-    cannot start one recording after another.
+    cannot start one recording after another. A recording ended by the silence end
+    (`cfg.silence_end_s`) resets the sources the same way but is not a cut.
 
     `inbox()` is polled while waiting; the first item it returns (anything but None) is
     returned as the turn's input instead of a recording. With no sources, the inbox is the
@@ -495,11 +517,20 @@ def record_multi(cfg: PTTConfig, sources: list[ButtonSource],
             return not any_held() or time.monotonic() - t0 >= cfg.max_record_s
 
         _info["recording"] = True
+        _info["ended"] = "release"
         try:
             path = _record_until(stop, cfg, on_level)
         finally:
             _info["recording"] = False
-        if time.monotonic() - t0 >= cfg.max_record_s:
+        if _info.get("ended") == "silence":
+            # Not a cut: the clip is answered as it is and the LLM is not told the visitor was
+            # still talking. The button may still be held: clear it at once so the next wait
+            # starts on a fresh press.
+            print(f"[ptt] silence end: nothing heard for {cfg.silence_end_s:g} s; the clip is "
+                  "answered, release and press again", flush=True)
+            for s in local:
+                s.reset()
+        elif time.monotonic() - t0 >= cfg.max_record_s:
             _cut_last = True
             _info["ended"] = "limit"
             print(f"[ptt] {cfg.max_record_s:.0f} s limit reached; release and press again",
