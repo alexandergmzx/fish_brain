@@ -438,6 +438,37 @@ def test_the_model_reading_is_said_live_remembered_then_the_closing(make, online
     assert c.show.mode_now() == ("llm", "online")                 # no failure to back off from
 
 
+def test_the_cues_and_any_animal_reach_the_model(make, online):
+    llm = FakeLLM()
+    c = make("auto", llm=llm)
+    c.visit.set_cues({"edad": "joven", "impresion": "fiestero"})
+    start(c)
+    say(c, "el 23 de octubre")
+    say(c, "soñé con mi tío que se murió")
+    say(c, "la muerte")
+    say(c, "una estrella")
+    c.visit.set_cues({"edad": "joven", "impresion": "escéptico"})   # the latest cues win
+    say(c, "Un perrito xoloitzcuintle.")
+    tag = llm.asked[0]
+    assert "pistas=edad: joven, impresión: escepticismo" in tag
+    assert "animal=un perrito xoloitzcuintle" in tag
+    assert "sueño=seres_queridos (" in tag and "tío" not in tag and "murió" not in tag
+
+
+def test_a_free_animal_gets_its_own_reaction_clip(make):
+    c = make()
+    start(c)
+    say(c, "el 23 de octubre")
+    say(c, "soñé que se me caían los dientes")
+    say(c, "la muerte")
+    say(c, "una estrella")
+    say(c, "un ajolote")
+    end = c.speaker.stages[-1]
+    assert end[0] in fortune_bank.pool_names("re_animal_otro")
+    assert end[1].startswith("fortune_suspense_") and not c.fortune.open
+    assert c.fortune.view()["last"]["data"]["animal"] == "un ajolote"
+
+
 def test_the_free_text_of_the_place_reaches_the_model_with_otro(make, online):
     llm = FakeLLM()
     c = make("auto", llm=llm, place="otro")
@@ -557,11 +588,13 @@ def test_a_record_is_made_for_the_reading_and_the_drop(make, monkeypatch):
     assert kind == "fortune" and rec["n"] == 1 and rec["how"] == "clips" and rec["mode"] == "script"
     assert rec["place"] == "fiesta" and rec["data"]["signo"] == "Escorpio"
     assert len(rec["heard"]) == 5 and rec["clips"][-1].startswith("fortune_cierre_")
-    assert rec["reading"] is None and rec["seconds"] >= 0
+    assert rec["reading"] is None and rec["seconds"] >= 0 and rec["pistas"] == {}
+    c.visit.set_cues({"disfraz": "elegante"})
     start(c)
     c.fortune.drop("test")
     kind, rec = records[-1]
     assert kind == "fortune" and rec["dropped"] == "test" and rec["n"] == 2
+    assert rec["pistas"] == {"disfraz": "elegante"}
     assert "fortune" in debug._RECORD_KINDS
 
 

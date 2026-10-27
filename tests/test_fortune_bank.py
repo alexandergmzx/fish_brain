@@ -18,7 +18,7 @@ def sentences(text: str) -> int:
 
 
 def test_every_clip_is_named_fortune_and_keeps_the_rules():
-    assert len(P) >= 139
+    assert len(P) >= 141
     for name, text in P.items():
         assert name.startswith("fortune_") and not name.startswith("show_"), name
         assert text.strip() and not text.lstrip().startswith("-"), name     # loq reads "-" as an option
@@ -73,6 +73,8 @@ def test_every_datum_has_its_clip():
         assert fb.reaction_name("taza", t.id) in P
     for o in fortune.ANIMAL_Q["options"]:
         assert fb.reaction_name("animal", o["id"]) in P
+    assert fb.pool_names("re_animal_otro") == ["fortune_re_animal_otro_1", "fortune_re_animal_otro_2"]
+    assert all(n in P for n in fb.pool_names("re_animal_otro"))
     for n in range(1, 10):
         assert fb.num_name(n) in P
     for phase in fortune.MOON_PHASES:
@@ -87,7 +89,7 @@ def test_every_datum_has_its_clip():
 
 def test_the_counts_are_the_plans():
     kinds = {"q": 5, "rq": 5, "re_fecha": 12, "re_sueno": 21, "re_carta_tarot": 22, "re_taza": 11,
-             "re_animal": 4, "num": 9, "luna": 8, "intro": 12, "vision": 6, "bridge": 2, "suspense": 2,
+             "re_animal": 6, "num": 9, "luna": 8, "intro": 12, "vision": 6, "bridge": 2, "suspense": 2,
              "magic": 12, "cierre": 8}
     got = {k: 0 for k in kinds}
     for name in P:
@@ -99,7 +101,7 @@ def test_the_counts_are_the_plans():
         else:
             raise AssertionError(name)
     assert got == kinds
-    assert sum(kinds.values()) == len(P) == 139
+    assert sum(kinds.values()) == len(P) == 141
 
 
 def test_magic_words_one_per_clip_in_order():
@@ -128,6 +130,8 @@ def test_the_rules_are_the_adult_ones():
         assert move in r
     for place in ("fiesta", "casa", "universidad"):
         assert place in r
+    assert "LAS PISTAS" in r and "pistas=" in r
+    assert "Nunca digas que alguien murió" in r and "nunca una muerte real" in r
     assert "brindis" in r and "ofrenda" in r and "hallazgo" in r
     assert "La Muerte" in r and "El Diablo" in r and "tu palabra mágica es" in r
     assert "Nunca repitas los corchetes" in r and "año" in r and "edad" in r

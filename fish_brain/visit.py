@@ -129,6 +129,13 @@ _HOURS = ("doce", "una", "dos", "tres", "cuatro", "cinco", "seis", "siete", "och
           "diez", "once")
 
 
+def cue_pairs(cues: dict) -> list[tuple[str, str]]:
+    """The lit cues as the tags say them, in the sheet's order: (label, value), the
+    impression as a noun (CUE_SAID). Shared by the visit's [PISTAS] and the fortune's tag."""
+    return [(CUE_LABEL[k], CUE_SAID.get(k, {}).get(cues[k], cues[k]))
+            for k in CUE_ORDER if cues.get(k)]
+
+
 def say_hour(minutes: int) -> str:
     """Minutes after midnight as the hat says it: 917 -> "las 3 y 17" ("la 1 y 5")."""
     h, m = divmod(int(minutes), 60)
@@ -306,8 +313,7 @@ class Visit:
         if n == self.stages:
             tag += future_tag(self.future, self._rng)
         parts = [f"lugar={lugar}"] if lugar else []
-        parts += [f"{CUE_LABEL[k]}={CUE_SAID.get(k, {}).get(cues[k], cues[k])}"
-                  for k in CUE_ORDER if k in cues]
+        parts += [f"{label}={said}" for label, said in cue_pairs(cues)]
         if parts:
             tag += "[PISTAS: " + "; ".join(parts) + "] "
         return tag + (text or ""), {"at": asked, "cues": cues}

@@ -123,6 +123,36 @@ def test_dream_themes_heard(text, expect):
     assert dream_theme(text) == expect
 
 
+NEW_ANIMAL_STEMS = ("borreg*", "oveja*", "rebano*", "cabra*", "ajolote*", "gallina*", "pato*",
+                    "zorro*", "xolo*")
+
+
+def test_the_new_animal_stems_are_the_animals_own():
+    animals = fortune.DREAM_BY_ID["animales"].keywords
+    assert "borrego" not in animals and "xolo" not in animals
+    for stem in NEW_ANIMAL_STEMS:
+        assert stem in animals, stem
+        body = stem[:-1]
+        for t in DREAM_THEMES:
+            if t.id == "animales":
+                continue
+            for k in t.keywords:          # no word of another theme starts with the stem
+                assert not any(w.startswith(body) or (w.endswith("*") and body.startswith(w[:-1]))
+                               for w in k.split()), (stem, t.id, k)
+
+
+@pytest.mark.parametrize("text,expect", [
+    ("Soñé con unos borreguitos", "animales"), ("un rebaño de ovejas", "animales"),
+    ("unas cabras en el monte", "animales"), ("un ajolote rosa", "animales"),
+    ("las gallinas de mi rancho", "animales"), ("unos patos en el lago", "animales"),
+    ("un zorro", "animales"), ("mi xoloitzcuintle", "animales"),
+    # his mixed dream: the relative (weight 2) is mentioned first and wins the tie
+    ("Soñé con mi tío y un rebaño de borreguitos", "seres_queridos"),
+])
+def test_the_wider_animal_dreams(text, expect):
+    assert dream_theme(text) == expect
+
+
 @pytest.mark.parametrize("text", ["", "   ", "hola qué tal", "[Nota: silencio]"])
 def test_no_dream_words_is_none(text):
     assert dream_theme(text) is None
@@ -187,6 +217,34 @@ def test_the_animal_through_match_option():
     assert match_option(ANIMAL_Q, "un perro").kind == "none"
 
 
+@pytest.mark.parametrize("text,expect", [
+    # one of the four, said or by its place: the option
+    ("un gato negro", ("option", "gato")), ("el primero", ("option", "gato")),
+    ("la lechuza", ("option", "buho")),
+    # any other animal: the visitor's own phrase, before the sound match of the four
+    ("Un perro.", ("free", "un perro")),
+    ("Un perrito xoloitzcuintle.", ("free", "un perrito xoloitzcuintle")),
+    ("Pues un ajolote, porque son bonitos", ("free", "un ajolote")),
+    ("burro", ("free", "burro")),                  # by sound alone it would be the búho
+    ("Una rata.", ("free", "una rata")),           # by sound alone it would be the sapo
+    # a diminutive of the four: by sound, after the lexicon
+    ("un sapito", ("option", "sapo")), ("una lechucita", ("option", "buho")),
+    ("no sé", ("not_sure", None)), ("mmm", ("none", None)), ("", ("none", None)),
+])
+def test_the_animal_order(text, expect):
+    assert fortune.parse_animal(text) == expect
+
+
+def test_a_free_animal_phrase_is_short_and_safe():
+    long = "Mmm, pues yo escojo un zorro plateado de los que salen en la noche con la luna llena"
+    phrase = fortune.animal_phrase(long)
+    assert phrase.startswith("un zorro plateado") and len(phrase) <= fortune.ANIMAL_TEXT_MAX
+    assert not phrase.endswith(" ")
+    assert fortune.animal_phrase("un [Nota: eco] perro; = <b>") == "un perro"
+    assert fortune.animal_phrase("una telaraña") is None             # no animal by name
+    assert "animal" not in fortune.ANIMAL_WORDS and "rebano*" not in fortune.ANIMAL_WORDS
+
+
 # ---- the moon -------------------------------------------------------------------------------
 def test_moon_check_values_october_2026():
     assert len(MOON_PHASES) == 8
@@ -228,6 +286,27 @@ def test_the_tag_leaves_out_what_is_missing_and_never_the_year():
     assert "carta" not in reading_tag(Fortune(carta=13), None)        # no deck: no card
     assert "carta" not in reading_tag(Fortune(carta=99), TAROT)
     assert "casa" not in reading_tag(Fortune(animal="perro"), TAROT)
+
+
+def test_the_tag_with_cues_and_a_free_animal():
+    f = Fortune(lugar="fiesta", animal="un perrito xoloitzcuintle",
+                pistas={"edad": "adulto", "impresion": "sonriente", "lleva": "capa negra",
+                        "disfraz": "tenebroso"})
+    assert reading_tag(f, TAROT) == (
+        "[ADIVINACIÓN: lugar=fiesta; animal=un perrito xoloitzcuintle; pistas=edad: adulto, "
+        "impresión: sonrisa, disfraz: tenebroso, lleva: capa negra] Haz la lectura.")
+    assert "pistas" not in reading_tag(Fortune(pistas={}), TAROT)
+    assert "animal=un perro" in reading_tag(Fortune(animal="un perro; x=1"), TAROT) and \
+        "x=1" not in reading_tag(Fortune(animal="un perro; x=1"), TAROT)
+
+
+@pytest.mark.parametrize("theme", ["seres_queridos", "otro"])
+def test_no_dream_words_for_the_dead_and_the_kept(theme):
+    tag = reading_tag(Fortune(sueno=theme, sueno_txt="mi tío que se murió"), TAROT)
+    assert "tío" not in tag and "murió" not in tag and '"' not in tag
+    assert f"sueño={theme} (" in tag
+    assert "un ser querido, o alguien que ya cruzó" in reading_tag(
+        Fortune(sueno="seres_queridos", sueno_txt="mi abuela"), TAROT)
 
 
 def test_the_magic_words_and_places():
@@ -298,7 +377,11 @@ def test_parse_answer_fills_the_data_as_the_act_does():
     assert parse_answer("taza", "un corazón", TAROT, data) == ("shape", data["taza"])
     assert parse_answer("animal", "un gato negro", TAROT, data) == ("option", "gato")
     assert parse_answer("animal", "ninguno", TAROT, {}) == ("not_sure", None)
-    assert parse_answer("animal", "un perrito xoloitzcuintle", TAROT, {}) == ("none", None)
+    free: dict = {}
+    assert parse_answer("animal", "Un perrito xoloitzcuintle.", TAROT, free) == (
+        "free", "un perrito xoloitzcuintle")
+    assert free["animal"] == "un perrito xoloitzcuintle"
+    assert parse_answer("animal", "mmm", TAROT, {}) == ("none", None)
     assert parse_answer("otra", "algo", TAROT, {}) == ("none", None)
 
 
@@ -306,9 +389,11 @@ def test_fortune_of_and_the_reading_steps():
     from fish_brain.fortune_run import fortune_of, reading_request, reading_result
     data = {"signo": "geminis", "numero": 5, "sueno": "agua", "sueno_txt": "un río",
             "luna": "llena", "palabra": "Zumbalí"}
-    f = fortune_of(data, nombre="Ana", lugar="fiesta", casa="Ravenclaw")
+    f = fortune_of(data, nombre="Ana", lugar="fiesta", casa="Ravenclaw",
+                   pistas={"compania": "pareja"})
     assert (f.nombre, f.lugar, f.casa, f.signo, f.sueno_txt, f.palabra) == (
         "Ana", "fiesta", "Ravenclaw", "geminis", "un río", "Zumbalí")
+    assert f.pistas == {"compania": "pareja"} and fortune_of({}).pistas == {}
 
     class LLM:
         resets, extra_rules = 0, "old"

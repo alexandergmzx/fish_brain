@@ -170,6 +170,9 @@ def test_a_fortune_block_runs_the_acts_steps(monkeypatch):
     tag = llm.sent[0]
     assert tag == rec["tag"] and tag.startswith("[ADIVINACIÓN: nombre=Albert; lugar=fiesta;")
     assert "casa=Hufflepuff" in tag and "luna=" in tag and "palabra=" in tag
+    assert kinds[1] == ("sueno", "theme") and 'sueño=volar ("Soñé que flotaba.")' in tag
+    assert kinds[-1] == ("animal", "free") and "animal=un perrito xoloitzcuintle" in tag
+    assert tag.endswith("pistas=lleva: capa negra] Haz la lectura.")
     assert "would fall back to clips" in " ".join(rec["problems"])
     assert any("death said plainly" in p for p in rec["problems"])
     assert rec["used"] == ["lleva"]

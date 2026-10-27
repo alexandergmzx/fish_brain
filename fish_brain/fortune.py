@@ -6,8 +6,8 @@ shape in the cup and an animal, and everything heard is parsed here into ids the
 
     parse_birth(text) -> (day, month)   sign_of(day, month)   lucky_number(day, month)
     dream_theme(text) -> a theme id     parse_card(text, deck) -> 0..21
-    parse_shape(text) -> a shape id     ANIMAL_Q for show.match_option
-    moon_tonight() -> a phase id        reading_tag(f, deck) -> "[ADIVINACIÓN: …] Haz la lectura."
+    parse_shape(text) -> a shape id     parse_animal(text) -> one of the four, or the phrase
+    moon_tonight() -> a phase id        reading_tag(f, deck) -> "[ADIVINACIÓN: …; pistas=…] Haz la lectura."
     clean_reading(reply) -> the model's reading, or None when it breaks the register
 
 Transcripts arrive folded (no accents, lower case; ñ is already n) with 7 to 21 % word errors,
@@ -27,12 +27,13 @@ phase, so the boundaries are the plain eighths.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
-from .show import phon_key
-from .visit import _fold
+from .show import match_option, phon_key
+from .visit import _fold, cue_pairs
+from .visit import clean_cue_text as _clean_text
 
 _NOTE = re.compile(r"\[[^\]]*\]")
 _KEEP = re.compile(r"[^a-z0-9ñ ]")
@@ -344,9 +345,10 @@ DREAM_THEMES: tuple[Theme, ...] = (
         "serpiente*", "vibora*", "culebra*", "cascabel", "cobra", "boa", "anaconda", "piton",
         "me mordia una vibora", "me mordio una vibora")),
     Theme("animales", "Perros, gatos, caballos, pájaros", (
-        "perro*", "perrit*", "cachorro", "lomito", "xolo", "me ladraba", "gato", "gatos",
+        "perro*", "perrit*", "cachorro", "lomito", "xolo*", "me ladraba", "gato", "gatos",
         "gatit*", "gata", "gato negro", "michi", "minino", "caballo*", "yegua", "pony",
-        "montaba a caballo", "burro", "vaca", "vacas", "toro", "borrego", "pajaro*",
+        "montaba a caballo", "burro", "vaca", "vacas", "toro", "borreg*", "oveja*", "rebano*",
+        "cabra*", "ajolote*", "gallina*", "pato*", "zorro*", "pajaro*",
         "pajarit*", "colibri", "paloma", "buho", "lechuza", "tecolote", "murcielago*",
         "mariposa*", "monarca", "conejo", "tortuga", "pez", "peces", "delfin", "ballena",
         "tiburon", "cocodrilo", "leon", "tigre", "lobo", "lobos", "oso", "elefante",
@@ -603,6 +605,66 @@ ANIMAL_Q: dict = {
 }
 ANIMAL_SAID: dict[str, str] = {"gato": "el gato negro", "buho": "el búho",
                                "murcielago": "el murciélago", "sapo": "el sapo"}
+ANIMAL_TEXT_MAX = 40     # characters of the visitor's own animal that reach the model
+
+# Any other animal: the one-word animal names of the dream themes (animales, serpientes,
+# bichos), minus the words that name no animal. A word ending in "*" is a stem.
+_NOT_ANIMALS = frozenset({"animal", "animales", "rebano*", "telarana", "liendres", "cascabel"})
+ANIMAL_WORDS: tuple[str, ...] = tuple(
+    kw for tid in ("animales", "serpientes", "bichos") for kw in DREAM_BY_ID[tid].keywords
+    if " " not in kw and kw not in _NOT_ANIMALS)
+_WORD = re.compile(r"[0-9A-Za-zÀ-ÖØ-öø-ÿ]+")
+_CLAUSE_END = re.compile(r"[.,;:!?¡¿()]")
+
+
+def _is_animal(word: str) -> bool:
+    return any(word.startswith(k[:-1]) if k.endswith("*") else word == k for k in ANIMAL_WORDS)
+
+
+def animal_phrase(text: str) -> str | None:
+    """The visitor's own words for an animal outside the four ("un perrito xoloitzcuintle",
+    "un ajolote"): from the article before the first animal word to the end of that clause,
+    at most ANIMAL_TEXT_MAX characters cut at a word, lower case at the start, no end
+    punctuation. None when no animal word is heard."""
+    text = strip_notes(text)
+    found = [(m, _fold(m.group(0))) for m in _WORD.finditer(text)]
+    for i, (m, w) in enumerate(found):
+        if not _is_animal(w):
+            continue
+        start = m.start()
+        if i > 0 and found[i - 1][1] in ("un", "una", "unos", "unas", "el", "la", "los",
+                                         "las", "mi", "mis"):
+            start = found[i - 1][0].start()
+        rest = text[start:]
+        cut = _CLAUSE_END.search(rest, m.end() - start)
+        phrase = rest[:cut.start()] if cut else rest
+        if len(phrase) > ANIMAL_TEXT_MAX:
+            phrase = phrase[:ANIMAL_TEXT_MAX + 1].rsplit(" ", 1)[0]
+        phrase = _clean_text(phrase)[:ANIMAL_TEXT_MAX].strip()
+        if not phrase:
+            return None
+        return phrase[0].lower() + phrase[1:]
+    return None
+
+
+def parse_animal(text: str) -> tuple[str, str | None]:
+    """The companion animal, in this order: one of the four said or named by its place
+    ("el primero") -> any other animal word, kept as the visitor's phrase -> one of the four
+    by sound -> none. The sound comes last: by sound "burro" is close to búho and "rata" to
+    sapo. Returns (kind, value): ("option", id), ("free", phrase), ("not_sure", None) or
+    ("none", None)."""
+    words = strip_notes(text)
+    heard = match_option(ANIMAL_Q, words)
+    if heard.kind == "not_sure":
+        return "not_sure", None
+    if heard.kind == "option" and heard.how in ("exact", "ordinal"):
+        return "option", heard.option
+    phrase = animal_phrase(words)
+    if phrase:
+        return "free", phrase
+    if heard.kind == "option":
+        return "option", heard.option
+    return "none", None
 
 
 # ---- the moon -------------------------------------------------------------------------------
@@ -655,6 +717,12 @@ class Fortune:
     animal: str | None = None
     luna: str | None = None
     palabra: str = ""
+    pistas: dict = field(default_factory=dict)   # the operator's lit cues (visit.pending())
+
+
+# The two themes whose words the model never gets (a named relative, a dead one, what the hat
+# keeps to itself): the theme's description goes instead.
+DREAM_NO_WORDS = frozenset({"seres_queridos", "otro"})
 
 
 def _bare(said: str) -> str:
@@ -675,7 +743,10 @@ def reading_tag(f: Fortune, deck: dict | None) -> str:
         parts.append(f"elemento={s.element}")
     if f.numero is not None:
         parts.append(f"número={f.numero}")
-    if f.sueno:
+    if f.sueno in DREAM_NO_WORDS and f.sueno in DREAM_BY_ID:
+        label = DREAM_BY_ID[f.sueno].label
+        parts.append(f"sueño={f.sueno} ({label[0].lower() + label[1:]})")
+    elif f.sueno:
         words = f.sueno_txt.replace('"', "'").strip()
         parts.append(f'sueño={f.sueno} ("{words}")' if words else f"sueño={f.sueno}")
     if f.carta is not None and deck:
@@ -687,12 +758,19 @@ def reading_tag(f: Fortune, deck: dict | None) -> str:
         parts.append(f"taza={f.taza}")
     if f.animal in ANIMAL_SAID:
         parts.append(f"animal={_bare(ANIMAL_SAID[f.animal])}")
+    elif f.animal:
+        free = _clean_text(f.animal)[:ANIMAL_TEXT_MAX].strip()
+        if free:
+            parts.append(f"animal={free}")
     if f.luna in MOON_SAID:
         parts.append(f"luna={MOON_SAID[f.luna]}")
     if f.palabra:
         parts.append(f"palabra={f.palabra}")
     if f.casa:
         parts.append(f"casa={f.casa}")
+    pistas = ", ".join(f"{label}: {said}" for label, said in cue_pairs(f.pistas or {}))
+    if pistas:
+        parts.append(f"pistas={pistas}")
     return "[ADIVINACIÓN: " + "; ".join(parts) + "] Haz la lectura."
 
 

@@ -3,7 +3,7 @@
 Every line is a canned phrase named `fortune_*` (never `show_*`: the fortune lives with the
 show off), rendered ahead while the voice is clean and played from the cache, never rendered
 at show time. One clip per datum the parsers can return: a reaction per sign, dream theme,
-card, cup shape and animal; a line per lucky number and moon phase; pools for the intro and
+card, cup shape and animal (a pool for any other animal); a line per lucky number and moon phase; pools for the intro and
 the closing by place (and by house, when the house act just ran), the visions after the
 dream, the bridges, the suspense and the twelve magic words. The act says a reaction the
 moment its datum lands, so a visitor who answers nothing still hears intro, bridges, moon,
@@ -206,6 +206,11 @@ POOLS: dict[str, list[str]] = {
         "Exacto, por eso lo vi tan claro desde que llegaste. Y había más: un detalle que solo tú sabes, y que esta noche vuelve a aparecer.",
         "Veo algo más en ese sueño: un animal, o alguien que corre, o un lugar muy alto. Quédate con el que te suene, que ese era.",
     ],
+    # Any animal outside the four (fortune.parse_animal's "free"): a line that needs no name.
+    "re_animal_otro": [
+        "Ese no venía en mi lista, y por eso mismo me gusta. Los animales que nadie espera son los que mejor cuidan de noche.",
+        "Buena elección, y muy tuya: ese animal ya te había escogido antes de que lo dijeras. Esta noche anda cerca, aunque no lo veas.",
+    ],
     "bridge": [
         "No hace falta que lo digas: el sombrero lo leyó en tu silencio. Vamos adelante.",
         "Eso lo guardo bajo mi ala, con lo demás. Sigamos.",
@@ -324,21 +329,28 @@ FORTUNE_PHRASES: dict[str, str] = _phrases()
 FORTUNE_RULES = """Eres el Sombrero Seleccionador, de visita en la temporada de Halloween y Día de Muertos, y esta noche lees el futuro. Hablas español mexicano con tono antiguo, cálido y teatral, ahora para un público adulto: tenebroso y pícaro, con humor negro ligero. Tu número es de mentalismo: parece que adivinas, pero solo usas lo que el visitante te dio.
 
 FORMATO
-- Te llega una sola línea entre corchetes, como [ADIVINACIÓN: nombre=...; lugar=...; signo=...; elemento=...; número=...; sueño=tema ("sus palabras"); carta=...; taza=...; animal=...; luna=...; palabra=...; casa=...]. Nunca repitas los corchetes ni sus claves: conviértelos en visión.
+- Te llega una sola línea entre corchetes, como [ADIVINACIÓN: nombre=...; lugar=...; signo=...; elemento=...; número=...; sueño=tema ("sus palabras"); carta=...; taza=...; animal=...; luna=...; palabra=...; casa=...; pistas=edad: ..., compañía: ..., ...]. Nunca repitas los corchetes ni sus claves: conviértelos en visión.
+- El sueño llega con sus palabras entre comillas, o solo con el tema y su descripción entre paréntesis: entonces no hay palabras que repetir.
 - Responde con exactamente cuatro oraciones cortas, setenta palabras como máximo, para decir en voz alta con un sintetizador: sin emojis, listas, markdown, siglas ni comillas.
 - Tutea al visitante y usa su nombre de pila si viene.
 
 LAS CUATRO ORACIONES, EN ESTE ORDEN
-1. Su signo con su elemento, junto con su sueño: repite sus propias palabras del sueño como si las vieras tú, y dales un sentido bueno.
+1. Su signo con su elemento, junto con su sueño: toma una imagen de sus palabras, como si la vieras tú, y dale un sentido bueno. Nunca digas que alguien murió ni nombres a un pariente: los que ya cruzaron son una luz, una vela o una visita.
 2. Su carta, dicha por su nombre (también La Muerte y El Diablo), o la figura de su taza; si no hay ninguna, su casa o un rasgo con su opuesto.
-3. Su animal y su número de la suerte, con una predicción pequeña y concreta para el lugar.
+3. Su animal, el que haya escogido y con sus palabras, y su número de la suerte, con una predicción pequeña y concreta hecha con una pista y el lugar.
 4. La luna de esta noche y, para cerrar, "tu palabra mágica es" y la palabra tal cual.
 
 TRUCOS DE MENTALISTA
-- Eco: sus palabras vueltas visión ("veo dientes, una boda, una prima...").
+- Eco: una imagen de sus palabras vuelta visión ("veo dientes, una boda, una luz que te visita..."); nunca una muerte real ni un pariente con nombre.
 - Arcoíris: un rasgo y su opuesto en la misma frase ("te da miedo, y te da curiosidad").
 - Acierto: lo que te dio, dilo como si lo hubieras visto antes de que hablara.
 - Fallo vuelto futuro: lo que falta no se inventa; "eso todavía no te llega".
+
+LAS PISTAS (pistas=..., si vienen)
+- Son lo que tu ayudante vio del visitante, y son material para la lectura. No hace falta nombrarlas todas, pero que se noten.
+- Dilas como visiones, como un rasgo con su opuesto o como pregunta; nunca como algo que viste o que te contaron.
+- Nunca digas la edad: solo cambia cómo le hablas.
+- Si una pista nombra una escuela, empresa o persona, usa el tema, nunca el nombre.
 
 EL LUGAR (lugar=...)
 - fiesta: una canción o un brindis. casa: los que ya no están y la ofrenda. universidad: un hallazgo. Cualquier otro texto: úsalo tal cual como escenario, sin inventarle nombre.

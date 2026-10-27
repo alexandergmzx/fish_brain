@@ -306,7 +306,9 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
     data["palabra"] = random.Random(seed).choice(fortune.MAGIC_WORDS)
     house = visit_rec["house"] if visit_rec else None
     nombre = visit_rec["first"] if visit_rec else ""
-    f = fortune_run.fortune_of(data, nombre=nombre, lugar=place_of(cfg, visitor), casa=house)
+    cues = visit_rec["cues"] if visit_rec else {}
+    f = fortune_run.fortune_of(data, nombre=nombre, lugar=place_of(cfg, visitor), casa=house,
+                               pistas=accepted_cues(cues)[0])   # as the act: refused ones never lit
     tag = fortune_run.reading_request(llm, cfg.fortune.rules, f, deck)
     raw = llm.reply(tag, remember=False)
     seconds = getattr(llm, "last_latency_s", 0.0)
@@ -319,7 +321,6 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
     if seconds > cfg.fortune.reading_s:
         problems.append(f"{seconds:.1f} s > {cfg.fortune.reading_s:g} s: would fall back "
                         f"to clips")
-    cues = visit_rec["cues"] if visit_rec else {}
     used, unused = coverage(cues, [spoken])
     return {"answers": answers, "tag": tag, "reading": spoken, "said": text, "s": seconds,
             "error": error, "usage": getattr(llm, "last_usage", None), "problems": problems,

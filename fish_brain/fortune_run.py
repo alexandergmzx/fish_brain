@@ -50,7 +50,7 @@ def _not_sure(text: str) -> bool:
 # ---- the act's pure steps (shared with tools/hat_rehearse.py) ---------------------------------
 def parse_answer(qid: str, words: str, deck: dict | None, data: dict) -> tuple[str, object]:
     """One answer (notes stripped) into `data`: (what was found, its id), ("not_sure", None)
-    or ("none", None). "No sé" is the bridge, except at the dream: "no me acuerdo" is a theme
+    or ("none", None). Any animal outside the four is ("free", the visitor's phrase). "No sé" is the bridge, except at the dream: "no me acuerdo" is a theme
     of its own (`nada`, a line that needs no content), so its parser decides."""
     if qid != "sueno" and _not_sure(words):
         return "not_sure", None
@@ -85,21 +85,19 @@ def parse_answer(qid: str, words: str, deck: dict | None, data: dict) -> tuple[s
         data["taza"] = shape
         return "shape", shape
     if qid == "animal":
-        heard = show.match_option(fortune.ANIMAL_Q, words)
-        if heard.kind == "not_sure":
-            return "not_sure", None
-        if heard.kind != "option":
-            return "none", None
-        data["animal"] = heard.option
-        return "option", heard.option
+        kind, value = fortune.parse_animal(words)
+        if value is not None:
+            data["animal"] = value
+        return kind, value
     return "none", None
 
 
 def fortune_of(data: dict, *, nombre: str = "", lugar: str = "",
-               casa: str | None = None) -> fortune.Fortune:
-    """The act's data (parse_answer's dict, plus the moon and the magic word) as a Fortune."""
+               casa: str | None = None, pistas: dict | None = None) -> fortune.Fortune:
+    """The act's data (parse_answer's dict, plus the moon and the magic word) as a Fortune;
+    `pistas` are the operator's lit cues (visit.pending())."""
     d = data
-    return fortune.Fortune(nombre=nombre, lugar=lugar, casa=casa,
+    return fortune.Fortune(nombre=nombre, lugar=lugar, casa=casa, pistas=dict(pistas or {}),
                            fecha=d.get("fecha"), signo=d.get("signo"), numero=d.get("numero"),
                            sueno=d.get("sueno"), sueno_txt=d.get("sueno_txt", ""),
                            carta=d.get("carta"), taza=d.get("taza"), animal=d.get("animal"),
@@ -323,7 +321,10 @@ class FortuneRun:
             return self._next([self._pick("bridge")])
         if kind == "none":
             return self.no_answer()
-        clips = [fortune_bank.reaction_name(qid, value, v["deck"])]
+        if kind == "free":                       # an animal outside the four: no clip by name
+            clips = [self._pick("re_animal_otro")]
+        else:
+            clips = [fortune_bank.reaction_name(qid, value, v["deck"])]
         if qid == "sueno":
             clips.append(self._pick("vision"))   # a mentalist line that needs no content
         return self._next(clips)
@@ -358,10 +359,15 @@ class FortuneRun:
         return self._ending(clips)
 
     # ---- the reading ---------------------------------------------------------------------------
+    def _pistas(self) -> dict:
+        """The lit cues now (the latest win), for the reading and the record."""
+        visit = self.c.visit
+        return visit.pending() if visit is not None else {}
+
     def _fortune(self) -> fortune.Fortune:
         v = self.v
         return fortune_of(v["data"], nombre=v["first"], lugar=place_word(self.c.cfg.place),
-                          casa=v["house"])
+                          casa=v["house"], pistas=self._pistas())
 
     def _ending(self, lead: list, *, clips_only: bool = False) -> bool:
         """The reading: the moon and the magic word join the data; the model's reading when
@@ -465,7 +471,7 @@ class FortuneRun:
         debug.emit("fortune", n=v["n"], mode=v["mode"], why=v["mode_why"], how=how,
                    place=v["place"], data=data, heard=[list(h) for h in v["heard"]],
                    clips=list(v["clips"]), reading=v["reading"], house=v["house"],
-                   first=v["first"], seconds=seconds)
+                   first=v["first"], pistas=self._pistas(), seconds=seconds)
         debug.turn_set(fortune=f"#{v['n']} reading ({how})", outcome=f"fortune: reading ({how})")
         self._last = {"n": v["n"], "mode": how, "why": v["mode_why"], "data": data}
         self.v = None
@@ -498,7 +504,7 @@ class FortuneRun:
               f"{min(v['i'] + 1, len(v['qs']))}/{len(v['qs'])}", flush=True)
         debug.emit("fortune", n=v["n"], dropped=why, place=v["place"], data=data,
                    heard=[list(h) for h in v["heard"]], clips=list(v["clips"]),
-                   house=v["house"], first=v["first"],
+                   house=v["house"], first=v["first"], pistas=self._pistas(),
                    seconds=round(time.monotonic() - v["t0"], 1))
         debug.turn_set(fortune=f"#{v['n']} dropped ({why})", outcome=f"dropped ({why})")
         self._last = {"n": v["n"], "mode": "dropped", "why": why, "data": data}
