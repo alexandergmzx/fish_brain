@@ -1538,9 +1538,23 @@
   // ---- hold to talk: the backup for the remote's button (POST /ptt; the board records) ----------
   const ptt = guard("ptt", () => {
     const btn = $("pttButton");
-    let down = false, needRelease = false, remoteHold = false, pointer = null;
+    let down = false, needRelease = false, remoteHold = false, pointer = null, armedInstead = false;
+    // The board cannot hear (its microphone dead, or marked failed): a press turns this phone's
+    // microphone on instead of recording silence on the board; the next press records. The
+    // switch resets on every reload and every screen sleep, so this is what a cold page does.
+    function boardDeaf() {
+      const t = (S.state && S.state.show_tab) || {}, hw = t.hw || {};
+      return !!(t.mic_dead || hw.mic);
+    }
     function send(on) {
       if (phoneMic.ready() && (on || phoneMic.holding())) { on ? phoneMic.begin() : phoneMic.end(); return; }
+      if (on && phoneMic.can() && boardDeaf()) {
+        armedInstead = true;
+        phoneMic.arm();
+        msg(null, "the board has no microphone: turning this phone's on, then hold again", 6000);
+        return;
+      }
+      if (!on && armedInstead) { armedInstead = false; return; }
       api("/ptt", { down: on }).catch(() => {});
     }
     function setPtt(on) {
@@ -2000,6 +2014,7 @@
         if (!busy && !actx && page.capture === "browser" && !note.textContent) say("the board takes phone recordings, but this phone's microphone is off");
       },
       ready: () => !!actx && trackAlive(),
+      can: () => CAN,
       holding: () => holding,
       begin() {
         if (!actx) return;
@@ -2015,7 +2030,7 @@
       hidden() { if (actx) { release(true); tick.checked = false; say("released when the screen slept: turn it on again", "warn-text"); } },
       arm() { if (!tick.checked && !busy) { tick.checked = true; on(); } },   // the Hardware tap
     };
-  }, { status() {}, ready: () => false, holding: () => false, begin() {}, end() {}, abort() {}, hidden() {}, arm() {} });
+  }, { status() {}, ready: () => false, can: () => false, holding: () => false, begin() {}, end() {}, abort() {}, hidden() {}, arm() {} });
 
   // ---- coming back: the phone slept, the tab was hidden, the network returned ---------------------
   function onHidden() {

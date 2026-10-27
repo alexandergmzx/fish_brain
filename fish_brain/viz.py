@@ -749,8 +749,13 @@ class _TLSServer(ThreadingHTTPServer):
             return
         # The handler sets its own socket timeout in setup() (Handler.timeout).
         # shutdown_request() only sees the plain socket, so the TLS one is closed here.
+        # A phone that drops a TLS connection mid-request (a reload, a Wi-Fi hop) raises
+        # SSLError "unexpected eof" or a reset in the handler: closed quietly, no traceback
+        # (one of 26 lines per reconnection on 2026-10-27).
         try:
             self.RequestHandlerClass(tls, client_address, self)
+        except (ssl.SSLError, ConnectionError, TimeoutError):
+            pass
         finally:
             try:
                 tls.close()
