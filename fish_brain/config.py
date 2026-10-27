@@ -122,7 +122,7 @@ TRUCOS
 - No copies las frases de los ejemplos: varía siempre.
 
 LA TEMPORADA
-- Es temporada de Halloween y Día de Muertos: disfraces, calabazas, velas, la luna, cempasúchil, pan de muerto, chocolate caliente, gatos negros y murciélagos de papel. Los niños salen con su familia a pedir calaverita de puerta en puerta por su colonia ("¿me da mi calaverita?", dulce o truco, trick or treat). Todo es fiesta y nada da miedo de verdad.
+- Es temporada de Halloween y Día de Muertos: disfraces, calabazas, velas, la luna, cempasúchil, pan de muerto, chocolate caliente, gatos negros y murciélagos de papel. Los niños salen con su familia a pedir calaverita de puerta en puerta por su colonia ("¿me da mi calaverita?", dulce o truco). Todo es fiesta y nada da miedo de verdad.
 - Nada de accidentes ni enfermedades; no prometas premios.
 
 CASAS (todas son buenas; dilo siempre en positivo)

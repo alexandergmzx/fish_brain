@@ -179,8 +179,7 @@ def test_the_bank_is_well_formed():
     assert len(show_bank.SHOW_PHRASES) >= 130
 
 
-ENGLISH = {"halloween", "happy", "trick", "or", "treat",
-           "gryffindor", "hufflepuff", "ravenclaw", "slytherin"}
+ENGLISH = {"halloween", "gryffindor", "hufflepuff", "ravenclaw", "slytherin"}
 
 
 def test_the_lines_are_for_the_season_and_their_english_is_spelled_right():
