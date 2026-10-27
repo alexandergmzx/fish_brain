@@ -267,48 +267,19 @@ def test_a_dream_told_but_unclear_is_otro_and_the_words_are_kept(make, monkeypat
 
 # ---- the dream's recording ------------------------------------------------------------------
 
-def test_the_dream_lifts_the_recording_cap_only_online_and_restores_it(make, online):
+def test_the_dream_never_moves_the_recording_cap_or_the_speech_routes(make, online, monkeypatch):
+    monkeypatch.setenv("FISH_PTT_MAX_S", "45")
+    monkeypatch.setenv("FISH_STT_LONG", "groq")
     c = make()
-    assert c.cfg.ptt.max_record_s == 5.5 and c.cfg.stt.long_online == ()
-    c.cfg.stt.backend, c.cfg.stt._long_online_configured = "canary", ("groq",)
+    assert c.cfg.ptt.max_record_s == 45.0 and c.cfg.stt.long_online == ("groq",)
     start(c)
-    assert c.cfg.ptt.max_record_s == 5.5
     say(c, "23 de octubre")                                       # the dream is next
-    assert c.cfg.ptt.max_record_s == 10.0 and c.cfg.stt.long_online == ("groq",)
-    say(c, "")                                                    # asked again: still lifted
-    assert c.cfg.ptt.max_record_s == 10.0
+    assert c.cfg.ptt.max_record_s == 45.0 and c.cfg.stt.long_online == ("groq",)
+    say(c, "")                                                    # asked again
     say(c, "soñé con agua")
-    assert c.cfg.ptt.max_record_s == 5.5 and c.cfg.stt.long_online == ()
-    # Dropped mid-dream: restored too.
-    c.fortune.drop("test") if c.fortune.open else None
-    c2 = make()
-    c2.cfg.stt.backend, c2.cfg.stt._long_online_configured = "canary", ("groq",)
-    start(c2)
-    say(c2, "23 de octubre")
-    assert c2.cfg.ptt.max_record_s == 10.0
-    c2._handle_item(NewVisit(c2._clock()))
-    assert c2.cfg.ptt.max_record_s == 5.5 and c2.cfg.stt.long_online == ()
-
-
-def test_offline_or_without_the_long_route_the_cap_stays(make, monkeypatch):
-    monkeypatch.setenv("GROQ_API_KEY", "x" * 12)
-    monkeypatch.setattr(cloud, "is_online", lambda: False)
-    c = make()
-    c.cfg.stt.backend, c.cfg.stt._long_online_configured = "canary", ("groq",)
-    start(c)
-    say(c, "23 de octubre")
-    assert c.cfg.ptt.max_record_s == 5.5 and c.cfg.stt.long_online == ()
-    monkeypatch.setattr(cloud, "is_online", lambda: True)
-    c = make()
-    c.cfg.stt.backend, c.cfg.stt._long_online_configured = "local", ("groq",)
-    start(c)
-    say(c, "23 de octubre")
-    assert c.cfg.ptt.max_record_s == 5.5                          # the local model: too slow
-    c = make()
-    c.cfg.stt.backend, c.cfg.stt._long_online_configured = "canary", ()
-    start(c)
-    say(c, "23 de octubre")
-    assert c.cfg.ptt.max_record_s == 5.5                          # no service configured
+    assert c.cfg.ptt.max_record_s == 45.0 and c.cfg.stt.long_online == ("groq",)
+    c._handle_item(NewVisit(c._clock()))                          # dropped: nothing to restore
+    assert c.cfg.ptt.max_record_s == 45.0 and c.cfg.stt.long_online == ("groq",)
 
 
 # ---- the page's taps --------------------------------------------------------------------------

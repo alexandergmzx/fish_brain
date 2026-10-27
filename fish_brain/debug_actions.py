@@ -131,10 +131,6 @@ def _set_show(a, value: str) -> str:
             a.cfg.canned.phrases.update(SHOW_PHRASES)
         from .show_run import ShowRun
         a.cfg.ptt.voice_quit = False
-        a.cfg.ptt.max_record_s = min(a.cfg.ptt.max_record_s, a.cfg.show.max_record_s)
-        if not hasattr(a.cfg.stt, "_long_online_configured"):
-            a.cfg.stt._long_online_configured = a.cfg.stt.long_online
-        a.cfg.stt.long_online = ()
         convo.show = ShowRun(convo)
     return ""
 

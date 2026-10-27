@@ -12,9 +12,8 @@ an act). Every datum is optional: the act always reaches the closing and never s
 line. The reading comes from the clips or, when the model can be trusted
 (show_run.model_trusted), from the model: its job starts first, the suspense line covers it,
 and a reading that is not clean within `reading_s` of the end of that line gives way to the
-clips. The dream is the one open question: while the long speech route is online its
-recording may run `dream_record_s` instead of the show's limit. Everything here runs on the
-turn loop's thread; the page's taps arrive as `FortuneInput` items through the inbox.
+clips. The dream is the one open question; its recording, like every other, is capped by
+`FISH_PTT_MAX_S` alone (ADR 0020). Everything here runs on the turn loop's thread; the page's taps arrive as `FortuneInput` items through the inbox.
 """
 from __future__ import annotations
 
@@ -22,8 +21,7 @@ import re
 import time
 from dataclasses import dataclass
 
-from . import canned, cloud, debug, fortune, fortune_bank, show
-from .config import STT_PROFILES
+from . import canned, debug, fortune, fortune_bank, show
 from .show import ShowState
 from .show_run import model_trusted
 from .visit import begin_model, clean_cue_text, split_reply
@@ -59,7 +57,6 @@ class FortuneRun:
             print("[fortune] the state file could not be read: a fresh one", flush=True)
         self.v: dict | None = None            # the open act
         self._last: dict = {}                 # the last reading or drop, for the page
-        self._cap: tuple | None = None        # the recording limit and the long route before the dream
 
     # ---- which reading ---------------------------------------------------------------------
     def mode_now(self) -> tuple[str, str]:
@@ -323,55 +320,14 @@ class FortuneRun:
 
     def _next(self, clips: list) -> bool:
         v = self.v
-        if v["qs"][v["i"]] == "sueno":
-            self._restore_cap()
         v["i"] += 1
         v["tries"] = 0
         if v["i"] < len(v["qs"]):
             nxt = v["qs"][v["i"]]
-            if nxt == "sueno":
-                self._lift_cap()
             clips.append(fortune_bank.prompt_name(nxt, v["deck"]))
             self._say(clips)
             return True
         return self._ending(clips)
-
-    # ---- the dream's recording ----------------------------------------------------------------
-    def _long_route_online(self) -> bool:
-        """Whether a 10 s dream can be transcribed in time: a cloud speech service with its
-        key, online; with Canary, one of the services configured for the long recordings
-        (the show clears them at start and keeps the configured set)."""
-        from . import hw
-        stt = self.c.cfg.stt
-        if hw.failed("internet") or not cloud.is_online():
-            return False
-        if stt.backend in STT_PROFILES:
-            return not cloud.missing_keys({STT_PROFILES[stt.backend]["api_key_env"]})
-        if stt.backend != "canary":
-            return False
-        configured = getattr(stt, "_long_online_configured", stt.long_online)
-        keys = {STT_PROFILES[n]["api_key_env"] for n in configured if n in STT_PROFILES}
-        return bool(keys) and len(cloud.missing_keys(keys)) < len(keys)
-
-    def _lift_cap(self) -> None:
-        """The dream is next: a longer recording and the long route back on, only while that
-        route is online. Restored when the question is left, dropped or closed."""
-        if self._cap is not None or not self._long_route_online():
-            return
-        cfg = self.c.cfg
-        configured = getattr(cfg.stt, "_long_online_configured", cfg.stt.long_online)
-        self._cap = (cfg.ptt.max_record_s, cfg.stt.long_online)
-        cfg.ptt.max_record_s = max(cfg.ptt.max_record_s, self.cfg.dream_record_s)
-        cfg.stt.long_online = tuple(configured)
-        print(f"[fortune] the dream: recordings up to {cfg.ptt.max_record_s:g} s, the long "
-              f"ones to {' > '.join(cfg.stt.long_online) or 'the local model'}", flush=True)
-
-    def _restore_cap(self) -> None:
-        if self._cap is None:
-            return
-        cfg = self.c.cfg
-        cfg.ptt.max_record_s, cfg.stt.long_online = self._cap
-        self._cap = None
 
     # ---- the reading ---------------------------------------------------------------------------
     def _fortune(self) -> fortune.Fortune:
@@ -389,7 +345,6 @@ class FortuneRun:
         it can be trusted and arrives clean in time, else the clips."""
         v = self.v
         v["stage"] = "reading"
-        self._restore_cap()
         data = v["data"]
         data["luna"] = fortune.moon_tonight()
         magic = self._pick("magic")
@@ -493,7 +448,6 @@ class FortuneRun:
         debug.turn_set(fortune=f"#{v['n']} reading ({how})", outcome=f"fortune: reading ({how})")
         self._last = {"n": v["n"], "mode": how, "why": v["mode_why"], "data": data}
         self.v = None
-        self._restore_cap()
         self.c._push_visit()
         return True
 
@@ -510,7 +464,6 @@ class FortuneRun:
         if v is None:
             return
         self.v = None
-        self._restore_cap()
         data = self._said_data(v)
         print(f"[fortune] act #{v['n']} dropped ({why}) at question "
               f"{min(v['i'] + 1, len(v['qs']))}/{len(v['qs'])}", flush=True)
@@ -537,7 +490,6 @@ class FortuneRun:
         except Exception as e:                   # the act must never be the problem
             print(f"[fortune] fault while handling {kind}: {type(e).__name__}: {e}", flush=True)
             self.v = None
-            self._restore_cap()
 
     def close_quietly(self) -> None:
         """Something broke mid-act: finish it kindly from the clips (a bridge, the ending)."""
@@ -551,4 +503,3 @@ class FortuneRun:
         except Exception as e:
             print(f"[fortune] could not close the act: {e}", flush=True)
             self.v = None
-            self._restore_cap()

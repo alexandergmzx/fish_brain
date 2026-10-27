@@ -182,11 +182,13 @@ def test_a_model_failure_hands_over_and_its_line_is_never_said(make, monkeypatch
     assert c.show.mode_now() == ("script", "model failed")    # the next visits too
 
 
-def test_show_mode_turns_off_the_quit_word_and_long_recordings(make):
+def test_show_mode_turns_off_the_quit_word_and_leaves_the_cap_and_routes(make, monkeypatch):
+    monkeypatch.setenv("FISH_PTT_MAX_S", "45")
+    monkeypatch.setenv("FISH_STT_LONG", "groq")
     c = make()
     assert c.cfg.ptt.voice_quit is False
-    assert c.cfg.ptt.max_record_s <= c.cfg.show.max_record_s
-    assert c.cfg.stt.long_online == ()
+    assert c.cfg.ptt.max_record_s == 45.0                 # FISH_PTT_MAX_S alone (ADR 0020)
+    assert c.cfg.stt.long_online == ("groq",)
     say(c, "hola")
     assert say(c, "salir") is True and c.show.open        # "salir" is just an answer
 

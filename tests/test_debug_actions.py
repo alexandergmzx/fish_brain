@@ -501,14 +501,17 @@ def test_ending_the_visit_drops_an_open_fortune(rig):
     assert dropped == ["switch"]                     # nothing open: nothing dropped
 
 
-def test_the_show_switch_keeps_the_long_route_it_clears(rig, monkeypatch):
+def test_the_show_switch_leaves_the_routes_and_the_cap_alone(rig, monkeypatch):
     from fish_brain import show_run
     from fish_brain.visit import Visit
     monkeypatch.setattr(show_run, "ShowRun", lambda convo: object())
     rig.convo.visit, rig.convo.show = Visit(), None
     rig.cfg.stt.long_online = ("groq",)
+    rig.cfg.ptt.max_record_s = 45.0
+    rig.cfg.ptt.voice_quit = True
     assert rig.act.set("show", "script")[0] == 200
-    assert rig.cfg.stt.long_online == () and rig.cfg.stt._long_online_configured == ("groq",)
+    assert rig.cfg.stt.long_online == ("groq",) and rig.cfg.ptt.max_record_s == 45.0
+    assert rig.cfg.ptt.voice_quit is False
 
 
 def test_the_show_switch_goes_off_and_back_without_an_error(rig, monkeypatch):

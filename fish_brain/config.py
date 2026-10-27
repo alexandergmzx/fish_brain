@@ -889,7 +889,6 @@ class ShowConfig:
     seed: str = field(default_factory=lambda: _env("FISH_SHOW_SEED", ""))
     reprompts: int = 2           # per visit: a question asked again at most this often
     back_s: float = 120.0        # after a model failure, visits stay scripted this long
-    max_record_s: float = 5.5    # answers stay under Canary's limit (stt.canary_long_s)
     idle_s: float = 90.0         # a pause this long mid-visit means a new visitor
 
 
@@ -912,7 +911,6 @@ class FortuneConfig:
     cup: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_CUP", False))
     reprompts: int = 2           # per act: a question asked again at most this often
     reading_s: float = 8.0       # the model's reading, from the end of the suspense line
-    dream_record_s: float = 10.0  # the dream's recording limit, while the long route is online
     carry_s: float = 600.0       # a house act's name and house carry over this long
     state: str = field(default_factory=lambda: _env(
         "FISH_FORTUNE_STATE", str(Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))

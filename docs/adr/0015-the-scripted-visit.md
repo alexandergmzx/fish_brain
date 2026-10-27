@@ -37,6 +37,9 @@ speech and fell back to typed answers. Children's speech recognition is poor eve
    rendered at start-up only after the licence probe passed, played from the cache, backed up.
 6. With the show on: "salir" does not quit, recordings stay under Canary's 6 s limit, the
    start-up welcome, the spoken address and the goodbye are not said.
+   *Amended 2026-10-27 ([0020](0020-online-first-and-the-uncut-hold.md)): the recording
+   limit is no longer clamped; the cap is `FISH_PTT_MAX_S` alone and the speech routes stay
+   as configured.*
 
 ## Alternatives
 
@@ -56,7 +59,7 @@ carry many visits. Reviewing the 132 lines is his.
 A sibling act, the fortune ([0019](0019-the-fortune-act.md)), shares this visit's conventions:
 the bank's (clips rendered at start-up after the probe, no error line, re-ask then move on,
 two re-asks per act), the recording cap (lifted to 10 s for the dream question while the long
-speech route is online) and the matcher (`show.match_option` for its animal question). Its
+speech route was online; gone since [0020](0020-online-first-and-the-uncut-hold.md)) and the matcher (`show.match_option` for its animal question). Its
 lines are `fortune_*`, never `show_*`, and they are joined for the hat persona whatever
 `FISH_SHOW` says. The house act's lines keep the kid register until his later pass; the
 audience is adults since 2026-10-27.

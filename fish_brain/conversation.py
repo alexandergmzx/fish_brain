@@ -125,16 +125,12 @@ class FishConversation:
             self.visit = Visit(cfg.visit.stages, cfg.visit.idle_s, clock=clock, future=cfg.visit.future)
         self._heard_at: float | None = None   # when the visitor started talking, this turn
         # The scripted visit (FISH_SHOW, show_run.py): only for a persona with a visit. With
-        # it on, nothing about an error is said to a visitor, "salir" does not quit, and an
-        # answer stays under Canary's limit so it never takes the slow local route.
+        # it on, nothing about an error is said to a visitor and "salir" does not quit. The
+        # recording cap stays FISH_PTT_MAX_S and the speech routes stay as configured (ADR 0020).
         self.show = None
         if cfg.show.mode != "off" and self.visit is not None:
             from .show_run import ShowRun
             cfg.ptt.voice_quit = False
-            cfg.ptt.max_record_s = min(cfg.ptt.max_record_s, cfg.show.max_record_s)
-            if not hasattr(cfg.stt, "_long_online_configured"):
-                cfg.stt._long_online_configured = cfg.stt.long_online   # the fortune's dream brings it back
-            cfg.stt.long_online = ()
             self.visit.idle_s = max(self.visit.idle_s, cfg.show.idle_s)
             self.show = ShowRun(self)
         # The fortune act (fortune_run.py, ADR 0019): for a persona with a visit, with or
