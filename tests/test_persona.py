@@ -1,4 +1,6 @@
 """FISH_PERSONA: the body's words (the fish by default, the Sorting Hat for the fair)."""
+import re
+
 import pytest
 
 from fish_brain.config import (PERSONAS, VISIT_PHRASES, CannedConfig, LLMConfig, ReadingConfig,
@@ -103,17 +105,40 @@ def test_the_fortune_is_the_hats_only(monkeypatch):
     assert PlaceConfig().place == "otro"
 
 
-def test_the_hats_future_bank_is_full_and_clean(monkeypatch):
+def test_the_hat_has_no_ingredient_bank(monkeypatch):
     monkeypatch.setenv("FISH_PERSONA", "hat")
-    bank = VisitConfig().future
-    for kind in ("lugar", "cosa", "noche", "antojo", "acción", "carta"):
-        assert len(bank[kind]) >= 5, kind
-    words = " ".join(" ".join(v) for v in bank.values() if isinstance(v, list)).lower()
-    for bad in ("pájaro", "chile", "plátano", "huevo", "muerte", "calavera", "diablito", "borracho",
-                "inundación", "rayo", "biblioteca", "pato", "ardilla", "cartón"):
-        assert bad not in words, bad
+    assert VisitConfig().future == {}           # the verdict comes from the visitor, not a bank
     monkeypatch.setenv("FISH_PERSONA", "fish")
     assert VisitConfig().future == {}
+
+
+def test_the_visit_rules_are_the_adult_ones(monkeypatch):
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+    r = VisitConfig().rules
+    assert "FORMATO" in r and "REGLAS FIJAS" in r and "BANCO DE PREGUNTAS" in r and "CASA:" in r
+    assert "público adulto" in r and "tenebroso y pícaro" in r and "humor negro" in r
+    for move in ("Eco", "Arcoíris"):
+        assert move in r
+    # the cues: all material, never the age, the latest win, themes not names
+    assert "LAS PISTAS" in r and "todas son material" in r and "Nunca digas la edad" in r
+    assert "valen las últimas" in r and "el tema, nunca el nombre" in r
+    # the place, as the fortune has it
+    assert "EL LUGAR" in r and "brindis" in r and "ofrenda" in r and "hallazgo" in r
+    # the verdict: one prediction from their words, a cue and the place; no list, hour or venue
+    assert "una sola predicción" in r and "algo que dijo, una pista y el lugar" in r
+    assert "ni hora" in r and "lugares con nombre" in r
+    assert "[FUTURO" not in r and "ingredientes" not in r
+    # the question bank kept, with the adult questions
+    assert "una isla" in r and "puerta cerrada" in r and "fantasma" in r and "se acaba la fiesta" in r
+    # the kid register gone
+    for kid in ("Público familiar", "niños", "niño o niña", "calaverita", "con el adulto",
+                "nada da miedo"):
+        assert kid not in r, kid
+    assert "enfermedades" in r and "lotería" in r and "hombre o mujer" in r
+    # the example has no clock time and no named venue (small models copy examples)
+    example = re.sub(r"\[ETAPA \d/\d\]", "", r[r.index("EJEMPLO"):])
+    assert not re.search(r"\d|\ba las\b|en punto", example)
+    assert "Plaza" not in example
 
 
 def test_the_hat_spells_its_english_right_and_jorge_hears_a_respelling(monkeypatch):
