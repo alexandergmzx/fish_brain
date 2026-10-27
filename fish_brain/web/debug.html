@@ -243,8 +243,8 @@
                         <!-- The scripted visit (FISH_SHOW): the open question's answers, a house now,
                              or the next question. Shown only while a scripted visit is open. -->
                         <div class="c-show" id="showRow" hidden>
-                            <div class="cue-group" role="group" aria-label="Respuesta"><span id="showQ">Pregunta</span><span id="showAnswers" class="picks"></span></div>
-                            <div class="cue-group" role="group" aria-label="Forzar casa"><span>Forzar casa</span><button type="button" class="pick" data-house="G">Gryffindor</button><button type="button" class="pick" data-house="H">Hufflepuff</button><button type="button" class="pick" data-house="R">Ravenclaw</button><button type="button" class="pick" data-house="S">Slytherin</button><button type="button" class="pick" id="showSkip">Saltar pregunta</button></div>
+                            <div class="cue-group" role="group" aria-label="Answer"><span id="showQ">Question</span><span id="showAnswers" class="picks"></span></div>
+                            <div class="cue-group" role="group" aria-label="Force a house"><span>Force a house</span><button type="button" class="pick" data-house="G">Gryffindor</button><button type="button" class="pick" data-house="H">Hufflepuff</button><button type="button" class="pick" data-house="R">Ravenclaw</button><button type="button" class="pick" data-house="S">Slytherin</button><button type="button" class="pick" id="showSkip">Skip question</button></div>
                             <span id="showHeard" class="note"></span>
                         </div>
                         <span id="showLast" class="note"></span>
@@ -409,7 +409,7 @@
     </main>
     <!-- Within the thumb's reach: a new visitor, and the backup for the remote's button. -->
     <nav id="thumbBar">
-        <button id="visitNew" type="button" hidden>✨ Nuevo visitante</button>
+        <button id="visitNew" type="button" hidden>✨ New visitor</button>
         <button id="pttButton" type="button">🎙 Hold to talk</button>
     </nav>
     <div id="toast" role="status" aria-live="polite" hidden></div>

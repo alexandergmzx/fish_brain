@@ -117,7 +117,7 @@ def _set_show(a, value: str) -> str:
     a.cfg.show.mode = value
     if value == "off":
         convo.show = None
-        return "the model's visit only; error lines are said again"
+        return ""
     if convo.show is None:
         if not any(n.startswith("show_") for n in a.cfg.canned.phrases):
             from .show_bank import SHOW_PHRASES
@@ -253,6 +253,8 @@ SWITCHES: dict = {
 
 
 def _switch_note(a, name: str, value) -> str:
+    if name == "show" and value == "off":
+        return "the model's visit only; error lines are said again"
     if name == "mode" and value == "echo":
         return "the fish only repeats what it hears"
     if name == "stt" and value == "local":

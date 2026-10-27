@@ -1599,7 +1599,7 @@
     };
   }, { status() {}, busy: () => false });
 
-  // ---- the hat's visit: "Nuevo visitante" and the cues (visit.py) --------------------------------
+  // ---- the hat's visit: "New visitor" and the cues (visit.py) --------------------------------
   // The server owns the cues: a lit chip is one the hat has not used yet, and the row draws the
   // server's view (the POST /cues answer, the `visit` record) unless an edit of its own is on its way.
   const visitRow = guard("visit", () => {

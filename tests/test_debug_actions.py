@@ -402,3 +402,15 @@ def test_a_pronunciation_candidate_is_only_an_index(rig):
     assert rig.act.pron("nope")[0] == 400 and rig.act.pron(999)[0] == 400
     rig.cfg.tts.backend = "openai"
     assert rig.act.pron(0) == (409, {"ok": False, "error": "the voice is not loq"})
+
+
+def test_the_show_switch_goes_off_and_back_without_an_error(rig, monkeypatch):
+    from fish_brain import show_run
+    from fish_brain.visit import Visit
+    monkeypatch.setattr(show_run, "ShowRun", lambda convo: object())   # the stand-in has no turn loop
+    rig.convo.visit, rig.convo.show = Visit(), None
+    status, out = rig.act.set("show", "script")
+    assert (status, out) == (200, {"ok": True, "value": "script"}) and rig.convo.show is not None
+    status, out = rig.act.set("show", "off")          # the page's Model and Echo buttons send this
+    assert status == 200 and out == {"ok": True, "value": "off"} and rig.convo.show is None
+    assert "model's visit only" in _values(rig)["show"]["note"]
