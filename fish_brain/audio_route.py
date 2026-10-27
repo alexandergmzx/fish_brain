@@ -165,10 +165,13 @@ class RoutedPlayer(Player):
         return 0.0
 
     def _candidates(self):
+        from . import hw
         now = self._clock()
         for route in self.cfg.routes:
             if self._cool.get(route, 0.0) > now:
                 continue
+            if route.startswith("alsa_output.usb") and hw.failed("speaker"):
+                continue                        # he marked the USB speaker failed
             if route == "phone":
                 if self.viz is not None and getattr(self.viz, "speaker_pages", lambda: 0)() > 0:
                     yield route, "", lambda: PhonePlayer(self.viz, ack_s=self.cfg.phone_ack_s)

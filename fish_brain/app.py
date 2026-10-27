@@ -316,6 +316,8 @@ def main(argv: list[str] | None = None) -> int:
             except (ValueError, RuntimeError) as e:
                 print(f"Configuration problem: {e}", file=sys.stderr)
                 return 78
+            from . import hw
+            hw.apply(cfg, convo, link)              # what he marked failed stays so after a restart
             if viz is not None:
                 viz.register_speaker(convo.speaker)   # let the on-screen text box drive the fish
                 from . import reading

@@ -842,6 +842,8 @@ class DebugActions:
             return self.volume(body.get("value"))
         if path == "/debug/net":
             return self.net(body.get("pin"))
+        if path == "/debug/hw":
+            return self.hardware(body.get("part"), body.get("failed"))
         return 404, {"ok": False, "error": "no such action"}
 
     def volume(self, value) -> tuple[int, dict]:
@@ -858,6 +860,17 @@ class DebugActions:
         ok = pw.set_volume(target, v)
         self.hub.emit("action", what="volume", result=f"{round(v * 100)} %" if ok else "failed")
         return (200, {"ok": True, "volume": round(v, 2)}) if ok else (500, {"ok": False, "error": "wpctl failed"})
+
+    def hardware(self, part, failed) -> tuple[int, dict]:
+        """He marks a part failed (or working again): the fish follows at once (hw.py)."""
+        from . import hw
+        try:
+            hw.marks().set(str(part), bool(failed))
+        except ValueError as e:
+            return 400, {"ok": False, "error": str(e)}
+        hw.apply(self.cfg, self.convo, self.link)
+        self.hub.emit("action", what="hardware", result=f"{part} {'failed' if failed else 'working'}")
+        return 200, {"ok": True, "hw": hw.marks().view()}
 
     def net(self, pin) -> tuple[int, dict]:
         """Pin the board's own Wi-Fi ("ap") or let fish-net decide ("auto")."""

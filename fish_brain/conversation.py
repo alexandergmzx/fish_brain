@@ -633,6 +633,9 @@ class FishConversation:
                 debug.turn_set(outcome="show: hand-over")
                 return self.show.hand_over(visit_turn["stage"], "model error")
             reply = visit_turn["spoken"]
+            if not visit_turn["ok"]:
+                reply = user                       # the model failed: echo, never an error line
+                debug.turn_set(outcome="echo: model failed")
         else:
             t0 = time.monotonic()
             ask = self.llm.reply                   # the client is built here, on this thread
@@ -642,6 +645,9 @@ class FishConversation:
             if self.llm.last_error and self.cfg.tts.backend != "loq":
                 # The LLM is unreachable and so, most likely, is cloud TTS: use the cached line.
                 raise cloud.CloudUnavailable(self.llm.last_error)
+            if self.llm.last_error:
+                reply = user                       # the model failed: echo, never an error line
+                debug.turn_set(outcome="echo: model failed")
         print(f"fish> {reply}", flush=True)
         debug.turn_set(reply=reply, times=times)
         if not reply:

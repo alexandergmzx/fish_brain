@@ -378,6 +378,8 @@ def _show_tab(hub) -> dict:
         out["logger"] = time.time() - soak.stat().st_mtime < 30
     except OSError:
         out["logger"] = False
+    from . import hw
+    out["hw"] = hw.marks().view()
     out["capture"] = cfg.ptt.capture
     from . import ptt
     out["mic_dead"] = ptt.mic_dead(cfg.ptt)

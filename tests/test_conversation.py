@@ -446,11 +446,12 @@ def test_a_dropped_reply_is_not_remembered_and_the_stage_stays(hat):
     assert llm.remembered == [] and llm.replies == ["[ETAPA 1/4] hola", "[ETAPA 1/4] hola otra vez"]
 
 
-def test_a_failed_call_speaks_the_fallback_and_changes_nothing(hat):
+def test_a_failed_call_echoes_the_visitor_and_changes_nothing(hat):
+    """His rule (2026-10-26): when the model fails, the hat repeats; never the error line."""
     convo, viz, llm, spoken = hat(["hola", "Ana"], [("error", "Se me nubló."), "Hola Ana."])
-    convo.cfg.tts.backend = "loq"                 # with loq the fallback is spoken
+    convo.cfg.tts.backend = "loq"
     convo.turn()
-    assert spoken == ["Se me nubló."] and llm.remembered == [] and convo.visit.said == 0
+    assert spoken == ["hola"] and llm.remembered == [] and convo.visit.said == 0
     convo.turn()
     assert llm.replies[-1] == "[ETAPA 1/4] Ana" and convo.visit.said == 1
 

@@ -47,6 +47,9 @@ class ShowRun:
             return "script", "forced"
         if mode != "auto":
             return "llm", "off"
+        from . import hw
+        if hw.failed("internet"):
+            return "script", "internet marked failed"
         if self.c.echo:
             return "script", "echo"
         if not cloud.is_online():
