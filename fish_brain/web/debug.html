@@ -163,18 +163,20 @@
             </nav>
             <div class="scroll" id="panels">
                 <div class="panel" id="p-show" hidden>
-                    <!-- The phone as the console (ADR 0017): is the hat ready, and the few things
-                         the operator changes during a show. Rows come from /debug/state's show_tab. -->
-                    <h3>Ready? <small id="showSummary"></small></h3>
+                    <!-- The phone as the console (ADR 0017): is the hat ready, what failed, and the
+                         few things changed during a show. Rows come from /debug/state's show_tab. -->
+                    <div id="showSummary" class="summary wait" role="status" aria-live="polite">Waiting for the hat…</div>
                     <div id="goRows" class="go-rows"></div>
+                    <h3>Mode</h3>
+                    <div class="picks" role="group" aria-label="Mode"><button type="button" class="pick" data-mode="auto">Auto</button><button type="button" class="pick" data-mode="model">Model</button><button type="button" class="pick" data-mode="script">Script</button><button type="button" class="pick" data-mode="echo">Echo</button></div>
+                    <h3>Hardware <small>tap a part when it fails; tap again when it works</small></h3>
+                    <div class="picks hw" role="group" aria-label="Hardware"><button type="button" class="pick" data-hw="speaker">USB speaker</button><button type="button" class="pick" data-hw="mic">USB microphone</button><button type="button" class="pick" data-hw="remote">Remote button</button><button type="button" class="pick" data-hw="motors">Motors</button><button type="button" class="pick" data-hw="internet">Internet</button></div>
                     <h3>Volume <small id="volNow"></small></h3>
                     <input type="range" id="volSlider" min="0" max="100" step="5" value="50" aria-label="Volume">
-                    <h3>Scripted visit</h3>
-                    <div class="picks" role="group" aria-label="Scripted visit"><button type="button" class="pick" data-show="auto">Auto</button><button type="button" class="pick" data-show="script">Siempre</button><button type="button" class="pick" data-show="off">Apagado</button></div>
                     <h3>Network</h3>
-                    <div class="picks" role="group" aria-label="Network"><button type="button" class="pick" data-net="auto">Automático</button><button type="button" class="pick" data-net="ap">Wi-Fi propio</button></div>
+                    <div class="picks" role="group" aria-label="Network"><button type="button" class="pick" data-net="auto">Known Wi-Fi</button><button type="button" class="pick" data-net="ap">Own Wi-Fi</button></div>
                     <h3>Phone speaker <small id="spkState">off</small></h3>
-                    <button type="button" class="pick" id="spkBtn">🔊 Altavoz del teléfono</button>
+                    <button type="button" class="pick" id="spkBtn">🔊 Use this phone as a speaker</button>
                     <span id="showMsg" class="note"></span>
                 </div>
                 <div class="panel" id="p-visit" hidden>

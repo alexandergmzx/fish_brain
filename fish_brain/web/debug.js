@@ -568,54 +568,71 @@
     if (fix) r.appendChild(el("span", "fix", fix));
     return r;
   }
+  function setSummary(cls, text) {
+    const s = $("showSummary");
+    s.className = "summary " + cls;
+    s.textContent = text;
+  }
   function renderShow() {
-    const st = S.state || {}, t = st.show_tab || {};
-    if (t.error) return;
-    const rows = $("goRows"), out = [];
+    const rows = $("goRows");
+    // Never a "ready" without data: until the hat answers, and when its answer gets old, say so.
+    const age = S.stateAt ? (performance.now() - S.stateAt) / 1000 : Infinity;
+    const st = S.state, t = st && st.show_tab;
+    if (!st || !t || t.error) {
+      setSummary("wait", S.stateAt ? "No answer from the hat" : "Waiting for the hat…");
+      rows.replaceChildren();
+      return;
+    }
+    if (age > 15) {
+      setSummary("bad", "No answer from the hat for " + Math.round(age) + " s: check the Wi-Fi");
+      return;
+    }
+    const hw = t.hw || {}, out = [];
     const v = t.voice || {};
-    out.push(goRow("Voz", v.state === "tainted" ? "bad" : "ok",
-      v.state === "tainted" ? "licencia: la voz está mal" : v.state === "clean" ? "limpia" : "sin revisar",
-      v.state === "tainted" ? "reinicia el sombrero" : ""));
-    const a = t.audio || {};
-    const route = a.route || "";
-    out.push(goRow("Bocina", route === "none" ? "bad" : route.startsWith("alsa") || route === "default" || route === "" ? "ok" : "warn",
-      route === "none" ? "ninguna" : route === "phone" ? "el teléfono" : route.startsWith("bluez") ? "Bluetooth"
-        : route.startsWith("alsa") ? "USB" : "la del sistema",
-      route === "none" ? "conecta la bocina o activa el altavoz del teléfono" : (a.cooling || []).length ? "falló: " + a.cooling.join(", ") : ""));
+    out.push(goRow("Voice", v.state === "tainted" ? "bad" : "ok",
+      v.state === "tainted" ? "licence warning" : v.state === "clean" ? "clean" : "not probed",
+      v.state === "tainted" ? "restart the hat" : ""));
+    const a = t.audio || {}, route = a.route || "";
+    const where = route === "none" ? "none" : route === "phone" ? "this phone" : route.startsWith("bluez") ? "Bluetooth"
+      : route.startsWith("alsa") ? "USB" : "default";
+    out.push(goRow("Speaker", route === "none" ? "bad" : hw.speaker || route === "phone" ? "warn" : "ok", where,
+      route === "none" ? "plug in a speaker or tap 'Use this phone as a speaker'" : hw.speaker ? "USB marked failed" : ""));
+    const phoneMicOn = (t.phone_mics || 0) > 0;
+    const usbMicOut = hw.mic || t.mic_dead;
+    out.push(goRow("Microphone", usbMicOut && !phoneMicOn && t.capture !== "browser" ? "bad" : usbMicOut ? "warn" : "ok",
+      t.capture === "browser" ? "this phone" : t.mic_dead ? "remote sends silence" : "remote",
+      usbMicOut && !phoneMicOn ? "mark 'USB microphone' failed to use this phone" : ""));
     const rem = st.remote || {};
     if (rem.present !== undefined)
-      out.push(goRow("Control", rem.devices ? "ok" : "warn", rem.devices ? "conectado" : "no aparece",
-        rem.devices ? "" : "usa el botón Hablar de esta página"));
-    const phoneMicOn = (t.phone_mics || 0) > 0;
-    const micDead = t.capture !== "browser" && t.mic_dead;
-    out.push(goRow("Micrófono", micDead && !phoneMicOn ? "bad" : micDead ? "warn" : "ok",
-      t.capture === "browser" ? "el del teléfono" : micDead ? (phoneMicOn ? "el del teléfono (el del control no manda sonido)" : "el del control no manda sonido")
-        : "el del control" + (phoneMicOn ? " · teléfono de reserva" : ""),
-      micDead && !phoneMicOn ? "activa el micrófono del teléfono (pestaña Voice)" : ""));
-    const ln = st.link || {};
-    out.push(goRow("Motor", ln.attached ? "ok" : "warn", ln.attached ? (ln.muted ? "silenciado" : "conectado") : "sin motor",
-      (st.service || {}).bench ? "modo banco: deploy/unoq_setup.sh bench off" : ln.attached ? "" : "habla sin moverse"));
+      out.push(goRow("Remote", hw.remote || !rem.devices ? "warn" : "ok", hw.remote ? "marked failed" : rem.devices ? "connected" : "not found",
+        hw.remote || !rem.devices ? "use Hold to talk on this page" : ""));
+    const ln = st.link || {}, svc = st.service || {};
+    out.push(goRow("Motors", svc.bench ? "bad" : hw.motors || !ln.attached ? "warn" : "ok",
+      svc.bench ? "bench mode" : hw.motors ? "marked failed (muted)" : !ln.attached ? "not connected" : ln.muted ? "muted" : "connected",
+      svc.bench ? "deploy/unoq_setup.sh bench off" : !ln.attached && !hw.motors ? "the hat talks without moving" : ""));
     const n = t.net || {};
     const ap = n.state === "ap";
-    out.push(goRow("Red", n.watching === false && !n.state ? "warn" : ap ? "warn" : "ok",
-      ap ? "Wi-Fi propio (sin internet)" : n.connection ? n.connection + (n.ip ? " · " + n.ip : "") : "—",
-      ap ? "funciona sin internet: visita con guion" : ""));
-    const sh = t.show || {};
-    out.push(goRow("Visita", sh.setting === "off" ? "warn" : "ok",
-      sh.setting === "off" ? "solo el modelo" : (sh.now === "script" ? "guion" : "modelo") + " (" + sh.why + ")",
-      sh.lines && sh.ready < sh.lines ? "frases listas " + sh.ready + " de " + sh.lines : ""));
-    const svc = st.service || {};
-    out.push(goRow("Arranque", svc.enabled === false ? "bad" : "ok", svc.enabled === false ? "no arranca solo" : "arranca solo",
+    out.push(goRow("Network", ap || hw.internet ? "warn" : "ok",
+      ap ? "own Wi-Fi (no internet)" : n.connection ? n.connection + (n.ip ? " · " + n.ip : "") : "unknown",
+      hw.internet ? "internet marked failed: script visits" : ap ? "visits run on the script" : ""));
+    const sh = t.show || {}, echo = !!((st.backends || {}).echo);
+    const mode = echo ? "echo" : sh.setting === "off" ? "model" : sh.setting;
+    out.push(goRow("Mode", "ok", echo ? "echo: repeats what it hears"
+      : sh.setting === "off" ? "model" : sh.setting === "script" ? "script" : "auto: " + (sh.now === "script" ? "script" : "model") + " (" + sh.why + ")", ""));
+    if (sh.lines) out.push(goRow("Lines", sh.ready < sh.lines ? "warn" : "ok", sh.ready + " of " + sh.lines + " ready",
+      sh.ready < sh.lines ? "rendering after a restart" : ""));
+    out.push(goRow("Start at boot", svc.enabled === false ? "bad" : "ok", svc.enabled === false ? "off" : "on",
       svc.enabled === false ? "systemctl --user enable fish-brain" : ""));
-    out.push(goRow("Registro", t.record && t.logger ? "ok" : "warn",
-      (t.record ? "visitas" : "sin registro") + " · " + (t.logger ? "energía" : "sin registro de energía"), ""));
     rows.replaceChildren(...out);
-    const bad = out.filter((r) => r.classList.contains("bad")).length;
-    $("showSummary").textContent = bad ? bad + " por revisar" : "listo";
+    const bad = out.find((r) => r.classList.contains("bad"));
+    if (bad) setSummary("bad", "Check: " + bad.querySelector("b").textContent + " · " + bad.querySelector("span").textContent);
+    else setSummary("ok", "Ready for visitors");
     if (typeof a.volume === "number" && !volDragging) { $("volSlider").value = Math.round(a.volume * 100); $("volNow").textContent = Math.round(a.volume * 100) + " %"; }
-    for (const b of document.querySelectorAll("[data-show]")) b.setAttribute("aria-pressed", b.dataset.show === sh.setting ? "true" : "false");
+    for (const b of document.querySelectorAll("[data-mode]")) b.setAttribute("aria-pressed", b.dataset.mode === mode ? "true" : "false");
+    for (const b of document.querySelectorAll("[data-hw]")) b.setAttribute("aria-pressed", hw[b.dataset.hw] ? "true" : "false");
     for (const b of document.querySelectorAll("[data-net]")) b.setAttribute("aria-pressed", b.dataset.net === (n.pin || "auto") ? "true" : "false");
   }
+  setInterval(() => mark("panels"), 5000);      // the stale check runs even when nothing arrives
   let volDragging = false, volTimer = 0;
   $("volSlider").addEventListener("input", () => {
     volDragging = true;
@@ -623,21 +640,39 @@
     clearTimeout(volTimer);
     volTimer = setTimeout(async () => {
       const out = await post("/debug/volume", { value: Number($("volSlider").value) });
-      $("showMsg").textContent = out.ok ? "" : "no se pudo cambiar el volumen";
+      $("showMsg").textContent = out.ok ? "" : "the volume could not be changed";
       volDragging = false; soon();
     }, 250);
   });
-  for (const b of document.querySelectorAll("[data-show]")) {
+  // Mode: one control over two switches (the scripted visit and echo).
+  const MODES = { auto: ["auto", "llm"], model: ["off", "llm"], script: ["script", "llm"], echo: ["off", "echo"] };
+  for (const b of document.querySelectorAll("[data-mode]")) {
     b.addEventListener("click", async () => {
-      const out = await post("/debug/set", { name: "show", value: b.dataset.show });
-      $("showMsg").textContent = out.ok ? (out.note || "") : "rechazado: " + (out.error || out.status);
+      const [show, mode] = MODES[b.dataset.mode];
+      const a1 = await post("/debug/set", { name: "show", value: show });
+      const a2 = await post("/debug/set", { name: "mode", value: mode });
+      const bad = [a1, a2].find((o) => !o.ok);
+      $("showMsg").textContent = bad ? "refused: " + (bad.error || bad.status) : "";
+      soon();
+    });
+  }
+  // Hardware he marks failed. Marking the speaker or the microphone failed also arms this phone
+  // for it in the same tap (a browser lets sound and the microphone start only from a tap).
+  for (const b of document.querySelectorAll("[data-hw]")) {
+    b.addEventListener("click", async () => {
+      const part = b.dataset.hw, failed = b.getAttribute("aria-pressed") !== "true";
+      if (failed && part === "speaker") phoneSpeaker.enable();
+      if (failed && part === "mic") phoneMic.arm();
+      b.setAttribute("aria-pressed", failed ? "true" : "false");
+      const out = await post("/debug/hw", { part, failed });
+      $("showMsg").textContent = out.ok ? "" : "refused: " + (out.error || out.status);
       soon();
     });
   }
   for (const b of document.querySelectorAll("[data-net]")) {
     b.addEventListener("click", async () => {
       const out = await post("/debug/net", { pin: b.dataset.net });
-      $("showMsg").textContent = out.ok ? (b.dataset.net === "ap" ? "el sombrero levanta su propio Wi-Fi" : "el sombrero busca sus redes conocidas") : "rechazado";
+      $("showMsg").textContent = out.ok ? (b.dataset.net === "ap" ? "the hat raises its own Wi-Fi" : "the hat looks for its known networks") : "refused";
       soon();
     });
   }
@@ -659,13 +694,13 @@
       const buf = actx.createBuffer(1, 1, 22050), s = actx.createBufferSource();   // unlock
       s.buffer = buf; s.connect(actx.destination); s.start(0);
       on = true; announce(true); beat = setInterval(() => { if (!document.hidden) announce(true); }, 10000);
-      btn.setAttribute("aria-pressed", "true"); say("listo: suena aquí si las bocinas fallan");
+      btn.setAttribute("aria-pressed", "true"); say("ready: plays here when the other speakers fail");
     }
     function disable() {
       on = false; clearInterval(beat); announce(false);
       btn.setAttribute("aria-pressed", "false"); say("off");
     }
-    btn.addEventListener("click", () => { on ? disable() : enable().catch(() => say("el navegador no dejó")); });
+    btn.addEventListener("click", () => { on ? disable() : enable().catch(() => say("the browser refused")); });
     document.addEventListener("visibilitychange", () => { if (on) announce(!document.hidden); });
     return {
       async play(ev) {
@@ -677,12 +712,13 @@
           src = actx.createBufferSource(); src.buffer = audio; src.connect(actx.destination);
           src.start(0);
           api("/speaker/started", { id: ev.id, in_ms: 0 }).catch(() => {});   // it starts now
-          say("sonando aquí");
-        } catch (e) { say("no pudo sonar"); }
+          say("playing here");
+        } catch (e) { say("could not play"); }
       },
       stop() { if (src) { try { src.stop(); } catch (_) {} src = null; } },
+      enable() { if (!on) enable().catch(() => say("the browser refused")); },
     };
-  }, { play() {}, stop() {} });
+  }, { play() {}, stop() {}, enable() {} });
 
   // ---- render ----------------------------------------------------------------------------------
   function render() {
@@ -1851,8 +1887,9 @@
       end: finish,
       abort() { clearTimeout(holdTimer); clearTimeout(tailTimer); holding = false; clip = null; clipLen = 0; },
       hidden() { if (actx) { release(true); tick.checked = false; say("released when the screen slept: turn it on again", "warn-text"); } },
+      arm() { if (!tick.checked && !busy) { tick.checked = true; on(); } },   // the Hardware tap
     };
-  }, { status() {}, ready: () => false, holding: () => false, begin() {}, end() {}, abort() {}, hidden() {} });
+  }, { status() {}, ready: () => false, holding: () => false, begin() {}, end() {}, abort() {}, hidden() {}, arm() {} });
 
   // ---- coming back: the phone slept, the tab was hidden, the network returned ---------------------
   function onHidden() {

@@ -387,3 +387,11 @@ body.still .perch, body.still #tip, body.still #eyes, body.still #tipPose { anim
 .go.bad b::before { content: "● "; color: var(--hoja-mal); }
 #volSlider { width: 100%; min-height: 40px; }
 .pick[aria-pressed="true"] { background: #6b46c1; color: #fff; }
+
+/* The Show tab's summary: one line, the first thing to do. */
+.summary { padding: 10px 12px; border-radius: 10px; font-weight: 600; margin-bottom: 6px; background: rgba(127,127,127,.12); }
+.summary.ok { background: rgba(126,226,168,.16); color: var(--hoja-bien); }
+.summary.bad { background: rgba(255,138,138,.16); color: var(--hoja-mal); }
+.summary.wait { color: var(--hoja-tenue); }
+.picks.hw .pick[aria-pressed="true"] { background: var(--hoja-mal); border-color: var(--hoja-mal); color: #1a1a1a; }
+.picks.hw .pick[aria-pressed="true"]::before { content: "✗ "; }
