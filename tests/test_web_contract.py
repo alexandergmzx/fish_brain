@@ -153,20 +153,28 @@ def test_the_nav_begins_visit_status_settings_and_each_control_sits_in_its_panel
     for needle in ('id="showSummary"', 'id="goRows"'):
         assert needle in status and needle not in setup and needle not in visit
     for needle in ('data-mode="auto"', 'data-hw="speaker"', 'id="volSlider"', 'data-net="ap"', 'id="spkBtn"',
-                   'data-place="casa"', 'data-place="otro"', 'id="placeText"', 'data-fortune="deck"', 'id="cupBtn"',
                    'id="setupMsg"'):
         assert needle in setup and needle not in status and needle not in visit, needle
-    for needle in ('id="fortuneRow"', 'id="fortuneBtn"', 'id="showRow"', 'id="cVisit"', 'id="cRead"', 'id="readName"'):
+    for needle in ('id="fortuneRow"', 'id="fortuneBtn"', 'id="showRow"', 'id="cVisit"', 'id="cRead"', 'id="readName"',
+                   'data-place="casa"', 'data-place="otro"', 'id="placeText"', 'data-fortune="deck"', 'id="cupBtn"',
+                   'id="actMsg"'):
         assert needle in visit and needle not in status and needle not in setup, needle
-    # the Visit panel's order: the fortune row, the show row, the fortune button, the cues, the name
-    order = [visit.index(x) for x in ('id="fortuneRow"', 'id="showRow"', 'id="fortuneBtn"', 'id="cVisit"', 'id="cRead"')]
+    # the Visit panel's order: the fortune row, the show row, the fortune button, the cues, the name,
+    # then the place and the fortune's extras below the acts
+    order = [visit.index(x) for x in ('id="fortuneRow"', 'id="showRow"', 'id="fortuneBtn"', 'id="cVisit"', 'id="cRead"',
+                                      'data-place="casa"', 'data-fortune="deck"', 'id="cupBtn"', 'id="actMsg"')]
     assert order == sorted(order)
     # the place's and the deck's choices are the host's values; the lotería button has none
-    assert set(re.findall(r'data-place="(\w+)"', setup)) == {"casa", "fiesta", "universidad", "otro"}
-    assert set(re.findall(r'data-fortune="deck" data-val="(\w+)"', setup)) == {"tarot", "off"}
-    loteria = re.search(r"<button[^>]*>Lotería \(later\)</button>", setup).group(0)
+    assert set(re.findall(r'data-place="(\w+)"', visit)) == {"casa", "fiesta", "universidad", "otro"}
+    assert set(re.findall(r'data-fortune="deck" data-val="(\w+)"', visit)) == {"tarot", "off"}
+    loteria = re.search(r"<button[^>]*>Lotería \(later\)</button>", visit).group(0)
     assert "disabled" in loteria and "data-val" not in loteria
     assert "restart" in setup                 # the note: a restart reverts them
+    # the place's and the fortune's refusals are written under them on the Visit tab
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    tap = js[js.index("async function setFromTap("):]
+    tap = tap[:tap.index("\n  }\n")]
+    assert '$("actMsg")' in tap and '$("setupMsg")' not in tap
 
 
 def test_every_tab_alias_and_default_is_a_tab():

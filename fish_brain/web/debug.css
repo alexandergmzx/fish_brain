@@ -330,7 +330,7 @@ body.still .perch, body.still #tip, body.still #eyes, body.still #tipPose { anim
 #pttButton.held { background: var(--hoja-bien); border-color: var(--hoja-bien); color: var(--hoja); transform: scale(0.96); }
 #tabs button.phone { display: none; }
 
-/* ---- the visit tab: the two acts, the cues and the name ---------------------------------------- */
+/* ---- the visit tab: the two acts, the cues, the name, the place and the fortune's extras ------- */
 .c-visit, .c-read { display: flex; flex-direction: column; gap: 8px; }
 .c-read { flex-flow: row wrap; align-items: center; }
 /* the fortune's button: big, parchment on violet; dashed and dim until its lines are rendered */
@@ -399,7 +399,7 @@ body.still .perch, body.still #tip, body.still #eyes, body.still #tipPose { anim
     #toast { bottom: calc(84px + env(safe-area-inset-bottom)); max-width: 92vw; }
 }
 
-/* The Status tab: go / no-go rows a thumb can read; the Settings tab shares the pick buttons. */
+/* The Status tab: go / no-go rows a thumb can read; Settings and Visit share the pick buttons. */
 .go-rows { display: flex; flex-direction: column; gap: 4px; }
 .go { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 8px; background: rgba(127,127,127,.08); }
 .go b { min-width: 7.5em; }

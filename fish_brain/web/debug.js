@@ -584,7 +584,7 @@
     refresh(); connect();
   });
 
-  // ---- the Status tab: is the hat ready; the Settings tab: the few things changed in an evening --
+  // ---- the Status tab: is the hat ready; Settings and the Visit tab's place and fortune extras ---
   // Rows from /debug/state's show_tab (and the remote, link, service sections). Green, amber or
   // red, each with what to do in a few words. The controls post to routed actions only.
   const PLACE_EN = { casa: "home", fiesta: "party", universidad: "university", otro: "other" };
@@ -671,8 +671,9 @@
     if (v && v.stage) return (v.stage > v.of ? "verdict: " + (v.house || "—") : "visit: stage " + v.stage + " of " + v.of) + (v.first ? " · " + v.first : "");
     return "none";
   }
-  // The pressed states of the Settings tab: mode, hardware and network from show_tab; the place
-  // and the fortune's toggles from the switches by name (show_tab's fortune as the fallback).
+  // The pressed states of the Settings tab (mode, hardware and network from show_tab) and of the
+  // Visit tab's place and fortune toggles (from the switches by name, show_tab's fortune as the
+  // fallback).
   function switchValue(name) {
     const w = (Array.isArray((S.state || {}).switches) ? S.state.switches : []).find((x) => x.name === name);
     return w ? w.value : undefined;
@@ -724,10 +725,11 @@
       soon();
     });
   }
-  // One switch set from a button: the tap shows at once, the state confirms it.
+  // One switch set from a button on the Visit tab (place, deck, cup): the tap shows at once, the
+  // state confirms it; a refusal is written under them in #actMsg.
   async function setFromTap(name, value) {
     const out = await post("/debug/set", { name, value });
-    $("setupMsg").textContent = out.ok ? "" : "refused: " + (out.error === "busy" ? "the hat is mid-turn, try again when it waits" : out.error || out.status);
+    $("actMsg").textContent = out.ok ? "" : "refused: " + (out.error === "busy" ? "the hat is mid-turn, try again when it waits" : out.error || out.status);
     soon();
   }
   // The place: a setting for the evening (the intro and the closing of the fortune follow it);

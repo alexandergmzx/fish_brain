@@ -49,3 +49,10 @@ The switches still reset at a restart (only the network pin is a file).
   the page); the typed name stays as "Tell the hat".
 - The place and the fortune's switches reset at a restart like the mode; only the network pin
   and the hardware marks are files.
+
+## Amendment, 2026-10-27: the place and the fortune on the Visit tab
+
+- **Place** and **Fortune** (the deck and the cup) move from Settings to the Visit tab, below
+  the acts and the typed name: they are chosen with the act in hand. Their refusals are written
+  under them (`#actMsg`). Settings keeps the mode, the hardware, the volume, the network and the
+  phone speaker. The switches and their reset at a restart are unchanged.

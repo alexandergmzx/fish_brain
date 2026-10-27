@@ -68,9 +68,10 @@ line.
     `banned_in` checks every clip in the tests, `clean_reading` drops a model reply on a hit or
     past six sentences or 90 words. The house act keeps its kid rules until his later pass.
 11. **The place is a setting**, not a per-visitor cue: `FISH_PLACE=casa|fiesta|universidad|otro`
-    and `FISH_PLACE_TEXT` (free text, read by the model only), both on the Settings tab. The
-    intro and the closing pools have a variant per place; a toast or a song only at a party; the
-    model gets `lugar=` in the tag and one rule line.
+    and `FISH_PLACE_TEXT` (free text, read by the model only), both on the Settings tab (on the
+    Visit tab since 2026-10-27, see the amendment). The intro and the closing pools have a
+    variant per place; a toast or a song only at a party; the model gets `lugar=` in the tag and
+    one rule line.
 12. **The clips are `fortune_*`**, joined to the canned phrases whenever the persona is the hat
     and not gated on `FISH_SHOW`: the act lives when the page's Model or Echo buttons turn the
     show off, and the show's own tests ("no `show_` names with the show off") hold. The deck's
@@ -120,3 +121,9 @@ A miss is the narrower re-ask, then a bridge line and the next question. The rea
   number is the safe path. A party is loud: Skip and End matter.
 - The badge photo and the look tick leave the operator page; the server side of
   [0007](0007-the-reading.md) is parked and the typed name stays.
+
+## Amendment, 2026-10-27: the place and the fortune's extras on the Visit tab
+
+- The place, its text, the deck and the cup sit on the Visit tab below the acts
+  ([0017](0017-the-show-tab.md), amendment of the same date), not on Settings. Same switches,
+  same reset at a restart.

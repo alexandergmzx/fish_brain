@@ -222,8 +222,9 @@
                 </div>
                 <div class="panel" id="p-setup" hidden>
                     <!-- The evening's settings: the mode, the hardware he marks failed, the volume,
-                         the network, this phone as a speaker, the place and the fortune's extras.
-                         Each posts to a routed action; nothing is written to .env. -->
+                         the network, this phone as a speaker. Each posts to a routed action;
+                         nothing is written to .env. The place and the fortune's extras sit on the
+                         Visit tab, below the acts. -->
                     <h3>Mode</h3>
                     <div class="picks" role="group" aria-label="Mode"><button type="button" class="pick" data-mode="auto">Auto</button><button type="button" class="pick" data-mode="model">Model</button><button type="button" class="pick" data-mode="script">Script</button><button type="button" class="pick" data-mode="echo">Echo</button></div>
                     <h3>Hardware <small>tap a part when it fails; tap again when it works</small></h3>
@@ -234,15 +235,6 @@
                     <div class="picks" role="group" aria-label="Network"><button type="button" class="pick" data-net="auto">Known Wi-Fi</button><button type="button" class="pick" data-net="ap">Own Wi-Fi</button></div>
                     <h3>Phone speaker <small id="spkState">off</small></h3>
                     <button type="button" class="pick" id="spkBtn">🔊 Use this phone as a speaker</button>
-                    <h3>Place <small>where the hat is tonight: the intro and the closing follow it</small></h3>
-                    <div class="picks" role="group" aria-label="Place"><button type="button" class="pick" data-place="casa">Home</button><button type="button" class="pick" data-place="fiesta">Party</button><button type="button" class="pick" data-place="universidad">University</button><button type="button" class="pick" data-place="otro">Other</button></div>
-                    <div id="placeOther" hidden>
-                        <input type="text" id="placeText" maxlength="60" placeholder="Where… (a bar in Coyoacán)" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
-                        <span class="note">the text reaches the web model only</span>
-                    </div>
-                    <h3>Fortune <small>the extras the hat asks for</small></h3>
-                    <div class="picks" role="group" aria-label="Deck"><button type="button" class="pick" data-fortune="deck" data-val="tarot">Tarot deck</button><button type="button" class="pick" data-fortune="deck" data-val="off">No deck</button><button type="button" class="pick" disabled title="a lotería deck comes later">Lotería (later)</button></div>
-                    <div class="picks"><button type="button" class="pick" id="cupBtn" data-fortune="cup" aria-pressed="false">☕ Read the cup</button></div>
                     <span id="setupMsg" class="note"></span>
                     <p class="note">The running hat only: a restart brings back what .env and the unit say.</p>
                 </div>
@@ -287,6 +279,18 @@
                         <button id="readBtn" type="button">Tell the hat</button>
                         <span id="readMsg" class="note" role="status" aria-live="polite"></span>
                     </div>
+                    <!-- The evening's place and the fortune's extras (switches: place, place_text,
+                         fortune_deck, fortune_cup); a restart brings back .env. Refusals go to #actMsg. -->
+                    <h3>Place <small>where the hat is tonight: the intro and the closing follow it</small></h3>
+                    <div class="picks" role="group" aria-label="Place"><button type="button" class="pick" data-place="casa">Home</button><button type="button" class="pick" data-place="fiesta">Party</button><button type="button" class="pick" data-place="universidad">University</button><button type="button" class="pick" data-place="otro">Other</button></div>
+                    <div id="placeOther" hidden>
+                        <input type="text" id="placeText" maxlength="60" placeholder="Where… (a bar in Coyoacán)" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+                        <span class="note">the text reaches the web model only</span>
+                    </div>
+                    <h3>Fortune <small>the extras the hat asks for</small></h3>
+                    <div class="picks" role="group" aria-label="Deck"><button type="button" class="pick" data-fortune="deck" data-val="tarot">Tarot deck</button><button type="button" class="pick" data-fortune="deck" data-val="off">No deck</button><button type="button" class="pick" disabled title="a lotería deck comes later">Lotería (later)</button></div>
+                    <div class="picks"><button type="button" class="pick" id="cupBtn" data-fortune="cup" aria-pressed="false">☕ Read the cup</button></div>
+                    <span id="actMsg" class="note" role="status" aria-live="polite"></span>
                 </div>
                 <div class="panel" id="p-checks">
                     <h3>Bring-up checks <small id="checkCount"></small></h3>
