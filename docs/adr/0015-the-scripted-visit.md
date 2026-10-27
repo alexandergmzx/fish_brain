@@ -63,3 +63,7 @@ speech route was online; gone since [0020](0020-online-first-speech-and-the-uncu
 lines are `fortune_*`, never `show_*`, and they are joined for the hat persona whatever
 `FISH_SHOW` says. The house act's lines keep the kid register until his later pass; the
 audience is adults since 2026-10-27.
+
+## Amendment, 2026-10-27 (ADR 0022)
+
+The two-question rule for a child (`edad=niño`) is gone with the child chip.

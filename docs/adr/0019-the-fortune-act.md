@@ -129,3 +129,7 @@ A miss is the narrower re-ask, then a bridge line and the next question. The rea
 - The place, its text, the deck and the cup sit on the Visit tab below the acts
   ([0017](0017-the-show-tab.md), amendment of the same date), not on Settings. Same switches,
   same reset at a restart.
+
+## Amendment, 2026-10-27 (ADR 0022)
+
+The cues reach the reading; any animal is taken as said; the dream's words are left out for a loved one and an unthemed dream; a long reading is trimmed, not refused.

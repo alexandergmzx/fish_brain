@@ -64,3 +64,7 @@ text-to-speech, so those stay as they are.
   CPU (not measured); the first import logs its time (`[claude] sdk imported in …`). It happens inside the
   first Claude turn or badge reading.
 - The `/debug` switch refuses a Claude profile when the key or the package is missing.
+
+## Amendment, 2026-10-27
+
+Haiku is the hat's model on the board, thinking at effort low with a 2000-token cap (ADR 0022). The first SDK import on the board: 7.0 and 17.4 s ([results](../results/2026-10-27-haiku-on-the-hat.md)).

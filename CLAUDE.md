@@ -155,6 +155,7 @@ Changed only by a record in [`docs/adr/`](docs/adr/). Do not reopen without new 
 | A waiting turn | A burble (sound and tail, never the mouth) at the release; short cached phrases while it waits, the first at 2.5 s; a turn dropped at 12 s with an apology (ADR 0010, proposed) | 2026-10-13 |
 | Speech-to-text on the board | `gpt-transcribe` first while online (`FISH_STT_ONLINE`), Canary offline or when it does not answer in 4 s; the routes read at every recording; no act clamps the hold, `FISH_PTT_MAX_S` alone; a hold ends after `FISH_PTT_SILENCE_END_S` of silence (ADR 0020, proposed) | 2026-10-27 |
 | LLM | Profiles; `groq` in code, `luna` on the board (ADR 0004); `claude` and `claude-sonnet` selectable through the Anthropic SDK, not the default (ADR 0018, proposed) | 2026-10-10 |
+| The hat's visit and model | The cues last the visit and its fortune, the adult cue set and register, the verdict from the visitor's words, a cue and the place (no ingredient bank); Claude Haiku thinking at effort low on the board (`FISH_LLM_PROFILE=claude`) (ADR 0022, proposed) | 2026-10-27 |
 | `master` | Untouched. On `braintip` the laptop must still run with no environment set | 2026-10-10 |
 
 Not decided: which service would replace OpenAI's speech-to-text; trimming an offline recording over 6 s so it fits the 12 s budget (ADR 0020, his call); whether the LightDM session
@@ -402,6 +403,7 @@ Machine and tool facts only, each dated.
 - **`import anthropic` takes 0.78 s on the desktop, `openai` 0.35 s**; the first Claude call logs `[claude] sdk imported in …` (the board's figure is not measured).
 - **The SDK sleeps for any `Retry-After` (a 429 with 3600 asked for a 3600 s sleep) and `openai`'s stops at 60 s**: Claude clients run with `max_retries=0`. Both: [`docs/results/2026-10-26-anthropic-sdk-offline-checks.md`](docs/results/2026-10-26-anthropic-sdk-offline-checks.md).
 - **Haiku 5.5 accepts `thinking: disabled` at effort `high` or below; Sonnet 5.5 answers 400 and takes `between_tools`.** A 400 that names `thinking` or `effort` is retried once without it.
+- **Haiku's thinking shares `max_tokens`** (2026-10-27): at 600 with thinking on, every visit reply came back empty (`stop_reason=max_tokens`); the profile has 2000. **The SDK's first import on the board took 7.0 and 17.4 s** ([`docs/results/2026-10-27-haiku-on-the-hat.md`](docs/results/2026-10-27-haiku-on-the-hat.md)).
 
 **UNO Q** (2026-10-10, router 0.10.0, core 0.55.2)
 

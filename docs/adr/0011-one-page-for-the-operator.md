@@ -78,3 +78,7 @@ visitor screen) and ADR 0009 (the debug view is no longer desktop-only; it is th
   microphone's server routes stay for the switch.
 - Measured on the board without motors: [results](../results/2026-10-16-hat-phone-page.md).
   Not yet shown on his phone.
+
+## Amendment, 2026-10-27 (ADR 0022)
+
+The cue chips are the adult set and a lit chip is what the hat knows about this visitor; the row clears when the act ends.
