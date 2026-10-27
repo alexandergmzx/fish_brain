@@ -478,6 +478,64 @@ def test_the_free_text_of_the_place_reaches_the_model_with_otro(make, online):
     assert "lugar=la terraza del Beto" in llm.asked[0]
 
 
+class RenderingSpeaker(Speaker):
+    """A voice turn's speaker: renders a file (on any thread), then performs it."""
+
+    def __init__(self, tmp_path):
+        super().__init__()
+        self.dir, self.rendered, self.performed = tmp_path, [], []
+
+    def synthesize(self, text, timing):
+        wav = self.dir / f"reading-{len(self.rendered)}.wav"
+        wav.touch()
+        self.rendered.append((text, wav))
+        timing["tts"] = 0.0
+        return wav
+
+    def perform(self, wav, text, timing):
+        self.performed.append((text, wav))
+        return True
+
+
+def voice_turn(c):
+    """The turn's wait as a voice turn has it, its 12 s already spent (the lead and the
+    suspense line took them, as on 2026-10-27)."""
+    c._wait = {"deadline": c._clock() - 1.0, "next": float("inf"), "used": [], "fill": 0.0,
+               "burble": False, "ended": time.monotonic()}
+
+
+def test_in_a_voice_turn_the_readings_voice_is_rendered_with_the_model(make, online, tmp_path):
+    llm = FakeLLM()
+    c = make("auto", llm=llm)
+    c.speaker = RenderingSpeaker(tmp_path)
+    start(c)
+    for text in ("el 23 de octubre", "soñé que se me caían los dientes", "la muerte",
+                 "una estrella"):
+        say(c, text)
+    voice_turn(c)
+    say(c, "un gato negro")
+    assert c.speaker.rendered == [(llm.text, tmp_path / "reading-0.wav")]
+    assert c.speaker.performed == c.speaker.rendered and c.speaker.other == []
+    assert c.fortune.view()["last"]["mode"] == "llm" and llm.remembered
+
+
+def test_a_reading_rendered_but_never_said_leaves_no_file(make, online, tmp_path):
+    llm = FakeLLM(delay=0.4)
+    c = make("auto", llm=llm)
+    c.speaker = RenderingSpeaker(tmp_path)
+    c.cfg.fortune.reading_s = 0.1
+    start(c)
+    for text in ("el 23 de octubre", "soñé que se me caían los dientes", "la muerte",
+                 "una estrella"):
+        say(c, text)
+    voice_turn(c)
+    say(c, "un gato negro")
+    assert c.fortune.view()["last"]["mode"] == "clips" and c.speaker.performed == []
+    c._stale.pop("llm").done.wait(2.0)                            # the abandoned job ends
+    time.sleep(0.05)
+    assert [w.exists() for _t, w in c.speaker.rendered] == [False]
+
+
 @pytest.mark.parametrize("llm", [
     FakeLLM(fail=True),
     FakeLLM(delay=0.6),
@@ -660,3 +718,16 @@ def test_a_dropped_fortune_cuts_at_its_last_line_not_at_the_drop(make):
     c._handle_item(NewVisit(c._clock()))
     assert not c.fortune.open and c.show.open
     assert c.visit.pending() == {"edad": "joven"}
+
+
+def test_an_animal_with_no_animal_word_is_re_asked_then_taken(make):
+    """His take, 2026-10-27: "Escojo a un velociraptor", then "Gatosiraptor"."""
+    c = make(deck="off", cup=False)
+    start(c)
+    say(c, "14 de marzo")
+    say(c, "soñé con serpientes")
+    say(c, "Escojo a un velociraptor.")
+    assert c.speaker.stages[-1] == ["fortune_rq_animal"] and c.fortune.open
+    say(c, "Gatosiraptor.")
+    assert c.speaker.stages[-1][0].startswith("fortune_re_animal_otro_")
+    assert c.fortune.view()["last"]["data"]["animal"] == "gatosiraptor"

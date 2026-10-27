@@ -229,10 +229,29 @@ def test_the_animal_through_match_option():
     ("Una rata.", ("free", "una rata")),           # by sound alone it would be the sapo
     # a diminutive of the four: by sound, after the lexicon
     ("un sapito", ("option", "sapo")), ("una lechucita", ("option", "buho")),
+    # no animal word: re-asked first
+    ("Escojo a un velociraptor.", ("none", None)),
     ("no sé", ("not_sure", None)), ("mmm", ("none", None)), ("", ("none", None)),
 ])
 def test_the_animal_order(text, expect):
     assert fortune.parse_animal(text) == expect
+
+
+@pytest.mark.parametrize("text,expect", [
+    # his takes, 2026-10-27: on the last try a short answer is the animal as said
+    ("Escojo a un velociraptor.", "un velociraptor"), ("Gatosiraptor.", "gatosiraptor"),
+    ("Me quedo con el kraken, porque es enorme", "el kraken"), ("Emm, un dragón.", "un dragón"),
+    # never an animal: a refusal, a question back, thanks, a filler, a person, a banned word
+    ("Sí.", None), ("El que tú quieras", None), ("Paso", None), ("¿Cómo?", None),
+    ("¿Mande?", None), ("¿Puedes repetir?", None), ("Gracias.", None),
+    ("Gracias por ver.", None), ("Hmm.", None), ("Ehh...", None), ("Ni idea.", None),
+    ("Me da miedo.", None), ("Nel.", None), ("Mi novia.", None), ("Mi suegra.", None),
+    ("El negro.", None), ("Pendejo.", None), ("Puto.", None),
+    ("uno de los cuatro, el que sea", None), ("Un mamut lanudo gigante enorme", None),
+])
+def test_the_last_guess_at_the_animal(text, expect):
+    kind, value = fortune.parse_animal(text, guess=True)
+    assert value == expect and kind in (("free",) if expect else ("none", "not_sure", "option"))
 
 
 def test_a_free_animal_phrase_is_short_and_safe():

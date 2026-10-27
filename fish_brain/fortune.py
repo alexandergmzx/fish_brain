@@ -647,10 +647,58 @@ def animal_phrase(text: str) -> str | None:
     return None
 
 
-def parse_animal(text: str) -> tuple[str, str | None]:
+# A short answer with no animal word is still the visitor's animal ("Escojo a un velociraptor",
+# "Gatosiraptor", 2026-10-27), but only as a last guess, when no re-ask is left: "¿cómo?",
+# "gracias" or "emm" would pass too. The words before it are dropped; what is left must be at
+# most three words, none of them a refusal, a question back, a person or a banned word.
+_ANIMAL_LEAD = frozenset({"pues", "bueno", "este", "esta", "yo", "a", "al", "escojo", "escogo",
+                          "elijo", "eligo", "quiero", "prefiero", "tomo", "agarro", "creo",
+                          "que", "me", "quedo", "con", "seria", "sera", "es", "animal",
+                          "pienso", "en"})
+_NOT_AN_ANIMAL = frozenset({
+    "no", "nada", "ninguno", "ninguna", "ningun", "se", "nose", "si", "paso", "cualquiera",
+    "quieras", "quiera", "todos", "todas", "otro", "otra", "que", "cual", "tu", "usted", "lo",
+    "le", "ya", "ok", "okay", "vale", "bien", "listo", "aja", "ese", "esa", "eso", "este",
+    "como", "mande", "perdon", "repite", "repites", "repitelo", "repetir", "puedes", "otra",
+    "vez", "gracias", "ver", "hola", "adios", "idea", "sabe", "sepa", "quien", "depende",
+    "igual", "nel", "nop", "nope", "tampoco", "rindo", "pregunta", "miedo", "negro", "primero",
+    "segundo", "tercero", "cuarto", "ultimo", "mi", "mis", "su", "sus", "novia", "novio",
+    "esposa", "esposo", "mama", "papa", "suegra", "suegro", "hijo", "hija", "ex", "misma",
+    "mismo", "amigo", "amiga", "jefe", "jefa", "maestro", "maestra"})
+_FILLER = re.compile(r"^(?:[aeo]*h*m+h*|[aeo]+h*|h+m*|m+)$")    # emm, ehh, hmm, mmmm, ah
+_ANIMAL_FREE_WORDS = 3
+
+
+def named_answer(text: str) -> str | None:
+    """The visitor's own short answer as an animal when it has no animal word: the lead
+    words ("pues escojo a") and fillers dropped, then up to three words of the first clause
+    with nothing in _NOT_AN_ANIMAL and nothing banned, in the visitor's spelling, lower case
+    at the start. None otherwise."""
+    text = strip_notes(text)
+    found = [(m, _fold(m.group(0))) for m in _WORD.finditer(text)]
+    while found and (found[0][1] in _ANIMAL_LEAD or _FILLER.match(found[0][1])):
+        found.pop(0)
+    if not found:
+        return None
+    start = found[0][0].start()
+    end_at = _CLAUSE_END.search(text, start)
+    found = [(m, w) for m, w in found if end_at is None or m.start() < end_at.start()]
+    if not found or len(found) > _ANIMAL_FREE_WORDS:
+        return None
+    if any(w in _NOT_AN_ANIMAL or w.isdigit() or _FILLER.match(w) for _m, w in found):
+        return None
+    phrase = _clean_text(text[start:found[-1][0].end()])[:ANIMAL_TEXT_MAX].strip()
+    if not phrase or banned_in(phrase):
+        return None
+    return phrase[0].lower() + phrase[1:]
+
+
+def parse_animal(text: str, *, guess: bool = False) -> tuple[str, str | None]:
     """The companion animal, in this order: one of the four said or named by its place
     ("el primero") -> any other animal word, kept as the visitor's phrase -> one of the four
-    by sound -> none. The sound comes last: by sound "burro" is close to búho and "rata" to
+    by sound -> with `guess` (no re-ask left), a short answer with no animal word, kept as
+    said (`named_answer`) -> none.
+    The sound comes after the lexicon: by sound "burro" is close to búho and "rata" to
     sapo. Returns (kind, value): ("option", id), ("free", phrase), ("not_sure", None) or
     ("none", None)."""
     words = strip_notes(text)
@@ -664,6 +712,9 @@ def parse_animal(text: str) -> tuple[str, str | None]:
         return "free", phrase
     if heard.kind == "option":
         return "option", heard.option
+    phrase = named_answer(words) if guess else None
+    if phrase:
+        return "free", phrase
     return "none", None
 
 

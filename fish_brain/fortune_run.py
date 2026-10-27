@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from . import canned, debug, fortune, fortune_bank, show
 from .show import ShowState
@@ -48,10 +49,13 @@ def _not_sure(text: str) -> bool:
 
 
 # ---- the act's pure steps (shared with tools/hat_rehearse.py) ---------------------------------
-def parse_answer(qid: str, words: str, deck: dict | None, data: dict) -> tuple[str, object]:
+def parse_answer(qid: str, words: str, deck: dict | None, data: dict, *,
+                 last_try: bool = False) -> tuple[str, object]:
     """One answer (notes stripped) into `data`: (what was found, its id), ("not_sure", None)
-    or ("none", None). Any animal outside the four is ("free", the visitor's phrase). "No sé" is the bridge, except at the dream: "no me acuerdo" is a theme
-    of its own (`nada`, a line that needs no content), so its parser decides."""
+    or ("none", None). Any animal outside the four is ("free", the visitor's phrase); on the
+    `last_try` (no re-ask left) a short answer with no animal word is one too. "No sé" is the
+    bridge, except at the dream: "no me acuerdo" is a theme of its own (`nada`, a line that
+    needs no content), so its parser decides."""
     if qid != "sueno" and _not_sure(words):
         return "not_sure", None
     if qid == "fecha":
@@ -85,7 +89,7 @@ def parse_answer(qid: str, words: str, deck: dict | None, data: dict) -> tuple[s
         data["taza"] = shape
         return "shape", shape
     if qid == "animal":
-        kind, value = fortune.parse_animal(words)
+        kind, value = fortune.parse_animal(words, guess=last_try)
         if value is not None:
             data["animal"] = value
         return kind, value
@@ -116,6 +120,13 @@ def reading_result(raw: str) -> str | None:
     (fortune.reading_problems says why)."""
     spoken, _house = split_reply(raw or "")
     return fortune.clean_reading(spoken)
+
+
+def _drop_wav(result) -> None:
+    """The voice of a reading that is not said: its file goes."""
+    wav = result[1] if result else None
+    if wav is not None:
+        Path(wav).unlink(missing_ok=True)
 
 
 class FortuneRun:
@@ -313,7 +324,8 @@ class FortuneRun:
         text = text or ""
         v["heard"].append((qid, text))
         words = fortune.strip_notes(text)
-        kind, value = parse_answer(qid, words, v["deck"], v["data"])
+        last_try = v["tries"] > 0 or v["reprompts"] >= self.cfg.reprompts
+        kind, value = parse_answer(qid, words, v["deck"], v["data"], last_try=last_try)
         shown = "" if value is None else value
         debug.turn_set(fortune=f"#{v['n']} {qid} {kind} {shown}")
         print(f"[fortune] #{v['n']} {qid} heard={text!r} -> {kind} {shown}", flush=True)
@@ -415,12 +427,23 @@ class FortuneRun:
         from .conversation import TurnTimeout, _Job
         v = self.v
         job, tag, llm, mark = None, "", None, debug.seq()
+        # In a voice turn the reading's voice is rendered by the same worker, while the lead
+        # and the suspense line play: the turn's 12 s went on those, and a long reading
+        # rendered after them ran out (2026-10-27).
+        speaker, timing = self.c.speaker, {}
+        ahead = self.c._wait is not None and hasattr(speaker, "synthesize")
         try:
             self.c._settle("llm")                # a stale job on the same model ends first
             llm = self.c.llm                     # the client is built here, on this thread
             tag = reading_request(llm, self.cfg.rules, self._fortune(), v["deck"])
             ask = llm.reply
-            job = _Job("llm", lambda: ask(tag, remember=False))
+
+            def work():
+                raw = ask(tag, remember=False)
+                text = None if llm.last_error else reading_result(raw)
+                return raw, (speaker.synthesize(text, timing) if ahead and text else None)
+
+            job = _Job("llm", work, discard=_drop_wav)
         except TurnTimeout:
             print("[fortune] the model is still busy with an older turn", flush=True)
         except Exception as e:
@@ -441,16 +464,20 @@ class FortuneRun:
             self.c._wait_on(job.done, min(deadline - now, 0.25))
         debug.turn_adopt(mark)                   # the worker's model record, to this turn
         if job.exc is not None or llm.last_error:
+            _drop_wav(job.result)
             self._model_failed(f"error: {job.exc or llm.last_error}")
             return False
-        raw = job.result or ""
-        text = reading_result(raw)
+        raw, wav = job.result or ("", None)
+        text = reading_result(raw or "")
         if not text:
+            _drop_wav((raw, wav))
             self._model_failed("the reply was empty or broke the rules")
             return False
         print(f"fish> {text}", flush=True)
         debug.turn_set(reply=text)
-        if not self.c._speak_reply(text):
+        said = (speaker.perform(wav, text, timing) if wav is not None
+                else self.c._speak_reply(text))
+        if not said:
             self._model_failed("the speaker was busy")
             return False
         llm.remember(tag, raw)
