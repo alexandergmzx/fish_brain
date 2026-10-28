@@ -32,9 +32,9 @@ def test_every_clip_is_named_fortune_and_keeps_the_rules():
         assert not party or "fiesta" in name, (name, party)
 
 
-def test_the_date_prompt_says_the_year_is_never_asked():
-    assert "año" in P["fortune_q_fecha"] and "día" in P["fortune_q_fecha"] and "mes" in P["fortune_q_fecha"]
-    assert "año" in P["fortune_rq_fecha"]
+def test_the_sign_is_asked_first_and_the_date_is_the_fallback():
+    assert "signo" in P["fortune_q_fecha"] and "año" not in P["fortune_q_fecha"]
+    assert "día" in P["fortune_rq_fecha"] and "mes" in P["fortune_rq_fecha"]
     assert fb.question_text("fecha") == P["fortune_q_fecha"]
     assert fb.question_text("carta") == fb.question_text("carta", fortune.DECKS["tarot"]) == P["fortune_q_carta_tarot"]
 
@@ -132,9 +132,9 @@ def test_the_rules_are_the_adult_ones():
         assert place in r
     assert "LAS PISTAS" in r and "pistas=" in r
     assert "Nunca digas que alguien murió" in r and "nunca una muerte real" in r
-    assert "brindis" in r and "ofrenda" in r and "hallazgo" in r
+    assert "brindis" in r and "ofrenda" in r and "profesor" in r
     assert "La Muerte" in r and "El Diablo" in r and "tu palabra mágica es" in r
-    assert "Nunca repitas los corchetes" in r and "año" in r and "edad" in r
+    assert "Nunca repitas los corchetes" in r and "no hace falta decirla" in r
     assert "enfermedades" in r and "lotería" in r and "religión" in r
     assert "Público familiar" not in r and "niños" not in r
 

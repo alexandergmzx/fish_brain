@@ -843,20 +843,16 @@ BANNED: tuple[str, ...] = (
     "sexo", "sexual", "sexuales", "coger", "cogiendo", "verga", "pene", "vagina", "tetas",
     "chichis", "orgasmo", "porno", "follar", "culo", "puta", "puto", "pendejo", "pendeja",
     "chingar", "chingada", "chinga", "pinche",
-    "edad", "anos",                 # folded: "años"
 )
 EXEMPT: tuple[str, ...] = ("pan de muerto", "dia de muertos", "noche de muertos",
                            "dia de los muertos", "fieles difuntos")
-_YEAR = re.compile(r"\b(1[89]\d\d|20\d\d)\b")
-_CLOCK = re.compile(r"\b\d{1,2}:\d{2}\b|\ba las? (\d{1,2}|una|dos|tres|cuatro|cinco|seis|siete|"
-                    r"ocho|nueve|diez|once|doce)\b|\b(\d{1,2}|una|dos|tres|cuatro|cinco|seis|"
-                    r"siete|ocho|nueve|diez|once|doce) en punto\b")
 MAX_READING_SENTENCES = 6
 MAX_READING_WORDS = 90
 
 
 def banned_in(text: str) -> list[str]:
-    """The banned words, years and clock times in `text`, folded, in order; [] when clean."""
+    """The banned words in `text`, folded, in order; [] when clean. A year, a clock time and
+    the age pass since 2026-10-28 (his word: adults will not mind)."""
     s = " " + " ".join(re.sub(r"[^a-z0-9ñ:]", " ", _fold(text or "")).split()) + " "
     for phrase in EXEMPT:
         s = s.replace(f" {phrase} ", "  ")
@@ -864,14 +860,12 @@ def banned_in(text: str) -> list[str]:
     for word in BANNED:
         if f" {word} " in s:
             found.append(word)
-    found += _YEAR.findall(s)
-    found += [m.group(0) for m in _CLOCK.finditer(s)]
     return found
 
 
 def reading_problems(text: str) -> list[str]:
-    """Why a reading would be refused ([] = it would be said): empty, the banned words, years
-    and clock times, more than 6 sentences, more than 90 words. Bracket tags are removed
+    """Why a reading would be refused ([] = it would be said): empty, the banned words, more
+    than 6 sentences, more than 90 words. Bracket tags are removed
     first, as for the voice."""
     text = strip_notes(text or "")
     if not text:

@@ -56,6 +56,8 @@ _Q_ALIASES = {"sueño": "sueno", "fecha": "fecha", "sueno": "sueno", "carta": "c
               "taza": "taza", "animal": "animal"}
 # A death said plainly in a reading (folded): the rules ask for an image, never this.
 _DEATH = ("murio", "fallecio", "se murio", "fallecido", "fallecida")
+QUESTION_WORDS = 10             # the rules' limit for one question ("¿…?")
+_QUESTION = re.compile(r"¿([^?]*)\?")
 REPEAT_N = 4                    # words in a phrase that counts as repeated across verdicts
 
 # The words that show a cue was used (folded prefixes of a word). Information, not a pass
@@ -136,11 +138,14 @@ def check(spoken: str, *, verdict: bool) -> list[str]:
     words = len(spoken.split())
     if not spoken:
         out.append("empty")
-    if len(sentences) > (4 if verdict else 2):
+    if len(sentences) > (4 if verdict else 3):
         out.append(f"{len(sentences)} sentences")
-    if words > (70 if verdict else 35):
+    if words > (55 if verdict else 30):
         out.append(f"{words} words")
     out += [f"banned {w!r}" for w in fortune.banned_in(spoken)]
+    for q in _QUESTION.findall(spoken):
+        if len(q.split()) > QUESTION_WORDS:
+            out.append(f"question of {len(q.split())} words")
     return out
 
 

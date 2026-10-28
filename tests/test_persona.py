@@ -120,16 +120,17 @@ def test_the_visit_rules_are_the_adult_ones(monkeypatch):
     for move in ("Eco", "Arcoíris"):
         assert move in r
     # the cues: all material, never the age, the latest win, themes not names
-    assert "LAS PISTAS" in r and "todas son material" in r and "Nunca digas la edad" in r
+    assert "LAS PISTAS" in r and "todas son material" in r and "no hace falta decirla" in r
     assert "valen las últimas" in r and "el tema, nunca el nombre" in r
     # the place, as the fortune has it
-    assert "EL LUGAR" in r and "brindis" in r and "ofrenda" in r and "hallazgo" in r
+    assert "EL LUGAR" in r and "brindis" in r and "ofrenda" in r and "pasillos" in r and "profesor" in r
     # the verdict: one prediction from their words, a cue and the place; no list, hour or venue
     assert "una sola predicción" in r and "algo que dijo, una pista y el lugar" in r
-    assert "ni hora" in r and "lugares con nombre" in r
+    assert "ni hora" not in r and "solo si el visitante lo dijo" in r
+    assert "30 palabras" in r and "10 palabras" in r
     assert "[FUTURO" not in r and "ingredientes" not in r
     # the question bank kept, with the adult questions
-    assert "una isla" in r and "puerta cerrada" in r and "fantasma" in r and "se acaba la fiesta" in r
+    assert "una isla" in r and "puerta cerrada" in r and "fantasma" in r and "quidditch" in r and "EL CASTILLO" in r
     # the kid register gone
     for kid in ("Público familiar", "niños", "niño o niña", "calaverita", "con el adulto",
                 "nada da miedo"):

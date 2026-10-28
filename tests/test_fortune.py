@@ -338,11 +338,11 @@ def test_the_magic_words_and_places():
 # ---- the filter -----------------------------------------------------------------------------
 @pytest.mark.parametrize("text,expect", [
     ("Esta noche brindas con pan de muerto en el Día de Muertos.", []),
-    ("Tu abuelo muerto te mira", ["muerto"]), ("a las 3 de la tarde", ["a las 3"]),
-    ("te veo a las once", ["a las once"]), ("son las 10:30", ["10:30"]),
-    ("naciste en 1990", ["1990"]), ("Cáncer, de agua, sueña con mares.", []),
+    ("Tu abuelo muerto te mira", ["muerto"]), ("a las 3 de la tarde", []),
+    ("te veo a las once", []), ("son las 10:30", []),                 # his word 2026-10-28
+    ("naciste en 1990", []), ("Cáncer, de agua, sueña con mares.", []),
     ("la lotería te sonríe", ["loteria"]), ("tiene cáncer", ["tiene cancer"]),
-    ("hace años", ["anos"]), ("tu edad", ["edad"]), ("Eres Cáncer", []),
+    ("hace años", []), ("tu edad", []), ("Eres Cáncer", []),
     ("La Muerte, la calavera y El Diablo te acompañan", []),
     ("vas al hospital por un accidente", ["hospital", "accidente"]),
     ("que Dios te bendiga", ["dios"]), ("pura chingada", ["chingada"]),
@@ -382,8 +382,7 @@ def test_reading_problems_say_why_a_reading_is_refused():
     assert fortune.reading_problems("Escorpio, de agua. Tu palabra es Zumbalí.") == []
     assert fortune.reading_problems("[ADIVINACIÓN: x]") == ["empty"]
     assert fortune.reading_problems(None) == ["empty"]
-    assert fortune.reading_problems("Vas al hospital en 2027.") == ["banned 'hospital'",
-                                                                    "banned '2027'"]
+    assert fortune.reading_problems("Vas al hospital en 2027.") == ["banned 'hospital'"]
     assert fortune.reading_problems("Uno. Dos. Tres. Cuatro. Cinco. Seis. Siete.") == ["7 sentences"]
     assert fortune.reading_problems("palabra " * 91) == ["91 words"]
 
