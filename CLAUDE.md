@@ -34,7 +34,7 @@ data when warranted.
 | Laptop fish (Billy Bass #1, Uno R4) | Working since June 2026 |
 | `braintip`: software for the UNO Q | Runs on the board as `fish-brain.service` with linger since 2026-10-11: boots alone, welcome, real turns from the remote and from the page on a phone (`stt=openai llm=luna tts=loq`), about 4 s from release to voice on the home Wi-Fi (`rec=3.3s stt=0.6s tts=0.8s`, 2026-10-12). Not yet on the hotspot. Since 2026-10-11: no display, the phone page as the interface, HTTPS, the reading (ADR 0006, 0007 proposed). In echo mode (a unit drop-in) while the remote is being tuned |
 | Board: hub, USB speaker, the 2.4 GHz remote | Working on a power bank. The remote (XING WEI, Nordic) is trigger and microphone (`FISH_PTT_DEVICE=name:XING WEI`, `FISH_PTT_KEY=KEY_ENTER`, `FISH_MIC_SOURCE=…XING_WEI…`); the RedOctane is out, it draws more current than the board gives (2026-10-12) |
-| Board: Loquendo | Works; about 0.75 s per short sentence with the daemon warm. Since 2026-10-26 a start-up probe guards the licence (ADR 0013): `wlan0` scans with its own MAC, a bad probe restarts the voice on a fresh wineserver, else no live render. The 80 clean clips are backed up (`docs/results/2026-10-25-canned-backup.md`) |
+| Board: the voice | **OpenAI `gpt-4o-mini-tts` ash, the old-hat instruction, 2 semitones lower at 0.72 tempo through `rubberband`** (`FISH_TTS_PITCH_ST=-2`, `FISH_TTS_TEMPO=0.72`, formants kept; ADR 0023, proposed; his picks 2026-10-28 from samples, `docs/results/2026-10-28-openai-voice-samples.md`: 1.4 to 2.8 s a line on the board, the reshape 0.84 s for an 8 s line). The 307 canned phrases render once and stay cached (17 min 38 s, 67 min of audio, `docs/results/2026-10-28-openai-voice-on-the-board.md`; the earlier 0.88 set backed up too). Not measured: a live turn's `tts=`. Ends 2027-01-06 (a Realtime backend before then). Loquendo, the voice until then: about 0.75 s per short sentence with the daemon warm. Since 2026-10-26 a start-up probe guards the licence (ADR 0013): `wlan0` scans with its own MAC, a bad probe restarts the voice on a fresh wineserver, else no live render. The 80 clean clips are backed up (`docs/results/2026-10-25-canned-backup.md`) |
 | Board: MCU firmware | Big_mouth `braintip` (`unoq/BigMouthQ`) flashed 2026-10-11, no drivers attached: protocol transcript 122 of 122, pulses within 1 ms, 9,999 of 9,999 lines in a soak. LED matrix mirrors the nine L298 signals. PWM measured good on D3, D5, D6 |
 | Board: bring-up script | `tools/unoq_bringup.sh`: all tests passed 2026-10-11 |
 | Board: speech-to-text | **`gpt-transcribe` first while online, Canary offline** (ADR 0020, proposed; his word 2026-10-27: `gpt-transcribe` "for now, connected to the network", after Canary wrote "Herria por mi novela" for "ir por mi novia"): `FISH_STT_BACKEND=canary`, `FISH_STT_ONLINE=openai` (4 s read limit, estimate; a failed service rests 60 s), `FISH_STT_LONG=groq` the second chance over 6 s, `small` on the window when offline. On his 2026-10-13 takes (`docs/results/2026-10-13-unoq-stt-his-takes.md`, RedOctane): `gpt-transcribe` 0.62 s and 4.5 %, Groq turbo 0.40 s and 13.0 %, Canary 2.28 s and 21.4 %. The routes are read at every recording (the old copy sent the fortune's dream to the local model, 2026-10-27). Not measured on the board yet: the online route in a real turn, the fall-back with data cut, the cold first call (6.8 to 8.0 s on 2026-10-13; `/debug/cloud` warms it). `/debug` → Switches → `stt_online` flips it without a restart |
@@ -159,8 +159,8 @@ Changed only by a record in [`docs/adr/`](docs/adr/). Do not reopen without new 
 | `master` | Untouched. On `braintip` the laptop must still run with no environment set | 2026-10-10 |
 
 Not decided: which service would replace OpenAI's speech-to-text; trimming an offline recording over 6 s so it fits the 12 s budget (ADR 0020, his call); whether the LightDM session
-stays installed with no display (to be measured). Decided 2026-10-10: the board's voice is
-Loquendo (`FISH_TTS_BACKEND=loq`). Decided 2026-10-11: tamer welcome and goodbye for the fair.
+stays installed with no display (to be measured). Decided 2026-10-28: the board's voice is
+OpenAI ash, 2 semitones lower at 0.72 tempo (`FISH_TTS_BACKEND=openai`, ADR 0023), replacing Loquendo. Decided 2026-10-11: tamer welcome and goodbye for the fair.
 Since 2026-10-27 the audience is adults (parties, spooky places, his parents' house, the
 university); the house act's lines keep the kid register until his pass.
 
@@ -228,7 +228,8 @@ check its replies against this table.
   2026-10-27 (ADR 0019): `FISH_FORTUNE_DECK` (`tarot`, `off`), `FISH_FORTUNE_CUP`,
   `FISH_FORTUNE_STATE`, `FISH_PLACE` (`casa`, `fiesta`, `universidad`, `otro`),
   `FISH_PLACE_TEXT`. Since 2026-10-27 (ADR 0020): `FISH_STT_ONLINE`, `FISH_PTT_SILENCE_END_S`
-  (replaces `FISH_PTT_PAUSE_S`), `FISH_PTT_QUIET_RMS`.
+  (replaces `FISH_PTT_PAUSE_S`), `FISH_PTT_QUIET_RMS`. Since 2026-10-28 (ADR 0023):
+  `FISH_TTS_RATE_FACTOR`, `FISH_TTS_PITCH_ST`, `FISH_TTS_TEMPO`, `FISH_RUBBERBAND_BIN`.
 
 ### Every hardware boundary has a stand-in
 

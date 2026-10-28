@@ -35,4 +35,23 @@ Audio lengths 5.5 to 15.1 s. The Realtime render time includes a new WebSocket p
 it streams, its first audio is the figure that could start playback sooner (the fish today plays
 only a finished WAV). Loquendo for comparison: 0.75 s warm (2026-10-10).
 
+## Rounds 2 and 3: the old hat
+
+Same script, instruction "Eres un sombrero mágico viejísimo, de mil años … voz de anciano muy
+mayor: grave, rasposa, un poco quebrada y temblorosa … habla despacio … nada de energía juvenil";
+round 3 on his line "Hmm, difícil, muy difícil. Veo que tienes valor, y una mente muy valiosa, y
+una sed. ¿No en Slytherin? ¿Estás seguro?". Each WAV also copied with its header rate × 0.88
+(lower and slower, no resampling).
+
+| Model | Voice | Render s (round 2: intro / vision / suspense; round 3) | First audio s | Verbatim |
+|---|---|---|---|---|
+| gpt-4o-mini-tts | ash | 6.69 / 2.55 / 1.79; 5.08 | (whole file) | — |
+| gpt-4o-mini-tts | onyx | 2.23 / 2.08 / 1.45; 2.51 | (whole file) | — |
+| gpt-4o-mini-tts | cedar | 3.38 / 2.00 / 1.48; 2.13 | (whole file) | — |
+| gpt-4o-mini-tts | ballad | 2.22 / 2.42 / 1.79; 2.76 | (whole file) | — |
+| gpt-realtime-2.1 | cedar | 7.36 / 5.94 / 4.71; 6.99 | 2.28 / 1.84 / 1.61; 2.48 | 4 of 4 |
+| gpt-realtime-2.1 | ash | 6.14 / 6.35 / 4.81; 6.55 | 1.56 / 1.80 / 1.54; 1.95 | 4 of 4 |
+
+His ear: ash at 0.88 is "great" on both `gpt-4o-mini-tts` and `gpt-realtime-2.1`.
+
 Not measured: how the voices sound (his ear), offline behaviour, cost per line.
