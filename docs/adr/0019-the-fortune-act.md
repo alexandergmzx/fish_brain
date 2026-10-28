@@ -133,3 +133,12 @@ A miss is the narrower re-ask, then a bridge line and the next question. The rea
 ## Amendment, 2026-10-27 (ADR 0022)
 
 The cues reach the reading; any animal is taken as said; the dream's words are left out for a loved one and an unthemed dream; a long reading is trimmed, not refused.
+
+## Amendment, 2026-10-28: the sign asked first, the year and the hour allowed
+
+His word: adults will not mind the year, the age or a clock time, and the hat may ask the
+zodiac sign outright. `fortune_q_fecha` asks "¿De qué signo eres?", the re-ask is the day and
+month as the fallback; a sign alone gives no lucky number (the tag and the clips skip it).
+`fortune.banned_in` no longer flags a year, a clock time, `edad` or `años`; the illness,
+death-as-event, sex, religion and lottery words stay. The fortune's rules name the castle as
+the world and the season as a pinch ([results](../results/2026-10-28-short-turns-in-the-castle.md)).

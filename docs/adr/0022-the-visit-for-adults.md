@@ -54,3 +54,15 @@ The fortune ignored the cues, refused "un perrito xoloitzcuintle" twice, matched
   only test.
 - Without the bank the model may settle on similar predictions; not measured.
 - Script visits that never reach a verdict pass their cues to the next visitor, as before.
+
+## Amendment, 2026-10-28: short questions in the castle, nobody assumed a student
+
+His word after Mónica's visit at the university: the questions too long and forced on the
+place, too little Hogwarts, not everyone there is a student; and the bans on the year, the
+age, the hour and named places were not his. The rules get EL CASTILLO (the Gran Comedor, the
+ghosts, the Forbidden Forest, potions, quidditch) as the world, the season and the place as "la
+sazón, no el plato"; the university as corridors and coffee, "no des por hecho que estudia";
+a bank of questions of 10 words or fewer; two short lines and a question (30 words) per
+reading turn, 55 words for the verdict; the age may be said, a named place only when the
+visitor said it. Haiku keeps the short questions and the castle and ignores the word counts
+(34 to 47 words a turn: [results](../results/2026-10-28-short-turns-in-the-castle.md)).
