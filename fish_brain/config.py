@@ -200,9 +200,14 @@ PERSONAS: dict[str, dict] = {
         ),
         "fallback_reply": "Se me nubló la mente. Pregúntame otra vez.",
         "stt_prompt": "Conversación en español mexicano con un sombrero seleccionador parlante.",
+        # His pick of 2026-10-28 with ash at FISH_TTS_RATE_FACTOR=0.88
+        # (docs/results/2026-10-28-openai-voice-samples.md).
         "tts_instructions": (
-            "Voz de caricatura: un sombrero mágico parlante, sabio y bromista. Español "
-            "mexicano, entonación exagerada, ritmo ágil y con energía."
+            "Eres un sombrero mágico viejísimo, de mil años, hecho de tela gastada. Voz de "
+            "anciano muy mayor: grave, rasposa, un poco quebrada y temblorosa, como tela vieja "
+            "que cruje. Habla despacio, arrastra algunas vocales, deja pausas largas y baja casi "
+            "a un susurro en lo misterioso. Sabio, elegante, burlón y cálido. Español "
+            "latinoamericano neutro, dicción cuidada. Nada de energía juvenil."
         ),
         "burble_sound": "hum",
         # Loquendo spells out a hum with no vowel ("Mmm" = "eme eme eme"): Jorge's recorded
@@ -510,6 +515,22 @@ class TTSConfig:
     openai_instructions: str = field(default_factory=lambda: _env(
         "FISH_TTS_INSTRUCTIONS", _persona().get("tts_instructions", _FISH_TTS_INSTRUCTIONS)))
     openai_pcm_rate: int = 24000    # what the API returns for response_format="pcm"
+    # The rate written in the WAV header is the PCM rate times this: 0.88 plays the same
+    # samples lower and slower (the hat's old voice, 2026-10-28), with no resampling.
+    openai_rate_factor: float = field(default_factory=lambda: _env_float("FISH_TTS_RATE_FACTOR", 1.0))
+    # Pitch (semitones) and tempo set apart by rubberband after any backend, formants kept;
+    # 0 and 1.0 = untouched. The hat's pick of 2026-10-28: -2 at 0.72 (ADR 0023).
+    pitch_st: float = field(default_factory=lambda: _env_float("FISH_TTS_PITCH_ST", 0.0))
+    tempo: float = field(default_factory=lambda: _env_float("FISH_TTS_TEMPO", 1.0))
+    rubberband_bin: str = field(default_factory=lambda: _env("FISH_RUBBERBAND_BIN", "rubberband"))
+
+    def __post_init__(self) -> None:
+        if not 0.5 <= self.openai_rate_factor <= 1.5:
+            raise ValueError(f"FISH_TTS_RATE_FACTOR={self.openai_rate_factor}; choose 0.5 to 1.5")
+        if not -12.0 <= self.pitch_st <= 12.0:
+            raise ValueError(f"FISH_TTS_PITCH_ST={self.pitch_st}; choose -12 to 12")
+        if not 0.5 <= self.tempo <= 1.5:
+            raise ValueError(f"FISH_TTS_TEMPO={self.tempo}; choose 0.5 to 1.5")
 
 
 # Cloud speech-to-text services (OpenAI-compatible transcription endpoints).

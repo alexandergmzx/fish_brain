@@ -17,5 +17,6 @@ def _no_fillers(monkeypatch):
                  "FISH_LOQ_WARNING_S", "FISH_LOQ_MAC_IFACE", "FISH_SHOW", "FISH_SHOW_STATE",
                  "FISH_SHOW_SEED", "FISH_READING_PROFILE", "ANTHROPIC_API_KEY",
                  "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "FISH_PLACE",
-                 "FISH_PLACE_TEXT", "FISH_FORTUNE_DECK", "FISH_FORTUNE_CUP"):
+                 "FISH_PLACE_TEXT", "FISH_FORTUNE_DECK", "FISH_FORTUNE_CUP",
+                 "FISH_TTS_RATE_FACTOR", "FISH_TTS_PITCH_ST", "FISH_TTS_TEMPO"):
         monkeypatch.delenv(name, raising=False)

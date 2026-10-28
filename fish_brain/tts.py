@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import wave
@@ -22,7 +24,12 @@ from .config import TTSConfig
 
 
 def warm(cfg: TTSConfig) -> None:
-    """Start/warm the loq daemon so the first phrase isn't slow. Best-effort; loq only."""
+    """Start/warm the loq daemon so the first phrase isn't slow. Best-effort; loq only.
+    Also says at start-up when the reshaping is asked for and rubberband is missing."""
+    if shaping(cfg) and shutil.which(cfg.rubberband_bin) is None:
+        print(f"[tts] WARNING: FISH_TTS_PITCH_ST/FISH_TTS_TEMPO set but {cfg.rubberband_bin} "
+              "is not installed: every render fails (sudo apt update && sudo apt install "
+              "rubberband-cli)", file=sys.stderr, flush=True)
     if cfg.backend != "loq":
         return
     try:
@@ -38,9 +45,14 @@ def fingerprint(cfg: TTSConfig) -> str:
     if cfg.backend == "loq":
         from .say_as import rules_hash
         rules = rules_hash(cfg.loq_prefix, cfg.loq_hum, cfg.say_as)
-        return str(cfg.sample_rate) + (f"|{rules}" if rules else "")
+        return str(cfg.sample_rate) + (f"|{rules}" if rules else "") + _shape_key(cfg)
     how = hashlib.sha1(cfg.openai_instructions.encode("utf-8")).hexdigest()[:8]
-    return f"{cfg.backend}|{cfg.openai_model}|{cfg.openai_voice}|{how}"
+    rate = "" if cfg.openai_rate_factor == 1.0 else f"|x{cfg.openai_rate_factor:g}"
+    return f"{cfg.backend}|{cfg.openai_model}|{cfg.openai_voice}|{how}{rate}{_shape_key(cfg)}"
+
+
+def _shape_key(cfg: TTSConfig) -> str:
+    return f"|p{cfg.pitch_st:g}t{cfg.tempo:g}" if shaping(cfg) else ""
 
 
 def _validate_wav(path: Path) -> None:
@@ -57,6 +69,7 @@ def _validate_wav(path: Path) -> None:
 
 
 _LOQ_TIMEOUT_S = 30.0
+_SHAPE_TIMEOUT_S = 30.0       # (estimate) a 15 s line on the board's CPU; not measured
 
 
 def _synthesize_loq(text: str, cfg: TTSConfig, out_path: Path) -> None:
@@ -90,9 +103,34 @@ def _synthesize_openai(text: str, cfg: TTSConfig, out_path: Path) -> None:
     with wave.open(str(part), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
-        w.setframerate(cfg.openai_pcm_rate)
+        w.setframerate(round(cfg.openai_pcm_rate * cfg.openai_rate_factor))
         w.writeframes(pcm)
     os.replace(part, out_path)
+
+
+def shaping(cfg: TTSConfig) -> bool:
+    """Whether the render is reshaped by rubberband (pitch and tempo set apart)."""
+    return cfg.pitch_st != 0.0 or cfg.tempo != 1.0
+
+
+def _reshape(path: Path, cfg: TTSConfig) -> None:
+    """Pitch and tempo changed apart, with the formants kept so a lower voice stays a voice
+    rather than a slowed tape (the hat's pick of 2026-10-28: -2 semitones at 0.72)."""
+    part = path.with_name(path.name + ".shaped.wav")
+    cmd = [cfg.rubberband_bin, "-q", "-F", f"-p{cfg.pitch_st:g}", f"-T{cfg.tempo:g}",
+           str(path), str(part)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=_SHAPE_TIMEOUT_S)
+    except FileNotFoundError:
+        raise RuntimeError(f"{cfg.rubberband_bin} is not installed "
+                           "(sudo apt update && sudo apt install rubberband-cli)") from None
+    except subprocess.TimeoutExpired:
+        part.unlink(missing_ok=True)
+        raise RuntimeError(f"rubberband: no WAV after {_SHAPE_TIMEOUT_S:.0f} s") from None
+    if proc.returncode != 0 or not part.exists():
+        part.unlink(missing_ok=True)
+        raise RuntimeError(f"rubberband failed (rc={proc.returncode}): {proc.stderr.strip()[-200:]}")
+    os.replace(part, path)
 
 
 def synthesize(text: str, cfg: TTSConfig, out_path: str | Path | None = None) -> Path:
@@ -126,6 +164,10 @@ def synthesize(text: str, cfg: TTSConfig, out_path: str | Path | None = None) ->
         _validate_wav(out_path)
         if cfg.backend == "loq":
             voice_guard.after_render(cfg, out_path)   # the licence warning is never kept
+        if shaping(cfg):                              # after the guard: it times the raw render
+            sent.update(pitch_st=cfg.pitch_st, tempo=cfg.tempo)
+            _reshape(out_path, cfg)
+            _validate_wav(out_path)
     except Exception as e:
         debug.model("tts", sent, error=e, seconds=time.monotonic() - t0)
         raise
