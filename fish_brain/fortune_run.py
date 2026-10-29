@@ -20,9 +20,10 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
-from . import canned, debug, fortune, fortune_bank, show
+from . import canned, debug, fortune, fortune_bank, show, ticket
 from .show import ShowState
 from .show_run import model_trusted
 from .visit import begin_model, clean_cue_text, place_word, split_reply
@@ -181,9 +182,16 @@ class FortuneRun:
         ready = [n for n in names if canned.cached(n, self.c.cfg)]
         return self.state.pick(slot, ready or names)
 
-    def _say(self, names: list) -> bool:
+    def _say(self, names: list, at=None) -> bool:
+        """`at=(name, fn)`: `fn()` just before that clip plays (the ticket's gate). Passed
+        only when set, so a speaker without it keeps the old call."""
         names = [n for n in names if n]
-        said = self.c.speaker.say_sequence(names) if names else False
+        if not names:
+            said = False
+        elif at is not None:
+            said = self.c.speaker.say_sequence(names, at=at)
+        else:
+            said = self.c.speaker.say_sequence(names)
         if names and not said:
             print(f"[fortune] the speaker was busy: {names} not said", flush=True)
         if self.v is not None:
@@ -306,6 +314,7 @@ class FortuneRun:
                   "stage": "ask", "mode": None, "mode_why": "", "clips": [], "reading": None,
                   "t0": time.monotonic(), "last_s": now, "pistas": self._pistas()}
         self._last.pop("refused", None)
+        self._probe_printer()
         letter = show.HOUSE_LETTERS.get(house) if house else None
         intro = self._pick(f"intro_{letter}") if letter else None
         clips = [intro or self._pick(f"intro_{place}"), fortune_bank.prompt_name(qs[0], deck)]
@@ -398,7 +407,8 @@ class FortuneRun:
         clips = list(lead) + [self._pick("suspense")]
         if mode == "llm":
             if self._model_reading(clips):       # the lead and the suspense line are said inside
-                self._say([self._pick(f"cierre_{v['place']}")])
+                cierre = self._pick(f"cierre_{v['place']}")
+                self._say([cierre], at=self._gate(v, cierre))
                 return self._close("llm")
             clips = []
         return self._finish_clips(clips)
@@ -415,8 +425,9 @@ class FortuneRun:
             clips.append(fortune_bank.moon_name(data["luna"]))
         if v.get("magic"):
             clips.append(v["magic"])
-        clips.append(self._pick(f"cierre_{v['place']}"))
-        self._say(clips)
+        cierre = self._pick(f"cierre_{v['place']}")
+        clips.append(cierre)
+        self._say(clips, at=self._gate(v, cierre))
         return self._close("clips")
 
     def _model_reading(self, lead: list) -> bool:
@@ -490,8 +501,51 @@ class FortuneRun:
         if self.c.show is not None:
             self.c.show.model_failed()           # the next visits stay scripted a while
 
+    # ---- the ticket (printer.py, the visitor takes it home) ---------------------------------------
+    def _gate(self, v: dict, cierre: str | None):
+        """The `at` of the closing line: the ticket goes to the printer as the hat starts
+        saying it. None without a printer, so the call stays as it was."""
+        if self.c.printer is None or not cierre:
+            return None
+        return cierre, lambda: self._ticket(v)
+
+    def _ticket(self, v: dict) -> None:
+        """The act's ticket to the printer, at most once an act (a fault can run the clips'
+        ending again); with tickets off only kept for Reprint. The act must never be the
+        problem: anything that fails here is one line."""
+        p = self.c.printer
+        if p is None or v.get("ticket"):
+            return
+        v["ticket"] = "error"                    # one try an act, whatever happens below
+        try:
+            t = ticket.ticket_of(v, self._said_data(v), phrases=self.c.cfg.canned.phrases,
+                                 place=self.c.cfg.place, now=datetime.now())
+            if not self.cfg.ticket:
+                p.keep(t)
+                v["ticket"] = "kept"
+            elif p.submit(t):
+                v["ticket"] = "queued"
+            else:
+                v["ticket"] = "refused"
+                print(f"[fortune] act #{v['n']}: the printer did not take the ticket "
+                      "(Reprint prints it)", flush=True)
+        except Exception as e:
+            print(f"[fortune] act #{v['n']}: no ticket: {type(e).__name__}: {e}", flush=True)
+
+    def _probe_printer(self) -> None:
+        """At the act's start: is the printer there (the page warns while the visitor is
+        still answering)? Skipped by the printer when it was reached lately."""
+        p = self.c.printer
+        if p is None or not self.cfg.ticket:
+            return
+        try:
+            p.probe()
+        except Exception as e:
+            print(f"[fortune] printer probe: {type(e).__name__}: {e}", flush=True)
+
     def _close(self, how: str) -> bool:
         v = self.v
+        self._ticket(v)                          # the closing line never started: now
         data = self._said_data(v)
         seconds = round(time.monotonic() - v["t0"], 1)
         print(f"[fortune] act #{v['n']} reading={how} mode={v['mode']} ({v['mode_why']}) "
@@ -499,7 +553,8 @@ class FortuneRun:
         debug.emit("fortune", n=v["n"], mode=v["mode"], why=v["mode_why"], how=how,
                    place=v["place"], data=data, heard=[list(h) for h in v["heard"]],
                    clips=list(v["clips"]), reading=v["reading"], house=v["house"],
-                   first=v["first"], pistas=v.get("pistas", {}), seconds=seconds)
+                   first=v["first"], pistas=v.get("pistas", {}), seconds=seconds,
+                   ticket=v.get("ticket"))
         debug.turn_set(fortune=f"#{v['n']} reading ({how})", outcome=f"fortune: reading ({how})")
         self._last = {"n": v["n"], "mode": how, "why": v["mode_why"], "data": data}
         self.v = None

@@ -731,3 +731,223 @@ def test_an_animal_with_no_animal_word_is_re_asked_then_taken(make):
     say(c, "Gatosiraptor.")
     assert c.speaker.stages[-1][0].startswith("fortune_re_animal_otro_")
     assert c.fortune.view()["last"]["data"]["animal"] == "gatosiraptor"
+
+
+# ---- the ticket (printer.py): at the closing line, once an act, never the problem -------------
+
+class FakePrinter:
+    """The printer as the act sees it: what it was handed, and when."""
+
+    def __init__(self, *, take=True, boom=False, played=None):
+        self.take, self.boom, self.played = take, boom, played
+        self.submitted, self.kept, self.probes = [], [], 0
+        self.during: list = []                       # the clips played when each one came
+
+    def submit(self, t):
+        if self.boom:
+            raise RuntimeError("printer on fire")
+        self.submitted.append(t)
+        self.during.append(list(self.played) if self.played is not None else None)
+        return self.take
+
+    def keep(self, t):
+        self.kept.append(t)
+
+    def probe(self):
+        self.probes += 1
+        return True
+
+
+class GateSpeaker(Speaker):
+    """A speaker that takes `at`: fn() just before that clip, as speak.Speaker does. `busy`
+    stages (any with a closing clip) are refused; `fail_at` raises at that clip prefix."""
+
+    def __init__(self, *, busy=False, fail_at=None):
+        super().__init__()
+        self.busy, self.fail_at, self.played, self.gates = busy, fail_at, [], []
+
+    def say_sequence(self, names, *, wait_s=5.0, at=None):
+        if at is not None:
+            self.gates.append(at[0])
+        if self.busy and any(n.startswith("fortune_cierre_") for n in names):
+            return False
+        self.stages.append(list(names))
+        for name in names:
+            if at is not None and name == at[0]:
+                at[1]()
+            if self.fail_at and name.startswith(self.fail_at):
+                self.fail_at = None
+                raise RuntimeError("the speaker broke")
+            self.played.append(name)
+        return True
+
+
+def with_printer(c, **kw):
+    c.speaker = GateSpeaker(**{k: kw.pop(k) for k in ("busy", "fail_at") if k in kw})
+    c.printer = FakePrinter(played=c.speaker.played, **kw)
+    return c.printer
+
+
+def no_error_line(c):
+    return c.speaker.other == [] and not ERROR_LINES & set(c.speaker.all())
+
+
+def test_the_clips_ending_prints_one_ticket_as_the_closing_line_starts(make):
+    c = make()
+    p = with_printer(c)
+    start(c)
+    assert p.probes == 1                                          # is it there? at the start
+    answer_all(c)
+    assert len(p.submitted) == 1 and not c.fortune.open
+    before = p.during[0]
+    assert before[-1].startswith("fortune_magic_")                # nothing of the closing yet
+    assert c.speaker.played[len(before)].startswith("fortune_cierre_fiesta_")
+    assert c.speaker.gates == [c.speaker.played[-1]]
+    t = p.submitted[0]
+    assert t.n == 1 and t.card == 13 and t.card_es == "La Muerte" and t.numero == "6"
+    assert t.luna == "llena" and t.palabra in fortune.MAGIC_WORDS and len(t.body) == 3
+    assert t.body[0] == c.cfg.canned.phrases["fortune_num_6"]
+    assert c.fortune.view()["last"]["mode"] == "clips"
+
+
+def test_the_model_ending_prints_the_reading_at_its_closing_line(make, online):
+    llm = FakeLLM()
+    c = make("auto", llm=llm)
+    p = with_printer(c)
+    start(c, "Ana")
+    answer_all(c)
+    assert len(p.submitted) == 1 and c.speaker.other == [("speak", llm.text)]
+    t = p.submitted[0]
+    assert t.body == (llm.text,) and t.first == "Ana"
+    assert p.during[0][-1].startswith("fortune_suspense_")       # after the reading was said
+    assert c.speaker.stages[-1][0].startswith("fortune_cierre_fiesta_")
+    assert len(c.speaker.stages[-1]) == 1                         # one stage, as without one
+    assert c.fortune.view()["last"]["mode"] == "llm"
+
+
+def test_end_at_the_second_question_prints_one(make):
+    c = make()
+    p = with_printer(c)
+    start(c)
+    say(c, "el 23 de octubre")
+    c._handle_item(FortuneInput("end"))
+    assert not c.fortune.open and len(p.submitted) == 1
+    t = p.submitted[0]
+    assert t.card is None and t.numero == "6" and t.luna == "llena"
+
+
+def test_a_fault_mid_reading_prints_one(make, online):
+    c = make("auto", llm=FakeLLM())
+    p = with_printer(c, fail_at="fortune_suspense_")             # the lead breaks
+    start(c)
+    with pytest.raises(RuntimeError):
+        answer_all(c)
+    assert c.fortune.open and c.fortune.v["stage"] == "reading" and p.submitted == []
+    c._show_fault("RuntimeError")
+    assert not c.fortune.open and len(p.submitted) == 1 and no_error_line(c)
+    assert c.fortune.view()["last"]["mode"] == "clips"
+
+
+def test_a_fault_after_the_ticket_left_does_not_print_a_second(make, online):
+    c = make("auto", llm=FakeLLM())
+    p = with_printer(c, fail_at="fortune_cierre_")               # the gate ran, then it broke
+    start(c)
+    with pytest.raises(RuntimeError):
+        answer_all(c)
+    assert len(p.submitted) == 1 and c.fortune.open
+    c._show_fault("RuntimeError")                                 # the clips finish it again
+    assert not c.fortune.open and len(p.submitted) == 1
+
+
+def test_a_drop_prints_nothing(make):
+    c = make()
+    p = with_printer(c)
+    start(c)
+    say(c, "el 23 de octubre")
+    c._handle_item(NewVisit(c._clock()))
+    assert not c.fortune.open and p.submitted == [] and p.kept == []
+
+
+def test_tickets_off_print_nothing_but_keep_it_for_reprint(make, monkeypatch):
+    from fish_brain import debug
+    records = []
+    monkeypatch.setattr(debug, "emit", lambda kind, **f: records.append((kind, f)))
+    c = make()
+    c.cfg.fortune.ticket = False
+    p = with_printer(c)
+    start(c)
+    answer_all(c)
+    assert p.submitted == [] and len(p.kept) == 1 and p.kept[0].n == 1 and p.probes == 0
+    assert [f["ticket"] for k, f in records if k == "fortune"] == ["kept"]
+
+
+def test_a_busy_speaker_gets_the_ticket_submitted_at_close(make):
+    c = make()
+    p = with_printer(c, busy=True)
+    start(c)
+    answer_all(c)
+    assert not c.fortune.open and len(p.submitted) == 1
+    assert not any(n.startswith("fortune_cierre_") for n in c.speaker.played)
+
+
+def test_a_printer_that_raises_never_stops_the_act(make, monkeypatch):
+    from fish_brain import debug
+    records = []
+    monkeypatch.setattr(debug, "emit", lambda kind, **f: records.append((kind, f)))
+    c = make()
+    p = with_printer(c, boom=True)
+    p.probe = lambda: (_ for _ in ()).throw(OSError("radio off"))
+    start(c)
+    assert c.fortune.open
+    answer_all(c)
+    assert not c.fortune.open and c.speaker.played[-1].startswith("fortune_cierre_")
+    assert no_error_line(c) and c.fortune.view()["last"]["mode"] == "clips"
+    assert [f["ticket"] for k, f in records if k == "fortune"] == ["error"]
+
+
+def test_a_full_printer_queue_is_one_line_and_the_act_goes_on(make, capsys):
+    c = make()
+    p = with_printer(c, take=False)
+    start(c)
+    answer_all(c)
+    assert len(p.submitted) == 1 and not c.fortune.open
+    assert "did not take the ticket" in capsys.readouterr().out
+
+
+def test_two_acts_print_two_tickets_with_their_own_numbers(make):
+    c = make()
+    p = with_printer(c)
+    start(c)
+    answer_all(c)
+    start(c)
+    answer_all(c)
+    assert [t.n for t in p.submitted] == [1, 2]
+
+
+def test_without_a_printer_the_speaker_gets_no_at(make):
+    c = make()
+    c.speaker = GateSpeaker()
+    assert c.printer is None
+    start(c)
+    answer_all(c)
+    assert c.speaker.gates == [] and not c.fortune.open
+
+
+def test_the_real_speaker_calls_at_just_before_its_clip(monkeypatch, capsys):
+    from fish_brain import canned
+    from fish_brain.speak import Speaker as RealSpeaker
+    cfg = Config()
+    played = []
+    monkeypatch.setattr(canned, "play", lambda name, *a, **kw: played.append(name))
+    sp = RealSpeaker(MockSerialLink(cfg.serial, stream=io.StringIO()), cfg)
+    calls = []
+    assert sp.say_sequence(["a", "b", "c"], at=("b", lambda: calls.append(list(played))))
+    assert played == ["a", "b", "c"] and calls == [["a"]]
+
+    def boom():
+        raise RuntimeError("no paper")
+    played.clear()
+    assert sp.say_sequence(["a", "b"], at=("b", boom))            # the speech goes on
+    assert played == ["a", "b"] and "the call at b failed" in capsys.readouterr().out
+    played.clear()
+    assert sp.say_sequence(["a", "b"], at=("z", boom)) and played == ["a", "b"]

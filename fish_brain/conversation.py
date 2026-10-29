@@ -94,9 +94,11 @@ class _Job:
 class FishConversation:
     def __init__(self, cfg: Config, link: BaseLink, *,
                  text_input: bool = False, play_audio: bool = True, viz=None,
-                 echo: bool = False, clock=time.monotonic, wait=None, rng=None):
+                 echo: bool = False, clock=time.monotonic, wait=None, rng=None,
+                 printer=None):
         self.cfg = cfg
         self.link = link
+        self.printer = printer            # printer.Printer for the fortune's ticket, or None
         self.text_input = text_input
         self.echo = echo
         self.player: Player = make_player(play_audio, cfg.ptt.speaker, cfg=cfg, viz=viz)

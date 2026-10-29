@@ -134,10 +134,12 @@ class Speaker:
         finally:
             self._lock.release()
 
-    def say_sequence(self, names: list[str], *, wait_s: float = 5.0) -> bool:
+    def say_sequence(self, names: list[str], *, wait_s: float = 5.0, at=None) -> bool:
         """Play canned phrases back to back under one hold of the lock (the scripted visit's
         stage), only from WAVs that exist. Waits up to `wait_s` for a phrase still playing
-        (a filler) instead of dropping the stage. False when it never got the speaker."""
+        (a filler) instead of dropping the stage. False when it never got the speaker.
+        `at=(name, fn)`: `fn()` is called once, just before that phrase plays (the fortune's
+        ticket at its closing line); whatever it raises is logged, the phrases go on."""
         names = [n for n in names if n]
         if not names or not self._lock.acquire(timeout=wait_s):
             return False
@@ -148,6 +150,13 @@ class Speaker:
                 if text:
                     self.viz.push_transcript(text, "fish")   # canned.play shows no bubble
             for name in names:
+                if at is not None and name == at[0]:
+                    fn, at = at[1], None
+                    try:
+                        fn()
+                    except Exception as e:           # never in the way of the speech
+                        print(f"[speak] the call at {name} failed: {type(e).__name__}: {e}",
+                              flush=True)
                 canned.play(name, self.link, self.cfg, player=self.player, viz=self.viz,
                             render=False)
             return True
