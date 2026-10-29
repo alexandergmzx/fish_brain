@@ -48,8 +48,8 @@ and eight more packages.
    `fortune` record's `ticket=`, `printer=` in the `[fish]` start-up line.
 9. **Encoding:** every ticket starts with init, Chinese mode off, the USA set and one code page;
    `ticket.printable` drops every control character (no ESC from the model or a typed name
-   reaches the printer) and maps what the page lacks. The page is `ESC t 19` / cp858 until the
-   desk test says whether 16 is cp1252 on this firmware (the published tables disagree).
+   reaches the printer) and maps what the page lacks. The page is `ESC t 19` / cp858: on the desk it
+   prints ñ á ¿ ¡ right and 16 prints black blocks, so cp1252 is not on this firmware.
 10. **Content:** the title, `para <name>`, the visitor's card (picture, numeral, name, meaning),
     the reading (the model's text, or the said texts of the number, moon and magic clips),
     leader lines for the number, the moon, the animal and the magic word, and a footer with the
@@ -75,10 +75,11 @@ and eight more packages.
 
 ## Consequences
 
-- Built and tested on mocks and on `socket.socketpair()` only: **not paired on the board, no
-  paper made yet**. The connect time, the transfer time, the code page, the columns, the band
-  height, the pacing and the tail wait are not measured; every constant is an estimate until
-  the desk results (`docs/results/<date>-mp210-on-the-desk.md`, not written yet).
+- Built on mocks and `socket.socketpair()`; paired with the laptop and printing from it, not
+  paired on the board. The code page is measured: `ESC t 19` / cp858 prints the Spanish letters,
+  16 is not cp1252 on this firmware; a text-only sample of 1117 bytes printed in 1.6 s with a
+  0.9 s connect ([desk results](../results/2026-10-28-mp210-on-the-desk.md)). The columns, the
+  band height, the pacing and the tail wait on a picture are still estimates.
 - The plates are not in the repo yet (`fish_brain/ticket_art/` does not exist): tickets print
   the card's numeral, name and meaning with no picture until they are. The plates' licence in
   Mexico (life+100; Smith died 1951) is his call before they are committed.

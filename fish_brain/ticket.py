@@ -40,9 +40,9 @@ from .visit import clean_cue_text
 PAPER_DOTS = 384                 # 48 mm of print at 203 dpi
 PAPER_BYTES = PAPER_DOTS // 8
 COLUMNS = {"a": 32, "b": 42}     # Font A 12x24, Font B 9x17 (estimate) until the desk results
-# ESC t n and its codec, (estimate) until the desk results: the GPM table and the POS-5890
-# profile both give 19 = PC858, while 16 is WPC1252 there and WPC1250 in the PT-210 SDK (no
-# ñ ¿ ¡ in 1250). cp858 holds every bank text but "…", which printable() maps.
+# ESC t n and its codec: 19 (cp858) and 2 (cp850) print ñ á ¿ ¡ right on the MP210, 16 prints
+# black blocks (no cp1252), and the power-on page is CP850 (docs/results/2026-10-28-mp210-on-
+# the-desk.md). cp858 holds every bank text but "…", which printable() maps.
 CODEPAGE = 19
 CODEC = "cp858"
 BAND_ROWS = 24                   # raster rows per GS v 0 (estimate) until the desk results
