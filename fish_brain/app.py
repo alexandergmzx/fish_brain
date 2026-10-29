@@ -307,6 +307,13 @@ def main(argv: list[str] | None = None) -> int:
         # after a quick restart) propagates: the unit retries.
         viz.start()
 
+    # The fortune's ticket printer (printer.py): None when none is set or the setting is bad
+    # (one [printer] line, never an exit). Its worker only ever touches the printer.
+    printer = None
+    if conversing:
+        from .printer import make_printer
+        printer = make_printer(cfg.printer)
+
     try:
         # Warm the loq daemon so the first phrase isn't slow (does nothing for other backends),
         # with the licence probe. After the page: a slow or recovering voice must not leave
@@ -351,7 +358,8 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             try:
                 convo = FishConversation(cfg, link, text_input=args.text,
-                                         play_audio=not args.no_audio, viz=viz, echo=args.echo)
+                                         play_audio=not args.no_audio, viz=viz, echo=args.echo,
+                                         printer=printer)
                 if not args.text:
                     try:
                         _ = convo.stt               # a wrong backend or model is a setup error
@@ -378,6 +386,8 @@ def main(argv: list[str] | None = None) -> int:
                     viz.register_visit(convo.visit)
                 if convo.fortune is not None:         # the fortune act: /fortune
                     viz.register_fortune(convo.fortune)
+                    if printer is not None:           # its Reprint
+                        viz.register_printer(printer)
                 if hub is not None:
                     try:
                         from .debug_actions import DebugActions
@@ -400,9 +410,9 @@ def main(argv: list[str] | None = None) -> int:
                     "backends": {"stt": "-" if args.text else cfg.stt.backend,
                                  "llm": "echo" if convo.echo else f"{cfg.llm.profile}:{cfg.llm.model}",
                                  "tts": cfg.tts.backend, "ptt": convo.ptt_summary()}})
-            from .printer import summary as printer_summary
             print(f"[fish] link={link.describe()} stt={stt} llm={llm} tts={cfg.tts.backend} "
-                  f"ptt={convo.ptt_summary()} printer={printer_summary(cfg.printer)}", flush=True)
+                  f"ptt={convo.ptt_summary()} "
+                  f"printer={printer.describe() if printer is not None else 'off'}", flush=True)
             from .ptt import PTTUnavailable
             try:
                 convo.run()
@@ -413,6 +423,12 @@ def main(argv: list[str] | None = None) -> int:
         # A record whose last line is not "end" was cut by a pulled plug or a hard exit.
         record.write("end", {})
         record.flush()
+        if printer is not None:
+            # After the link's STOP (the with above): it only wakes the worker, joins 1 s.
+            try:
+                printer.close()
+            except Exception as e:
+                print(f"[printer] close: {type(e).__name__}: {e}", file=sys.stderr)
         if viz is not None:
             viz.stop()
         if hub is not None:

@@ -98,6 +98,7 @@ class VizServer:
         self._reader = None                   # reading.read_badge, registered by app.py (/badge)
         self._visit = None                    # visit.Visit, the hat's (/visit, /cues), by app.py
         self._fortune = None                  # fortune_run.FortuneRun (/fortune), by the turn loop
+        self._printer = None                  # printer.Printer, its Reprint (/fortune reprint)
         self._last_visit: dict | None = None  # the last pushed visit view, with its acts, for a page that connects
         self._status_provider = None          # app.py: link, internet and backends for /status
         self._debug = None                    # debug.DebugHub, registered by app.py (/debug)
@@ -496,16 +497,29 @@ class VizServer:
     def register_fortune(self, fortune) -> None:
         self._fortune = fortune
 
+    def register_printer(self, printer) -> None:
+        self._printer = printer
+
     def fortune_input(self, body: dict) -> tuple[int, dict]:
         """`POST /fortune {"action": "start"|"skip"|"end", "value": ...}`: the operator's tap
         for the fortune act (`value`: the typed first name with `start`), handed to the turn
         loop like the show's. A start over a live house act is refused here (the loop checks
-        again): 409 with `why: "visit open"`."""
+        again): 409 with `why: "visit open"`. `reprint` goes straight to the printer, never
+        through the inbox (the visitor is leaving while the hat speaks): the last ticket
+        again, even with tickets off; 409 `printing` / `no ticket yet`, 503 `no printer`."""
         from .fortune_run import FortuneInput
         action, value = body.get("action"), body.get("value") or ""
-        if action not in ("start", "skip", "end") or not isinstance(value, str) \
+        if action not in ("start", "skip", "end", "reprint") or not isinstance(value, str) \
                 or len(value) > 20:
             return 400, {"ok": False, "error": "bad fortune input"}
+        if action == "reprint":
+            p = self._printer
+            if p is None:
+                return 503, {"ok": False, "error": "no printer"}
+            ok, what = p.reprint()
+            if not ok:
+                return (503 if what == "no printer" else 409), {"ok": False, "why": what}
+            return 200, {"ok": True, "n": what}
         if self._fortune is None:
             return 503, {"ok": False, "error": "no fortune"}
         visit = self._visit

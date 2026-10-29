@@ -925,6 +925,27 @@ def test_fortune_taps_need_the_token_a_fortune_and_no_live_visit(server):
     assert server.take_inbox() == FortuneInput("skip", "")
 
 
+def test_reprint_goes_straight_to_the_printer_while_the_hat_speaks(server):
+    class P:
+        def __init__(self, answer):
+            self.answer, self.calls = answer, 0
+
+        def reprint(self):
+            self.calls += 1
+            return self.answer
+    url = server.url + "/fortune"
+    assert post(url, {"action": "reprint"})[0] == 403
+    assert post(url, {"action": "reprint"}, AUTH) == (503, {"ok": False, "error": "no printer"})
+    p = P((True, 7))
+    server.register_printer(p)
+    server.set_listening(False)                      # the hat is talking: no inbox
+    assert post(url, {"action": "reprint"}, AUTH) == (200, {"ok": True, "n": 7})
+    assert p.calls == 1 and server.take_inbox() is None
+    for why, status in (("printing", 409), ("no ticket yet", 409), ("no printer", 503)):
+        p.answer = (False, why)
+        assert post(url, {"action": "reprint"}, AUTH) == (status, {"ok": False, "why": why})
+
+
 def test_show_taps_need_the_token_are_checked_and_reach_the_loop(server):
     from fish_brain.show_run import ShowInput
     assert post(server.url + "/show", {"action": "answer", "value": "fiesta"})[0] == 403
