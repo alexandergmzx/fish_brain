@@ -393,15 +393,19 @@ def test_snapshot_is_safe_from_another_thread(rig, tmp_path):
                 errors.append(e)
             if last:
                 break
-    w = threading.Thread(target=watch)
+            time.sleep(0.001)           # a busy loop on the lock starves the worker (2026-10-29)
+    w = threading.Thread(target=watch, daemon=True)
     w.start()
-    reader = threading.Thread(target=lambda: wait_for(lambda: port.peers) and read_all(port.peers[0]))
+    reader = threading.Thread(target=lambda: wait_for(lambda: port.peers) and read_all(port.peers[0]),
+                              daemon=True)
     reader.start()
-    assert p.submit(ticket.SAMPLE)
-    assert p.wait(5)
-    stop.set()
-    w.join(2)
-    reader.join(5)
+    try:
+        assert p.submit(ticket.SAMPLE)
+        assert p.wait(5)
+    finally:                            # a failed wait must not leave the watcher spinning
+        stop.set()
+        w.join(2)
+        reader.join(5)
     assert not errors
     assert "printed" in seen and p.snapshot()["alive"] is True
 

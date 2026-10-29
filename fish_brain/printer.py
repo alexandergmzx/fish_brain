@@ -118,6 +118,8 @@ class _Late(Exception):
 class RfcommPort:
     """The printer's Serial Port profile: stdlib RFCOMM, a fresh socket per connection."""
 
+    paced = True
+
     def __init__(self, mac: str, channel: int):
         self.mac, self.channel = mac, channel
         self._lock = threading.Lock()
@@ -169,7 +171,10 @@ class _MockConn:
 
 class MockPort:
     """FISH_PRINTER=mock: every connect works at once, the bytes are kept (`data`, the last
-    ticket's) and each printed ticket is logged as 32 columns of text."""
+    ticket's) and each printed ticket is logged as 32 columns of text. Its bytes go nowhere,
+    so they are not paced (a ticket with its plate is about 4.4 s of gaps on the real link)."""
+
+    paced = False
 
     def __init__(self, stream: TextIO | None = None):
         self.stream = stream
@@ -501,9 +506,10 @@ class Printer:
         chunk = self.timing.chunk
         pieces = [p[i:i + chunk] for p in parts for i in range(0, len(p), chunk)] \
             if chunk > 0 else [p for p in parts if p]
+        gap = self.timing.gap_s if getattr(self.port, "paced", True) else 0.0
         for i, piece in enumerate(pieces):
-            if i:
-                self._pause(self.timing.gap_s)
+            if i and gap:
+                self._pause(gap)
             conn.sendall(piece)
 
     def _done(self, t, again, t0, state, why, conn=None) -> None:
