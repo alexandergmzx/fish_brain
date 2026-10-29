@@ -27,6 +27,48 @@ class _DeafTranscriber:
         pass
 
 
+def _card(text: str) -> int:
+    from .fortune import DECKS
+    try:
+        n = int(text)
+    except ValueError:
+        n = -1
+    count = len(DECKS["tarot"]["cards"])
+    if not 0 <= n < count:
+        raise argparse.ArgumentTypeError(f"a card number from 0 to {count - 1}")
+    return n
+
+
+def _print_test(cfg, card: int) -> int:
+    """The sample ticket through the real layout and worker, bounded. 0 printed, 1 failed,
+    78 when FISH_PRINTER is empty or malformed."""
+    from datetime import datetime
+    from . import printer, ticket
+    kind = cfg.printer.kind()
+    if kind in ("off", "bad"):
+        print(f"Configuration problem: {cfg.printer.problem() or 'FISH_PRINTER is not set'} "
+              f"(FISH_PRINTER: the printer's Bluetooth address, or mock)", file=sys.stderr)
+        return 78
+    p = printer.make_printer(cfg.printer)
+    if p is None:                                   # no Bluetooth sockets in this Python
+        return 1
+    where = p.describe()
+    try:
+        if not p.submit(ticket.sample(card, now=datetime.now())):
+            print(f"printer FAILED ({where}): the worker did not take the ticket", file=sys.stderr)
+            return 1
+        p.wait(p.timing.late_s + 60.0)
+        snap = p.snapshot()
+    finally:
+        p.close()
+    if snap["state"] != "printed":
+        print(f"printer FAILED ({where}): {snap['why'] or snap['state']}", file=sys.stderr)
+        return 1
+    print(f"printer ok: {where}, {snap['bytes']} bytes in {snap['seconds']:.1f} s "
+          f"(connect {snap['connect_s']:.1f} s)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="fish-brain", description="Conversational Billy Bass")
     parser.add_argument("--dry-run", action="store_true",
@@ -67,6 +109,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="read the name on a badge photo (JPEG) with the vision model, "
                              "print the result as JSON and exit (FISH_READING_PROFILE picks the "
                              "profiles; empty: claude if it has a key, then --llm)")
+    parser.add_argument("--print-test", metavar="CARD", nargs="?", const=13, type=_card,
+                        help="print the sample fortune ticket with card CARD (0 to 21, "
+                             "default 13) on FISH_PRINTER (a MAC, or mock) and exit")
     args = parser.parse_args(argv)
 
     # Load .env so OPENAI_API_KEY (and optional overrides) are available.
@@ -156,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.echo:
         cloud_keys.add(cfg.llm.api_key_env)
     one_shot = (args.list_canned or args.prefetch_stt or args.check_link
-                or args.read_badge is not None)
+                or args.read_badge is not None or args.print_test is not None)
     if (cloud_keys or args.viz) and not one_shot:
         # Know whether the internet is there without ever blocking a turn on it. With the
         # page up, a switch on /debug can bring a cloud stage in later.
@@ -180,6 +225,10 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(json.dumps(asdict(res), ensure_ascii=False, indent=2))
         return 0
+
+    if args.print_test is not None:
+        # Paper only, before any voice warm-up: never Loquendo, the cloud or the motors.
+        return _print_test(cfg, args.print_test)
 
     if args.prefetch_stt:
         from .config import STT_PROFILES
@@ -351,8 +400,9 @@ def main(argv: list[str] | None = None) -> int:
                     "backends": {"stt": "-" if args.text else cfg.stt.backend,
                                  "llm": "echo" if convo.echo else f"{cfg.llm.profile}:{cfg.llm.model}",
                                  "tts": cfg.tts.backend, "ptt": convo.ptt_summary()}})
+            from .printer import summary as printer_summary
             print(f"[fish] link={link.describe()} stt={stt} llm={llm} tts={cfg.tts.backend} "
-                  f"ptt={convo.ptt_summary()}", flush=True)
+                  f"ptt={convo.ptt_summary()} printer={printer_summary(cfg.printer)}", flush=True)
             from .ptt import PTTUnavailable
             try:
                 convo.run()
