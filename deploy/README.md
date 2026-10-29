@@ -233,6 +233,46 @@ To pin a device in `.env` instead: `FISH_MIC_SOURCE=<PipeWire source name>` (sho
 `FISH_SPEAKER_DEVICE=<part of the device name>`. `pactl` is not on the stock image; it comes with
 `pulseaudio-utils` in the `apt` line.
 
+## The ticket printer (MP210 over Bluetooth)
+
+The fortune's ticket ([ADR 0024](../docs/adr/0024-the-fortunes-ticket.md)) goes to the MP210
+over the standard library's RFCOMM socket: no package, no `rfcomm bind`. Not yet paired on the
+board and no paper made from it (2026-10-28); the board's Bluetooth facts:
+[results](../docs/results/2026-10-28-bluetooth-facts.md). All steps here are **yours**: pairing
+changes the board's Bluetooth state, and the printer makes paper.
+
+1. Printer on, no phone or other machine connected to it (it takes one connection at a time).
+2. On the board, as `arduino` (no sudo expected; `arduino` is in `bluetooth`, from the plan):
+
+   ```bash
+   bluetoothctl
+   # then, inside it:
+   power on
+   agent on
+   default-agent
+   scan on                       # wait for DC:0D:51:92:74:DA  MP210
+   pair DC:0D:51:92:74:DA        # PIN 0000
+   trust DC:0D:51:92:74:DA
+   info DC:0D:51:92:74:DA        # Paired: yes, Trusted: yes; a Serial Port UUID (00001101), no Audio Sink (0000110b)
+   scan off
+   quit
+   ```
+
+3. `sdptool records DC:0D:51:92:74:DA`: "Serial Port" and its channel (1 on the desktop). Another
+   channel goes into `FISH_PRINTER_CHANNEL`.
+4. `wpctl status`: no new `bluez_output.*` sink (one would join the speaker routes'
+   `bluez_output.*`).
+5. In `~/fish_brain/.env`: `FISH_PRINTER=DC:0D:51:92:74:DA`, then `systemctl --user restart
+   fish-brain`. The start-up line ends `printer=DC:0D:51:92:74:DA ch1`.
+6. With the fish stopped, a sample ticket (makes paper): `.venv/bin/python -m fish_brain.app
+   --tts openai --print-test` (card 13; `--print-test 0` for another card). Exit 0 printed, 1
+   failed (the reason on the line), 78 with `FISH_PRINTER` empty or malformed.
+
+Without paper: `tools/printer_check.py connect --tries 3` (connect and close, prints nothing;
+warns when `fish-brain` is active, which may hold the printer during a ticket).
+`FISH_FORTUNE_TICKET=false` or the Visit tab's switch stops the tickets; Reprint still prints the
+last one.
+
 ## The phone hotspot
 
 ```bash

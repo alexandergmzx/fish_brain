@@ -44,6 +44,7 @@ data when warranted.
 | The reading (la lectura) | Built (ADR 0007, proposed): badge photo on the phone → `gpt-6-luna` through the board (4.3 to 6.7 s, 1163 image tokens, surnames split, accents restored: `docs/results/2026-10-11-reading-badge.md`) → the fish asks "¿Tú eres X?" → the answer is a turn. Since 2026-10-26 (ADR 0018, proposed) Claude reads first when `ANTHROPIC_API_KEY` is set and luna after it; Claude is built and unit-tested, not measured (key due 2026-10-27). Not yet tried with a real badge or on the phone. Since 2026-10-27 the badge photo and the look tick are off the operator's page (ADR 0019); the server side is parked, the typed name stays |
 | Motors on the UNO Q (L298N), Billy Bass #2 calibration | Not started. Before wiring: 10 k pull-downs on D6, D3, D5 and on D7, D8 (D8 is pulled high in reset) |
 | Fair | **2026-10-17/18: failed** (the hub enumerated nothing at the venue; the fish had been left disabled; the laptop fallback was untested): `docs/results/2026-10-25-fair-postmortem.md`. No next show date |
+| The fortune's ticket (MP210, Bluetooth) | Built on mocks and `socket.socketpair()` (ADR 0024, proposed): handed over as the closing line starts, one an act, Reprint and a switch on the Visit tab, a row that warns at worst; `FISH_PRINTER` empty = off. Not paired on the laptop or the board, no paper yet; the code page (cp858 for now), columns, band, pacing and timeouts are estimates until the desk test. The 22 card plates are not committed (Mexico licence: his call) |
 | Board + phone only (`docs/BRAINTIP.md` Phase 7) | On the board 2026-10-26: Phase 1 (licence guard, STOP watcher, bench mode, records); the scripted visit (`FISH_SHOW=auto`, ADR 0015); the phone as the console in English, in the study from `/face`, hardware he marks failed, one Mode control (ADR 0017); speaker routes USB → Bluetooth → phone and a `pw-record` capture (ADR 0016, `docs/results/2026-10-26-phone-console-and-audio-routes.md`); the motor link back since `arduino` joined `arduino-router`. **On the board 2026-10-27: the fortune act for adults** (ADR 0019, proposed: date → sign, the open dream, a tarot card, the cup, the animal, the moon, a magic word; the reading from the clips or from the model): 139 `fortune_*` clips rendered in 3 min 22 s at the first boot; a scripted act and a model act ran end to end through the page's routes with no error line, the model's reading in 7.2 s (`docs/results/2026-10-27-fortune-on-the-board.md`); Canary writes a spoken date as words or Roman numerals, never digits (`docs/results/2026-10-27-fortune-answers-canary.md`); since 2026-10-28 the sign is asked first, the date is the re-ask. Haiku keeps the short castle questions and ignores the word counts (34 to 47 words a turn, `docs/results/2026-10-28-short-turns-in-the-castle.md`). The three tabs Visit · Status · Settings; the adult register; the house act's 143 kid lines wait for his pass. Not yet: his voice through a fortune. Next: his look on the phone; then slow uploads from the phone (4 to 26 s) and the remote's microphone sending zeros |
 
 Ask before starting the next Braintip phase. Until the fair, prefer work that closes the fair
@@ -76,6 +77,7 @@ chains are not covered by it. So:
    turn loop; STOP is never armed). Claude tests them on the mock link only and never calls
    `/debug/motor`, `/debug/say`, `/debug/loop`, `/debug/voice` or `/debug/restart` against the
    board or the laptop fish (the loop makes sound; the voice render with `loq` is Wine here).
+   `--print-test` and Reprint on the board make paper: his to press.
 
 ## What is in use
 
@@ -107,6 +109,7 @@ together.
 | The fortune act | The second act for adults (ADR 0019): `fortune.py` is the data and the parsers (the birth date to a sign, element and lucky number, never the year; 21 dream themes; the tarot's 22 major arcana as `DECKS`; the cup's shapes; the animal; the moon; the magic words; the `[ADIVINACIÓN: …]` tag; `BANNED` and `clean_reading`), `fortune_bank.py` its `fortune_*` lines and the model's adult rules, `fortune_run.py` the act itself (`FortuneRun`: one question at a time by voice, a narrower re-ask with a budget of two, Skip and End from the page; the ending from the clips, or from the model started before the suspense clip and dropped to the clips on any failure; its own `fortune.json`). The place (`FISH_PLACE`) is a setting | [`fortune.py`](fish_brain/fortune.py), [`fortune_bank.py`](fish_brain/fortune_bank.py), [`fortune_run.py`](fish_brain/fortune_run.py) |
 | The page | `/` is the operator's page on his phone or a PC (ADR 0011, 0017): the debug view with the drawn hat showing what the fish does (pose and colour per state, the acts' stage and verdict, a shake where a turn died, the lamps of the lines sent) and three tabs first, Visit (the acts: New visitor, Fortune, the cue chips, the typed name; below them the place and the fortune's deck and cup) · Status (default on a phone) · Settings (mode, hardware, volume, phone speaker, network), a thumb bar (New visitor, hold to talk), the phone's microphone behind a switch. HTTPS as a second listener behind `FISH_VIZ_TLS_CERT` keeps the phone's screen on. The old visitor face is at `/face` until after the fair | [`viz.py`](fish_brain/viz.py), [`web/`](fish_brain/web/), [`docs/debug.md`](docs/debug.md), [`docs/viz.md`](docs/viz.md) |
 | The debug view | `/debug` on a desktop: the bring-up checks (speaker, sink, microphone, remote, link, service), what each model is sent and answers, the log, every key of the remote, one record per turn, the lines sent and the bytes back, the board, hints; tests, switches for the running fish (echo or LLM, backends, gestures, motors muted; nothing survives a restart), and armed motor pulses and restart (ADR 0009) | [`debug.py`](fish_brain/debug.py), [`debug_state.py`](fish_brain/debug_state.py), [`debug_actions.py`](fish_brain/debug_actions.py), [`web/debug.*`](fish_brain/web/), [`docs/debug.md`](docs/debug.md) |
+| The ticket | The fortune's reading on paper (ADR 0024): `ticket.py` is pure (content from the act's data, layout, ESC/POS bytes, the card plates as 1-bit PBM, a 32-column text preview; every control character dropped before the printer); `printer.py` is one worker that owns the RFCOMM socket, connects per ticket, never holds the link, never resends after a stall or a drop, and a mock (`FISH_PRINTER=mock`). The act hands the ticket over just before the closing clip (`speak.say_sequence(at=)`), or at `_close` when it never started; Reprint is `POST /fortune {"action":"reprint"}` | [`ticket.py`](fish_brain/ticket.py), [`printer.py`](fish_brain/printer.py) |
 | Entry point | Flags, start-up checks, one-shots | [`app.py`](fish_brain/app.py) |
 
 Other repos. **They stay untouched; this repo only calls them.**
@@ -190,7 +193,7 @@ check its replies against this table.
 |---|---|---|
 | [`fish_brain/`](fish_brain/) | yes | The package; modules as in "What is in use" |
 | [`tests/`](tests/) | yes | Unit tests that need no hardware and no network |
-| [`tools/`](tools/) | yes | `sprite_clean.py` (clears a cut-out's leftovers from the on-screen sprites), `fw_check.py` (firmware checker: replies, timing, soak, one-line send), `stt_bench.py` (speech-to-text routes, local and online, timed and scored on a folder of clips; records clips from a terminal or from the remote), `uart_check.py` (link soak test), `unoq_checks.sh` (board checks), `unoq_bringup.sh` (board tests with PASS/FAIL), `sketches/` (MCU test sketches: two echo sketches and the pin probe; the fish firmware is in Big_mouth) |
+| [`tools/`](tools/) | yes | `sprite_clean.py` (clears a cut-out's leftovers from the on-screen sprites), `fw_check.py` (firmware checker: replies, timing, soak, one-line send), `stt_bench.py` (speech-to-text routes, local and online, timed and scored on a folder of clips; records clips from a terminal or from the remote), `uart_check.py` (link soak test), `printer_check.py` (the MP210's desk checks over RFCOMM: connect, send, status, raster, idle; stdlib only), `unoq_checks.sh` (board checks), `unoq_bringup.sh` (board tests with PASS/FAIL), `sketches/` (MCU test sketches: two echo sketches and the pin probe; the fish firmware is in Big_mouth) |
 | [`deploy/`](deploy/) | yes | The unit, the board set-up script, the MCU flash helper (`unoq_fw.sh`), the kiosk session (`kiosk/`, parked since ADR 0006), the board's example environment. **The repo is the source of truth for the board: never hand-edit it without the same change here** |
 | [`docs/`](docs/) | yes | `BRAINTIP.md`, `UNOQ_BRIDGE_RPC_EXPLAINED.md`, `viz.md`, `adr/`, `results/` |
 | `gui/` | yes | June prototypes; parked |
@@ -229,12 +232,15 @@ check its replies against this table.
   `FISH_FORTUNE_STATE`, `FISH_PLACE` (`casa`, `fiesta`, `universidad`, `otro`),
   `FISH_PLACE_TEXT`. Since 2026-10-27 (ADR 0020): `FISH_STT_ONLINE`, `FISH_PTT_SILENCE_END_S`
   (replaces `FISH_PTT_PAUSE_S`), `FISH_PTT_QUIET_RMS`. Since 2026-10-28 (ADR 0023):
-  `FISH_TTS_RATE_FACTOR`, `FISH_TTS_PITCH_ST`, `FISH_TTS_TEMPO`, `FISH_RUBBERBAND_BIN`.
+  `FISH_TTS_RATE_FACTOR`, `FISH_TTS_PITCH_ST`, `FISH_TTS_TEMPO`, `FISH_RUBBERBAND_BIN`. Since
+  2026-10-28 (ADR 0024): `FISH_PRINTER` (empty, `mock` or a MAC), `FISH_PRINTER_CHANNEL`,
+  `FISH_FORTUNE_TICKET`.
 
 ### Every hardware boundary has a stand-in
 
 Mock link (`--dry-run`), typed turns (`--text`), echo instead of the LLM (`--echo`), silent
-player (`--no-audio`), the browser fish (`--viz`), a fake router socket in the tests. New
+player (`--no-audio`), the browser fish (`--viz`), a fake router socket in the tests, the
+ticket printer as text (`FISH_PRINTER=mock`) and on `socket.socketpair()` in the tests. New
 hardware goes behind one too, and its library is imported only when used, so the laptop runs
 without `evdev` or `msgpack`.
 
@@ -310,11 +316,13 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q tests   # expect 
 .venv/bin/python tools/uart_check.py --self-test                         # expect 0 lost
 .venv/bin/python tools/fw_check.py --self-test                           # expect all passed
 .venv/bin/python tools/stt_bench.py --self-test                          # expect all passed
+.venv/bin/python tools/printer_check.py --self-test                      # no printer, a socket pair; expect all passed
 
 # laptop, no hardware (cloud voice, so Wine is not involved)
 .venv/bin/python -m fish_brain.app --dry-run --text --no-audio --tts openai   # type a turn; expect TX lines and a [turn] line
 .venv/bin/python -m fish_brain.app --dry-run --echo --viz --tts openai        # hold the button in the browser, it repeats you; the fish's face is the default view; ?debug=1 the developer page
 FISH_MIC_CAPTURE=browser .venv/bin/python -m fish_brain.app --dry-run --echo --viz --tts openai   # the browser's own microphone (localhost is a secure context)
+FISH_PRINTER=mock .venv/bin/python -m fish_brain.app --tts openai --print-test   # the sample ticket as 32-column text; exit 0
 FISH_READING_PROFILE=luna .venv/bin/python -m fish_brain.app --dry-run --text --no-audio --tts openai --read-badge foto.jpg   # the badge call alone, prints the JSON (needs the key; `claude` or `claude-sonnet` to try Claude)
 .venv/bin/python -m fish_brain.ab --no-vote                                   # both LLM profiles: latency and cost
 

@@ -75,7 +75,10 @@ Flags: `--dry-run` (mock serial, prints commands), `--text` (type instead of mic
 `--port /dev/ttyACM0`, `--say "..."` (one-shot). Backends: `--stt local|openai|groq`,
 `--tts loq|openai`, `--llm groq|luna|claude|claude-sonnet`, `--transport serial|bridge`, `--viz-host 0.0.0.0`.
 One-shots: `--check-link` (open the motor link, send `STOP`), `--prerender-canned`,
-`--say-canned NAME`, `--list-canned`, `--prefetch-stt`, `--read-badge FILE` (read the name on a
+`--say-canned NAME`, `--list-canned`, `--prefetch-stt`, `--print-test [CARD]` (a sample
+ticket for card 0 to 21, default 13, through the real layout and printer worker; exits 0 printed,
+1 failed, 78 with `FISH_PRINTER` empty or malformed; `FISH_PRINTER=mock` prints it as text; with a
+real printer it makes paper), `--read-badge FILE` (read the name on a
 badge photo with the vision model and print the JSON; it starts no voice and no motors:
 `python -m fish_brain.app --tts openai --llm luna --read-badge foto.jpg`, needs
 `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` for Claude, which reads first when it has a key).
@@ -127,6 +130,9 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_FORTUNE_CUP` | `false` | `true`: the fortune asks which shape the visitor sees in the cup (eleven shapes). Also on the Visit tab |
 | `FISH_FORTUNE_STATE` | `~/.local/state/fish_brain/fortune.json` | The fortune's counter and line bags, beside the show's file |
 | `FISH_PLACE`, `FISH_PLACE_TEXT` | `otro`, empty | Where the hat is this evening: `casa`, `fiesta`, `universidad` or `otro`, and a free text for "other" that reaches the web model only. The place picks the fortune's intro and closing lines (a toast or a song only at a party) and goes to the model as `lugar=`. Both change from the Visit tab until a restart |
+| `FISH_PRINTER` | empty (off) | The fortune's ticket printer ([ADR 0024](docs/adr/0024-the-fortunes-ticket.md)): the MP210's Bluetooth address (`DC:0D:51:92:74:DA`, paired first: `deploy/README.md`), or `mock` (the stand-in: logs the ticket as text). The ticket is handed over as the closing line starts, one an act; a failure never holds up the act and Reprint on the Visit tab prints the last one again. A malformed value turns the printer off with one `[printer]` line, never an exit. Needs a Python with Bluetooth sockets (stdlib, no package) |
+| `FISH_PRINTER_CHANNEL` | `1` | The printer's RFCOMM channel (`sdptool records <MAC>`, "Serial Port") |
+| `FISH_FORTUNE_TICKET` | `true` | `false`: no ticket at the end of a fortune; the last one is still kept for Reprint. Also the "🎫 Print the ticket" switch on the Visit tab until a restart |
 | `FISH_AUDIO_ROUTES` | empty | Speaker routes (ADR 0016), in order: PipeWire sink-name patterns and `phone` (board: `alsa_output.usb-*,bluez_output.*,phone`). Each phrase goes to the first one that is there; a failed one cools for `FISH_AUDIO_RETRY_S` (30). `FISH_AUDIO_DELAY_MS` (`pattern=ms,...`): a route's sound delay, the motors follow it |
 | `FISH_MIC_BACKEND` | `sounddevice` | `pw-record` (board): record through a PipeWire subprocess that can always be ended; no audio within `FISH_MIC_OPEN_TIMEOUT_S` (3) is a microphone error, never a hang |
 | `FISH_VOICE_QUIT` | `true` | Saying "salir" ends the program |
