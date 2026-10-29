@@ -15,6 +15,7 @@ venv/
 *.wav
 /tmp_audio/
 ab_results.csv
+/tickets/
 
 # assistant settings: only the curated file is tracked
 /.claude/*

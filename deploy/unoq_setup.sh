@@ -116,7 +116,8 @@ cmd_sync() {
         || die "cannot reach $target over ssh (board on? same network? FISH_BOARD=user@host)"
     # .env stays out: the board has its own keys. rsync leaves excluded files on the board alone.
     local excludes=(--exclude .venv --exclude .env --exclude __pycache__ --exclude '*.wav'
-                    --exclude '*.egg-info' --exclude .pytest_cache)
+                    --exclude '*.egg-info' --exclude .pytest_cache
+                    --exclude /tickets)
     if have rsync && ssh -o ConnectTimeout=8 "$target" 'command -v rsync' >/dev/null 2>&1; then
         rsync -a --delete "${excludes[@]}" "$REPO/" "$dest"
         ok "rsync done (files deleted here were deleted there too)"
