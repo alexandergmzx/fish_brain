@@ -199,6 +199,23 @@ def test_the_request_is_the_persona_the_history_and_the_turn(convo):
     assert not {"temperature", "top_p", "top_k"} & set(call)
 
 
+def test_the_fortunes_reading_turns_thinking_off_until_the_next_visitor():
+    """ADR 0026: the reading's call sets `thinking` over the profile's; the visit's reset clears it."""
+    from fish_brain import fortune
+    from fish_brain.fortune_run import reading_request
+    from fish_brain.visit import begin_model
+    c = chat(response("Lectura."), response("Visita."))
+    reading_request(c, "reglas", fortune.Fortune(), None, thinking="disabled")
+    c.reply("[ADIVINACIÓN: ] Haz la lectura.", remember=False)
+    begin_model(c, "reglas de la visita")
+    c.reply("hola")
+    first, second = c._client.calls
+    assert first["thinking"] == {"type": "disabled"} and first["output_config"] == {"effort": "low"}
+    assert second["thinking"] == {"type": "adaptive"} and c.thinking is None
+    reading_request(c, "reglas", fortune.Fortune(), None)          # "" = the profile's own
+    assert c.thinking is None
+
+
 def test_the_visitors_rules_are_a_second_system_block(convo):
     convo.extra_rules = "Reglas del visitante."
     convo.remember("[Lectura] se llama Ana.", "¿Tú eres Ana?")

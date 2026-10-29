@@ -9,7 +9,7 @@ turn loop's thread; the printer's worker (printer.py) lays it out and sends the 
 
 The content reuses what the act already has (PLAN Decision 16): the name, the card's plate
 with its numeral, name and meaning, the reading (the model's text, or the texts of the
-number, moon and magic word clips), leader lines for the number, the moon, the animal and the
+number, moon and magic word clips), leader lines for the number, the moon, the wish and the
 magic word, and a footer in Font B: the folio, the date when the clock is sane, the place, the
 plate's credit. The dream, the cup, the house and the mode stay off the paper.
 
@@ -89,12 +89,12 @@ SUBTITLE = "del Sombrero Seleccionador"
 FOR = "para"
 LABEL_NUMBER = "Número de la suerte"
 LABEL_MOON = "Luna"
-LABEL_ANIMAL = "Animal"
+LABEL_WISH = "Pediste"
 LABEL_MAGIC = "Palabra mágica"
 FOLIO = "Folio"
 CREDIT = "Carta: Pamela Colman Smith, 1909"
 SAMPLE_NAME = "Prueba"
-LABELS = (TITLE, SUBTITLE, FOR, LABEL_NUMBER, LABEL_MOON, LABEL_ANIMAL, LABEL_MAGIC, FOLIO,
+LABELS = (TITLE, SUBTITLE, FOR, LABEL_NUMBER, LABEL_MOON, LABEL_WISH, LABEL_MAGIC, FOLIO,
           CREDIT, SAMPLE_NAME)
 
 
@@ -251,7 +251,7 @@ class Ticket:
     body: tuple[str, ...] = ()      # paragraphs: the model's reading, or the clips' texts
     numero: str = ""
     luna: str = ""
-    animal: str = ""
+    deseo: str = ""                 # what the visitor asked of La Muerte, as said
     palabra: str = ""
     day: str = ""                   # "28 de octubre de 2026", "" when the clock is not sane
     place: str = ""                 # "en una fiesta", or the operator's own text
@@ -302,23 +302,24 @@ def ticket_of(v: dict, said: dict, *, phrases: dict, place=None,
         n=int(v.get("n") or 0), first=v.get("first") or "",
         deck=deck.get("id", "") if card is not None else "",
         card=card.n if card is not None else None,
-        card_es=card.es if card is not None else "",
-        card_meaning=card.meaning if card is not None else "",
+        # A reversed card: its name says so, and the upright meaning is left off the paper.
+        card_es=(card.es + (", de cabeza" if data.get("carta_reves") else "")) if card is not None else "",
+        card_meaning=card.meaning if card is not None and not data.get("carta_reves") else "",
         body=body, numero=str(said.get("numero") or ""), luna=said.get("luna") or "",
-        animal=said.get("animal") or "", palabra=said.get("palabra") or "",
+        deseo=said.get("deseo") or "", palabra=said.get("palabra") or "",
         day=date_words(now), place=place_said(v.get("place"), place))
 
 
 def sample(card: int = 13, *, now: datetime | None = None) -> Ticket:
     """The test ticket (--print-test): bank texts only, the number six, a full moon, the
-    first magic word, the black cat, at a party."""
+    first magic word, a wish for love, at a party."""
     deck = fortune.DECKS["tarot"]
     c = fortune.card_by_n(deck, card)
     return Ticket(
         n=0, first=SAMPLE_NAME, deck="tarot", card=c.n, card_es=c.es, card_meaning=c.meaning,
         body=(fortune_bank.NUMBER_LINES[6], fortune_bank.MOON_LINES["llena"],
               fortune_bank.POOLS["magic"][0]),
-        numero="6", luna=fortune.MOON_SAID["llena"], animal=fortune.ANIMAL_SAID["gato"],
+        numero="6", luna=fortune.MOON_SAID["llena"], deseo="amor",
         palabra=fortune.MAGIC_WORDS[0], day=date_words(now), place=fortune.PLACE_SAID["fiesta"])
 
 
@@ -363,7 +364,7 @@ def _leader(label: str, value: str, codec: str) -> list[Line]:
     dots = width - len(label) - len(value) - 2
     if dots >= 3:
         return [Line(f"{label} {'.' * dots} {value}")]
-    # A long free animal: the label alone, the value on its own right-aligned lines.
+    # A long wish in the visitor's words: the label alone, the value on its own right-aligned lines.
     return [Line(label)] + [Line(s, align="r") for s in wrap(value, width)]
 
 
@@ -389,7 +390,7 @@ def layout(t: Ticket, *, codec: str = CODEC, art_root: Path | str | None = None)
         for paragraph in t.body:
             out += _lines(paragraph, codec)
         out.append(Rule())
-    leaders = [(LABEL_NUMBER, t.numero), (LABEL_MOON, t.luna), (LABEL_ANIMAL, t.animal),
+    leaders = [(LABEL_NUMBER, t.numero), (LABEL_MOON, t.luna), (LABEL_WISH, t.deseo),
                (LABEL_MAGIC, t.palabra)]
     leaders = [(k, val) for k, val in leaders if printable(val, codec)]
     for label, value in leaders:

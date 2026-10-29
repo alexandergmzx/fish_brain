@@ -217,8 +217,9 @@ class Conversation(llm._Chat):
     def _options(self) -> dict:
         """Thinking and effort, unless the API refused one of them once."""
         opts: dict = {}
-        if self.cfg.thinking and "thinking" not in self._dropped:
-            opts["thinking"] = {"type": self.cfg.thinking}
+        thinking = getattr(self, "thinking", None) or self.cfg.thinking
+        if thinking and "thinking" not in self._dropped:
+            opts["thinking"] = {"type": thinking}
         effort = (self.cfg.reasoning_effort or "").strip().lower()
         if effort and effort != "none" and "effort" not in self._dropped:
             opts["output_config"] = {"effort": effort}

@@ -230,9 +230,9 @@ def test_the_fortune_row_posts_only_to_fortune_and_names_the_questions():
     assert 'explain(out, "the fortune")' in block
     assert '"visit open": "finish the visit first (or Force a house)"' in js
     qids = set(re.findall(r'(\w+): "[^"]+"', re.search(r"QUESTION_EN = \{([^}]*)\}", js).group(1)))
-    assert qids == {"fecha", "sueno", "carta", "taza", "animal"}
+    assert qids == {"fecha", "sueno", "deseo", "carta", "taza"}
     data = set(re.findall(r'(\w+): "[^"]+"', re.search(r"DATA_EN = \{([^}]*)\}", js, re.S).group(1)))
-    assert data == {"signo", "elemento", "numero", "sueno", "carta", "taza", "animal", "luna", "palabra"}
+    assert data == {"signo", "elemento", "numero", "sueno", "deseo", "carta", "taza", "luna", "palabra"}
 
 
 def test_the_fortune_flourish_is_off_in_lite_and_still_and_reduced_motion():

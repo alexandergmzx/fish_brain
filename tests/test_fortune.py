@@ -1,15 +1,16 @@
-"""fortune.py: the fortune act's parsers hear dates, signs, dreams, cards, shapes and the
-animal, the moon is right on its check dates, the tag and the filter are exact."""
+"""fortune.py: the fortune act's parsers hear dates, signs, dreams, wishes, cards (and a yes
+or a no to one), shapes, the moon is right on its check dates, the tag and the filter are
+exact; fortune_run's pure steps draw and deal as the act does."""
 from datetime import datetime, timezone
 
 import pytest
 
 from fish_brain import fortune
-from fish_brain.fortune import (ANIMAL_Q, DECKS, DREAM_THEMES, MOON_PHASES, SIGNS, Fortune,
+from fish_brain.fortune import (DECKS, DREAM_THEMES, MOON_PHASES, SIGNS, Fortune,
                                 clean_reading, dream_theme, lucky_number, moon_phase,
                                 moon_tonight, numbers_in, parse_birth, parse_card, parse_shape,
                                 parse_sign, reading_tag, sign_of, strip_notes, tokens)
-from fish_brain.show import match_option, phon_key
+from fish_brain.show import ShowState, phon_key
 
 TAROT = DECKS["tarot"]
 
@@ -186,7 +187,7 @@ def test_two_cards_or_none_is_none(text):
     assert parse_card(text, TAROT) is None
 
 
-# ---- the cup, the animal --------------------------------------------------------------------
+# ---- the cup, the wish, the card's yes or no --------------------------------------------------------------------
 def test_the_eleven_shapes():
     assert [t.id for t in fortune.CUP_SHAPES] == ["estrella", "corazon", "luna", "anillo", "animal",
                                                   "arbol", "ojo", "nube", "llave", "calabaza", "nada"]
@@ -204,64 +205,39 @@ def test_shapes_heard(text, expect):
     assert parse_shape(text) == expect
 
 
-def test_the_animal_through_match_option():
-    heads = [phon_key(o["words"][0]) for o in ANIMAL_Q["options"]]
-    assert len(set(heads)) == 4 and ANIMAL_Q["id"] == "animal"
-    assert set(fortune.ANIMAL_SAID) == {o["id"] for o in ANIMAL_Q["options"]}
-    for text, expect in [("un gato negro", "gato"), ("la lechuza", "buho"), ("tecolote", "buho"),
-                         ("murciélago", "murcielago"), ("una rana", "sapo"), ("el sapo", "sapo"),
-                         ("el primero", "gato"), ("el último", "sapo")]:
-        h = match_option(ANIMAL_Q, strip_notes(text + " [Nota: eco]"))
-        assert h.option == expect, (text, h)
-    assert match_option(ANIMAL_Q, "no sé").kind == "not_sure"
-    assert match_option(ANIMAL_Q, "un perro").kind == "none"
+@pytest.mark.parametrize("text,expect", [
+    ("Amor.", "amor"), ("Que me vaya bien con mi novia.", "amor"), ("que regrese mi ex", "amor"),
+    ("Dinero, ya que estamos.", "dinero"), ("un trabajo nuevo", "dinero"), ("lana", "dinero"),
+    ("Salud.", "salud"), ("salud para mi familia", "salud"),
+    ("Venganza.", "venganza"), ("venganza contra mi ex", "venganza"),   # venganza weighs 2
+    ("Que te calles.", "otro"), ("que mis alumnos lean", "otro"), ("", None),
+])
+def test_the_wish(text, expect):
+    assert fortune.parse_wish(text) == expect
+
+
+def test_every_wish_keyword_lands_on_its_wish():
+    for t in fortune.WISHES:
+        for k in t.keywords:
+            assert fortune.parse_wish(k.replace("*", "")) == t.id, (k, t.id)
+    assert fortune.WISH_IDS == ("amor", "dinero", "salud", "venganza")
 
 
 @pytest.mark.parametrize("text,expect", [
-    # one of the four, said or by its place: the option
-    ("un gato negro", ("option", "gato")), ("el primero", ("option", "gato")),
-    ("la lechuza", ("option", "buho")),
-    # any other animal: the visitor's own phrase, before the sound match of the four
-    ("Un perro.", ("free", "un perro")),
-    ("Un perrito xoloitzcuintle.", ("free", "un perrito xoloitzcuintle")),
-    ("Pues un ajolote, porque son bonitos", ("free", "un ajolote")),
-    ("burro", ("free", "burro")),                  # by sound alone it would be the búho
-    ("Una rata.", ("free", "una rata")),           # by sound alone it would be the sapo
-    # a diminutive of the four: by sound, after the lexicon
-    ("un sapito", ("option", "sapo")), ("una lechucita", ("option", "buho")),
-    # no animal word: re-asked first
-    ("Escojo a un velociraptor.", ("none", None)),
-    ("no sé", ("not_sure", None)), ("mmm", ("none", None)), ("", ("none", None)),
+    ("Sí.", "yes"), ("Sí, porfa.", "yes"), ("Bueno, sí.", "yes"), ("Sí, échamela.", "yes"),
+    ("Bueno, a ver.", "yes"), ("¿Por qué no?", "yes"), ("Órale", "yes"), ("simón", "yes"),
+    ("No.", "no"), ("Nel.", "no"), ("No, gracias, no me gustan esas cosas.", "no"),
+    ("Mejor no", "no"), ("sí, no, mejor no", "no"), ("Paso", "no"),
+    ("La que sea.", None), ("emm", None), ("", None),
 ])
-def test_the_animal_order(text, expect):
-    assert fortune.parse_animal(text) == expect
+def test_the_yes_or_no_to_a_card(text, expect):
+    assert fortune.parse_yes_no(text) == expect
 
 
-@pytest.mark.parametrize("text,expect", [
-    # his takes, 2026-10-27: on the last try a short answer is the animal as said
-    ("Escojo a un velociraptor.", "un velociraptor"), ("Gatosiraptor.", "gatosiraptor"),
-    ("Me quedo con el kraken, porque es enorme", "el kraken"), ("Emm, un dragón.", "un dragón"),
-    # never an animal: a refusal, a question back, thanks, a filler, a person; a swear word is one
-    ("Sí.", None), ("El que tú quieras", None), ("Paso", None), ("¿Cómo?", None),
-    ("¿Mande?", None), ("¿Puedes repetir?", None), ("Gracias.", None),
-    ("Gracias por ver.", None), ("Hmm.", None), ("Ehh...", None), ("Ni idea.", None),
-    ("Me da miedo.", None), ("Nel.", None), ("Mi novia.", None), ("Mi suegra.", None),
-    ("El negro.", None), ("Pendejo.", "pendejo"), ("Puto.", "puto"),     # ADR 0025: no word refused
-    ("uno de los cuatro, el que sea", None), ("Un mamut lanudo gigante enorme", None),
-])
-def test_the_last_guess_at_the_animal(text, expect):
-    kind, value = fortune.parse_animal(text, guess=True)
-    assert value == expect and kind in (("free",) if expect else ("none", "not_sure", "option"))
-
-
-def test_a_free_animal_phrase_is_short_and_safe():
-    long = "Mmm, pues yo escojo un zorro plateado de los que salen en la noche con la luna llena"
-    phrase = fortune.animal_phrase(long)
-    assert phrase.startswith("un zorro plateado") and len(phrase) <= fortune.ANIMAL_TEXT_MAX
-    assert not phrase.endswith(" ")
-    assert fortune.animal_phrase("un [Nota: eco] perro; = <b>") == "un perro"
-    assert fortune.animal_phrase("una telaraña") is None             # no animal by name
-    assert "animal" not in fortune.ANIMAL_WORDS and "rebano*" not in fortune.ANIMAL_WORDS
+def test_a_card_said_upside_down():
+    assert fortune.said_reversed("La Torre, de cabeza")
+    assert fortune.said_reversed("el diablo invertido") and fortune.said_reversed("al revés")
+    assert not fortune.said_reversed("La Torre")
 
 
 # ---- the moon -------------------------------------------------------------------------------
@@ -288,11 +264,18 @@ def test_an_insane_clock_gives_no_moon():
 def test_the_tag_exact_string():
     f = Fortune(nombre="Ana", lugar="fiesta", casa="Ravenclaw", fecha=(23, 10), signo="escorpio",
                 numero=6, sueno="dientes", sueno_txt="se me caían los dientes en la boda de mi prima",
-                carta=13, taza="estrella", animal="gato", luna="llena", palabra="Zumbalí")
+                deseo="venganza", deseo_txt="contra mi ex", carta=13, carta_de="sombrero",
+                carta_reves=True, taza="estrella", luna="llena", palabra="Zumbalí",
+                hoy="jueves 29 de octubre", gancho="una llave que ya no sabes qué abre",
+                forma="abre con una orden corta", evita=("Ana, bajo tu signo", 'Escorpio "de agua"'))
     assert reading_tag(f, TAROT) == (
-        '[ADIVINACIÓN: nombre=Ana; lugar=fiesta; signo=Escorpio; elemento=agua; número=6; '
-        'sueño=dientes ("se me caían los dientes en la boda de mi prima"); carta=La Muerte; '
-        'taza=estrella; animal=gato negro; luna=llena; palabra=Zumbalí; casa=Ravenclaw] Haz la lectura.')
+        '[ADIVINACIÓN: nombre=Ana; lugar=fiesta; hoy=jueves 29 de octubre; signo=Escorpio; '
+        'elemento=agua; número=6; '
+        'sueño=dientes ("se me caían los dientes en la boda de mi prima"); '
+        'deseo=venganza ("contra mi ex"); carta=La Muerte (de cabeza; la saqué yo); '
+        'taza=estrella; luna=llena; palabra=Zumbalí; casa=Ravenclaw; '
+        "visión=una llave que ya no sabes qué abre; forma=abre con una orden corta; "
+        "evita=Ana, bajo tu signo | Escorpio 'de agua'] Haz la lectura.")
 
 
 def test_the_tag_leaves_out_what_is_missing_and_never_the_year():
@@ -304,19 +287,35 @@ def test_the_tag_leaves_out_what_is_missing_and_never_the_year():
     assert "23" not in tag and "fecha" not in tag
     assert "carta" not in reading_tag(Fortune(carta=13), None)        # no deck: no card
     assert "carta" not in reading_tag(Fortune(carta=99), TAROT)
-    assert "casa" not in reading_tag(Fortune(animal="perro"), TAROT)
+    assert "casa" not in reading_tag(Fortune(deseo="amor"), TAROT)
 
 
-def test_the_tag_with_cues_and_a_free_animal():
-    f = Fortune(lugar="fiesta", animal="un perrito xoloitzcuintle",
+def test_the_tag_says_who_drew_the_card_and_a_no():
+    assert "carta=El Diablo (tú la sacaste);" in reading_tag(
+        Fortune(carta=15, carta_de="visitante", palabra="x"), TAROT)
+    assert "carta=El Diablo;" in reading_tag(Fortune(carta=15, palabra="x"), TAROT)
+    assert "carta=ninguna (no quiso tarot)" in reading_tag(Fortune(sin_carta=True), TAROT)
+    assert "tema=dinero (no dijo qué pide: lee este)" in reading_tag(Fortune(tema="dinero"), TAROT)
+    assert "tema" not in reading_tag(Fortune(deseo="amor", tema="dinero"), TAROT)
+
+
+def test_the_tag_with_cues_and_a_wish_in_the_visitors_words():
+    f = Fortune(lugar="fiesta", deseo="otro", deseo_txt="que mis alumnos lean",
                 pistas={"edad": "adulto", "impresion": "sonriente", "lleva": "capa negra",
                         "disfraz": "tenebroso"})
     assert reading_tag(f, TAROT) == (
-        "[ADIVINACIÓN: lugar=fiesta; animal=un perrito xoloitzcuintle; pistas=edad: adulto, "
+        '[ADIVINACIÓN: lugar=fiesta; deseo=otro ("que mis alumnos lean"); pistas=edad: adulto, '
         "impresión: sonrisa, disfraz: tenebroso, lleva: capa negra] Haz la lectura.")
     assert "pistas" not in reading_tag(Fortune(pistas={}), TAROT)
-    assert "animal=un perro" in reading_tag(Fortune(animal="un perro; x=1"), TAROT) and \
-        "x=1" not in reading_tag(Fortune(animal="un perro; x=1"), TAROT)
+    assert 'deseo=amor ("un novio' in reading_tag(Fortune(deseo="amor", deseo_txt='un novio "; x=1'), TAROT)
+
+
+def test_today_and_the_opening():
+    assert fortune.today_words(datetime(2026, 10, 29, 21, 0)) == "jueves 29 de octubre"
+    assert fortune.today_words(datetime(2026, 11, 1, 1, 0)) == "domingo 1 de noviembre"
+    assert fortune.today_words(datetime(1970, 1, 1)) == ""
+    assert fortune.opening("[x] Uno dos tres cuatro cinco seis siete ocho nueve.") == \
+        "Uno dos tres cuatro cinco seis siete ocho"
 
 
 @pytest.mark.parametrize("theme", ["seres_queridos", "otro"])
@@ -382,13 +381,18 @@ def test_parse_answer_fills_the_data_as_the_act_does():
     assert parse_answer("sueno", "no me acuerdo", TAROT, {})[0] == "theme"
     assert parse_answer("carta", "la luna", TAROT, data)[0] == "card"
     assert parse_answer("taza", "un corazón", TAROT, data) == ("shape", data["taza"])
-    assert parse_answer("animal", "un gato negro", TAROT, data) == ("option", "gato")
-    assert parse_answer("animal", "ninguno", TAROT, {}) == ("not_sure", None)
-    free: dict = {}
-    assert parse_answer("animal", "Un perrito xoloitzcuintle.", TAROT, free) == (
-        "free", "un perrito xoloitzcuintle")
-    assert free["animal"] == "un perrito xoloitzcuintle"
-    assert parse_answer("animal", "mmm", TAROT, {}) == ("none", None)
+    assert data["carta_de"] == "visitante" and not data["carta_reves"]
+    assert parse_answer("deseo", "Venganza contra mi ex.", TAROT, data) == ("wish", "venganza")
+    assert data["deseo_txt"] == "Venganza contra mi ex."
+    assert parse_answer("deseo", "no sé", TAROT, {}) == ("not_sure", None)
+    assert parse_answer("deseo", "", TAROT, {}) == ("none", None)
+    assert parse_answer("carta", "Sí, porfa.", TAROT, {}) == ("draw", None)
+    no: dict = {}
+    assert parse_answer("carta", "No, gracias.", TAROT, no) == ("no_card", None) and no["sin_carta"]
+    assert parse_answer("carta", "La que sea.", TAROT, {}) == ("none", None)
+    upside: dict = {}
+    assert parse_answer("carta", "Sí, me salió La Torre de cabeza", TAROT, upside) == ("card", 16)
+    assert upside["carta_reves"]
     assert parse_answer("otra", "algo", TAROT, {}) == ("none", None)
 
 
@@ -414,3 +418,44 @@ def test_fortune_of_and_the_reading_steps():
     assert llm.resets == 1 and llm.extra_rules == "RULES" and tag == reading_tag(f, TAROT)
     assert reading_result("Tu luna es llena.\nCASA: Ravenclaw") == "Tu luna es llena."
     assert reading_result("Vas al hospital.") == "Vas al hospital." and reading_result(None) is None
+
+
+# ---- the hat's own draw and the model's seeds (fortune_run, ADR 0026) ----------------------
+def test_the_hat_draws_every_card_and_the_dark_ones_twice_before_repeating():
+    from fish_brain.fortune_bank import HAT_DRAW_EXTRA
+    from fish_brain.fortune_run import hat_draw
+    state = ShowState(None, seed="draw")
+    drawn = []
+    for _ in range(27):
+        d: dict = {}
+        drawn.append(hat_draw(state, TAROT, d, reversible=False))
+        assert d["carta_de"] == "sombrero" and d["carta_reves"] is False
+    assert sorted(set(drawn)) == list(range(22))
+    for n in HAT_DRAW_EXTRA["tarot"]:
+        assert drawn.count(n) == 2
+    assert len(drawn) == 22 + len(HAT_DRAW_EXTRA["tarot"])
+
+
+def test_a_reversed_draw_one_in_three_and_only_when_reversible():
+    from fish_brain.fortune_run import hat_draw
+    state = ShowState(None, seed="rev")
+    flags = []
+    for _ in range(9):
+        d: dict = {}
+        hat_draw(state, TAROT, d, reversible=True)
+        flags.append(d["carta_reves"])
+    assert flags.count(True) == 3
+
+
+def test_the_seeds_deal_before_repeat_and_fit_the_data():
+    from fish_brain.fortune_bank import FORMAS, GANCHOS
+    from fish_brain.fortune_run import deal_seeds
+    state = ShowState(None, seed="seeds")
+    ganchos = [deal_seeds(state, {"deseo": "amor"}, has={"signo"})["gancho"] for _ in GANCHOS]
+    assert sorted(ganchos) == sorted(GANCHOS)
+    for _ in range(12):
+        seeds = deal_seeds(state, {}, has=set())
+        assert seeds["tema"] in fortune.WISH_IDS
+        need = next(n for n, t in FORMAS if t == seeds["forma"])
+        assert need in (None, "deseo")                   # no sign, dream or card heard
+    assert "tema" not in deal_seeds(state, {"deseo": "otro"}, has=set())

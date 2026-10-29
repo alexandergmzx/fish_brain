@@ -3,11 +3,13 @@
 Every line is a canned phrase named `fortune_*` (never `show_*`: the fortune lives with the
 show off), rendered ahead while the voice is clean and played from the cache, never rendered
 at show time. One clip per datum the parsers can return: a reaction per sign, dream theme,
-card, cup shape and animal (a pool for any other animal); a line per lucky number and moon phase; pools for the intro and
-the closing by place (and by house, when the house act just ran), the visions after the
-dream, the bridges, the suspense and the twelve magic words. The act says a reaction the
-moment its datum lands, so a visitor who answers nothing still hears intro, bridges, moon,
-word and closing.
+wish (a pool for any other wish), card and cup shape; a line per lucky number and moon phase;
+pools for the intro and the closing by place (and by house, when the house act just ran), the
+visions after the dream, the bridges, the suspense and the twelve magic words. The act says a
+reaction the moment its datum lands, so a visitor who answers nothing still hears intro,
+bridges, moon, word and closing. In model mode (ADR 0026) an answer gets a short beat instead
+and a card its name beat, the reactions are held for a fallback, and the model reads the
+meaning once; the hat's own draw is announced by a shuffle line.
 
 All texts are drafts for the owner to edit (2026-10-27), in the adult register of
 docs/adr/0019: antiguo, cálido, teatral, now spooky and cheeky; the season (calaveras, la
@@ -15,13 +17,15 @@ ofrenda, los que ya cruzaron, velas, cempasúchil, pan de muerto, gatos negros);
 El Diablo by name; a drink or a song only in the `fiesta` pools; gender-neutral; no clock
 time, no venue name, no word list (ADR 0025); at most two sentences and about
 35 words; prompts end in a question; the date prompt says the year is never asked.
-FORTUNE_RULES is the model's brief for its one reading call, in the shape of the visit's.
+FORTUNE_RULES is the model's brief for its one reading call, in the shape of the visit's; its
+register is a roast since ADR 0026. GANCHOS and FORMAS are not clips: the act deals one of
+each into the model's tag.
 """
 from __future__ import annotations
 
 from . import fortune
 
-QIDS = ("fecha", "sueno", "carta", "taza", "animal")
+QIDS = ("fecha", "sueno", "deseo", "carta", "taza")
 
 # qid (the card's per deck) -> prompt and the narrower reprompt.
 QUESTIONS: dict[str, dict[str, str]] = {
@@ -33,17 +37,17 @@ QUESTIONS: dict[str, dict[str, str]] = {
         "prompt": "Ahora cierra los ojos un momento, que voy a asomarme a tus noches. ¿Has tenido sueños interesantes últimamente?",
         "reprompt": "Cuéntame uno aunque sea un pedacito: ¿te perseguían, te caías, se te caían los dientes, volabas, o salía alguien que ya cruzó?",
     },
+    "deseo": {
+        "prompt": "Y ahora lo importante: ¿qué le vienes a pedir a la Muerte: amor, dinero, salud o venganza?",
+        "reprompt": "Dímelo con tus palabras, aunque sea en una frase: ¿amor, dinero, salud, venganza, o algo que no se dice en voz alta?",
+    },
     "carta_tarot": {
-        "prompt": "Saca una carta de mi baraja, la que te llame, y no se la enseñes a nadie más que a mí. Dime su nombre o su número: ¿cuál te salió?",
-        "reprompt": "Léeme lo que dice abajo de la figura, o el número de arriba: ¿qué carta es?",
+        "prompt": "¿Quieres que te lea una carta de tarot?",
+        "reprompt": "Dime que sí o que no. Y si ya sacaste una de mi baraja, ¿cuál te salió?",
     },
     "taza": {
         "prompt": "Mira el fondo de tu taza, donde se juntan los restos: ahí siempre se dibuja algo. ¿Qué figura ves?",
         "reprompt": "Una estrella, un corazón, una luna, un anillo, un animal, un árbol, un ojo, una nube, una llave o una calabaza: ¿a cuál se parece más?",
-    },
-    "animal": {
-        "prompt": "Última pregunta, y es seria: para acompañarte esta noche, ¿qué animal escoges: un gato negro, un búho, un murciélago o un sapo?",
-        "reprompt": "¿Gato negro, búho, murciélago o sapo?",
     },
 }
 
@@ -131,13 +135,90 @@ SHAPE_LINES: dict[str, str] = {
     "nada": "Nada en la taza, puro café: la suerte más limpia de todas, sin manchas. Lo que viene lo escribes tú, y el sombrero te presta la pluma.",
 }
 
-# The animal companion.
-ANIMAL_LINES: dict[str, str] = {
-    "gato": "El gato negro: siete vidas y ninguna aburrida. Esta noche cruza por delante de ti, y de ahí en adelante todo sale al revés de lo que temías: bien.",
-    "buho": "El búho, el que ve en la oscuridad y no dice todo lo que sabe. Esta noche ve algo por ti, y mañana amaneces con la respuesta.",
-    "murcielago": "El murciélago, que sale cuando los demás se esconden y encuentra el camino sin luz. Contigo vuela esta noche, y no te pierdes.",
-    "sapo": "El sapo, de las brujas y los charcos, el que nadie escoge y todo lo oye. Trae suerte rara, de la que llega cuando ya no la esperabas.",
+# What the visitor asks of La Muerte (fortune.WISHES); any other wish takes the re_deseo_otro pool.
+WISH_LINES: dict[str, str] = {
+    "amor": "Amor, claro: nadie le pide salud a la Muerte con el corazón así de alborotado. Lo apunto, y la Flaca ya se rió.",
+    "dinero": "Dinero. Honesto, por lo menos: la Muerte respeta a quien no finge que viene por la paz interior.",
+    "salud": "Salud: pedirle salud a la Muerte es como pedirle al lobo que cuide las gallinas. Pero mira, ya te escuchó.",
+    "venganza": "Venganza. Ay, qué rico, eso no me lo piden seguido, y la Muerte ya lo apuntó en su libreta, con letra bonita.",
 }
+
+# The card's name beat (model mode): the name and a reaction, never the meaning, which the
+# model reads once. Said for a card named by the visitor and for one the hat drew.
+CARD_NAME_LINES: dict[str, dict[int, str]] = {
+    "tarot": {
+        0: "El Loco. Ya me lo imaginaba.",
+        1: "El Mago. Mmm, presumido.",
+        2: "La Sacerdotisa. Calladita, como tú.",
+        3: "La Emperatriz. Uy, qué elegancia.",
+        4: "El Emperador. Ya llegó el que manda.",
+        5: "El Sumo Sacerdote. Ay, los sermones.",
+        6: "Los Enamorados. Uy, uy, uy.",
+        7: "El Carro. Agárrate.",
+        8: "La Fuerza. A ver si es cierto.",
+        9: "El Ermitaño. Qué solito.",
+        10: "La Rueda de la Fortuna. A ver dónde para.",
+        11: "La Justicia. Alguien va a pagar.",
+        12: "El Colgado. Qué incómodo.",
+        13: "La Muerte. Ah, mi socia.",
+        14: "La Templanza. Qué aburrida… o eso parece.",
+        15: "El Diablo. Qué rico.",
+        16: "La Torre. Uy.",
+        17: "La Estrella. Mira nomás.",
+        18: "La Luna. Qué sospechoso.",
+        19: "El Sol. Ni tan rápido.",
+        20: "El Juicio. Te están llamando.",
+        21: "El Mundo. Ah, caray.",
+    },
+}
+REVERSED_LINE = "Y salió de cabeza. Peor tantito."
+
+# The cards the hat draws itself: every card once, and the five dark ones twice, dealt before
+# repeat (a design choice, not measured: the roast wants them more often). A "_bis" is the
+# second copy of the same card.
+HAT_DRAW_EXTRA: dict[str, tuple[int, ...]] = {"tarot": (13, 15, 16, 18, 6)}
+REVERSED_BAG = ("derecha_1", "derecha_2", "cabeza")     # one hat draw in three, in model mode
+
+# The model's seeds (not clips): one of each per reading, dealt before repeat by the act.
+# GANCHOS are high-probability specifics (Rowland's fuzzy facts and stock specifics, made
+# Mexican): the one invented detail the model may say, as a vision with an out.
+GANCHOS: tuple[str, ...] = (
+    "un chat que tienes silenciado y abres a escondidas",
+    "un mensaje que escribiste y borraste",
+    "una llave que ya no sabes qué abre",
+    "un cajón lleno de cables de aparatos que ya no existen",
+    "un tóper que no es tuyo y no has devuelto",
+    "una deuda chiquita con alguien de confianza",
+    "una foto que no te atreves a borrar",
+    "ropa que todavía tiene la etiqueta puesta",
+    "una planta que se te murió por olvido",
+    "el grupo de la familia que tienes en silencio",
+    "una cuenta prestada de una plataforma que alguien ya cambió de contraseña",
+    "un plan que tenías a los veinte y guardaste en un cajón",
+    "alguien cuyo nombre empieza con eme o con jota",
+    "una promesa de año nuevo que ni empezaste",
+    "un regalo que nunca usaste y no puedes tirar",
+    "un audio largo que no has escuchado",
+    "una contraseña que es el nombre de alguien",
+    "alguien que te dejó en visto esta semana",
+    "algo prestado que no has devuelto",
+    "una cicatriz con una historia más chistosa de lo que cuentas",
+    "un pendiente que llevas semanas pateando como lata",
+    "una suscripción que pagas y ya ni abres",
+    "alguien que ve todas tus historias y nunca contesta",
+    "una vitrina con recuerditos de bodas y quince años",
+)
+
+# How the reading opens: (what it needs in the tag, the instruction). "deseo" is met by a
+# wish or a dealt tema, so it is always there.
+FORMAS: tuple[tuple[str | None, str], ...] = (
+    ("signo", "la primera oración acusa a su signo de su defecto más famoso"),
+    ("sueno", "la primera oración describe una imagen de su sueño como si tú la hubieras visto"),
+    ("carta", "la primera oración nombra la carta y lo que le dice de su deseo"),
+    (None, "la primera oración le da una orden, en imperativo, sin anunciarla"),
+    ("deseo", "la primera oración dice su deseo como si lo supieras antes de que hablara"),
+    (None, "la primera oración es la visión, en presente, como si la estuvieras viendo"),
+)
 
 # The lucky number, 1..9 (fortune.lucky_number).
 NUMBER_LINES: dict[int, str] = {
@@ -206,10 +287,36 @@ POOLS: dict[str, list[str]] = {
         "Exacto, por eso lo vi tan claro desde que llegaste. Y había más: un detalle que solo tú sabes, y que esta noche vuelve a aparecer.",
         "Veo algo más en ese sueño: un animal, o alguien que corre, o un lugar muy alto. Quédate con el que te suene, que ese era.",
     ],
-    # Any animal outside the four (fortune.parse_animal's "free"): a line that needs no name.
-    "re_animal_otro": [
-        "Ese no venía en mi lista, y por eso mismo me gusta. Los animales que nadie espera son los que mejor cuidan de noche.",
-        "Buena elección, y muy tuya: ese animal ya te había escogido antes de que lo dijeras. Esta noche anda cerca, aunque no lo veas.",
+    # Any wish outside the four (fortune.parse_wish's "otro"): a line that needs no content.
+    "re_deseo_otro": [
+        "Eso no venía en mi lista, y por eso me gusta. La Muerte ya lo apuntó, y no pregunta para qué.",
+        "Pedido raro, pedido sincero. Lo guardo en el forro, junto con lo que no se dice en voz alta.",
+    ],
+    # Model mode: a short beat after an answer, no meaning (the model reads it once, at the end).
+    "beat": [
+        "Uy. Eso lo apunto en el forro.",
+        "Ajá. Ya decía yo.",
+        "Mmm… eso explica muchas cosas.",
+        "Con razón.",
+        "Anotado, y no se borra.",
+        "Ja. Eso lo voy a usar en tu contra.",
+        "Qué revelador… sigue.",
+        "Ya lo sospechaba.",
+        "Ay, ay, ay.",
+        "Eso dice más de lo que crees.",
+        "Interesante… y tantito sospechoso.",
+        "Muy bien. Mis costuras ya están chismeando.",
+    ],
+    # The hat draws the card itself (a yes to the card, no card named).
+    "barajo": [
+        "No traigo baraja: la traigo cosida en el forro. Óyela barajar…",
+        "Cierra los ojos, que yo barajo. Tengo siglos de práctica y ninguna mano.",
+        "Mis costuras barajan solas… a ver qué te toca.",
+    ],
+    # A no to the card.
+    "sin_carta": [
+        "Sin cartas, pues. Las cartas se ofenden, pero ya se les pasa.",
+        "Como quieras: hay cosas que es mejor no saber… y otras que te voy a decir de todos modos.",
     ],
     "bridge": [
         "No hace falta que lo digas: el sombrero lo leyó en tu silencio. Vamos adelante.",
@@ -272,8 +379,16 @@ def reprompt_name(qid: str, deck=None) -> str:
 
 def reaction_name(qid: str, value, deck=None) -> str:
     """The clip said when a datum lands: the sign for the date, the theme for the dream, the
-    card's number in its deck, the shape, the animal."""
+    wish, the card's number in its deck, the shape."""
     return f"fortune_re_{_qkey(qid, deck)}_{value}"
+
+
+def card_name_name(n: int, deck=None) -> str:
+    """The card's name beat (model mode)."""
+    return f"fortune_nombre_{_deck_id(deck)}_{n}"
+
+
+REVERSED_NAME = "fortune_reves"
 
 
 def num_name(n: int) -> str:
@@ -309,8 +424,12 @@ def _phrases() -> dict[str, str]:
             out[reaction_name("carta", n, deck)] = text
     for shape, text in SHAPE_LINES.items():
         out[reaction_name("taza", shape)] = text
-    for animal, text in ANIMAL_LINES.items():
-        out[reaction_name("animal", animal)] = text
+    for wish, text in WISH_LINES.items():
+        out[reaction_name("deseo", wish)] = text
+    for deck, cards in CARD_NAME_LINES.items():
+        for n, text in cards.items():
+            out[card_name_name(n, deck)] = text
+    out[REVERSED_NAME] = REVERSED_LINE
     for n, text in NUMBER_LINES.items():
         out[num_name(n)] = text
     for phase, text in MOON_LINES.items():
@@ -324,45 +443,55 @@ def _phrases() -> dict[str, str]:
 FORTUNE_PHRASES: dict[str, str] = _phrases()
 
 
-# The model's brief for its one reading call (fortune_run.py: a fresh history, the data in the
-# tag, the reply through fortune.clean_reading). In the shape of the visit's rules.
-FORTUNE_RULES = """Eres el Sombrero Seleccionador, de visita en la temporada de Halloween y Día de Muertos, y esta noche lees el futuro. Hablas español mexicano con tono antiguo, cálido y teatral, ahora para un público adulto: tenebroso y pícaro, con humor negro ligero. Tu número es de mentalismo: parece que adivinas, pero solo usas lo que el visitante te dio.
+# The model's brief for its one reading call (fortune_run.py: a fresh history, the data and the
+# seeds in the tag, the reply through fortune.clean_reading). A roast since ADR 0026: one story
+# about the wish, one sting, a task with a day. The bans below are on stock phrases, not on
+# topics (ADR 0025).
+FORTUNE_RULES = """Eres el Sombrero Seleccionador, de visita en la temporada de Halloween y Día de Muertos, y lees la suerte. Hablas español mexicano, viejo, teatral y con muy mala leche cariñosa: lees la suerte como quien le hace un roast a un amigo. Directo, burlón, específico. Tu número es de mentalismo: parece que adivinas, pero solo usas lo que el visitante te dio y lo que te dan las semillas.
 
 FORMATO
-- Te llega una sola línea entre corchetes, como [ADIVINACIÓN: nombre=...; lugar=...; signo=...; elemento=...; número=...; sueño=tema ("sus palabras"); carta=...; taza=...; animal=...; luna=...; palabra=...; casa=...; pistas=edad: ..., compañía: ..., ...]. Nunca repitas los corchetes ni sus claves: conviértelos en visión.
-- El sueño llega con sus palabras entre comillas, o solo con el tema y su descripción entre paréntesis: entonces no hay palabras que repetir.
-- Responde con exactamente cuatro oraciones cortas, setenta palabras como máximo, para decir en voz alta con un sintetizador: sin emojis, listas, markdown, siglas ni comillas.
-- Tutea al visitante y usa su nombre de pila si viene.
+- Te llega una sola línea entre corchetes, como [ADIVINACIÓN: nombre=...; lugar=...; hoy=...; signo=...; sueño=tema ("sus palabras"); deseo=... ("sus palabras"); carta=... (de cabeza; la saqué yo); luna=...; palabra=...; pistas=...; visión=...; forma=...; evita=...]. Nunca repitas los corchetes ni sus claves: forma, tema y evita jamás se dicen en voz alta.
+- De cuatro a cinco oraciones cortas, de quince palabras o menos cada una, setenta y cinco palabras en total: lo que pase de noventa se corta. Para decir en voz alta con un sintetizador: sin emojis, listas, markdown, siglas ni comillas.
+- Tutea al visitante y usa su nombre de pila si viene; háblale siempre de tú, nunca de él o ella.
+- Nunca anuncies las partes de la lectura: nada de "tu visión:", "la verdad que pica:" ni "tu tarea:". Dilas, sin etiqueta.
 
-LAS CUATRO ORACIONES, EN ESTE ORDEN
-1. Su signo con su elemento, junto con su sueño: toma una imagen de sus palabras, como si la vieras tú, y dale un sentido bueno.
-2. Su carta, dicha por su nombre (también La Muerte y El Diablo), o la figura de su taza; si no hay ninguna, su casa o un rasgo con su opuesto.
-3. Su animal, el que haya escogido y con sus palabras, y su número de la suerte, con una predicción pequeña y concreta hecha con una pista y el lugar.
-4. La luna de esta noche y, para cerrar, "tu palabra mágica es" y la palabra tal cual.
+LA LECTURA: UNA SOLA HISTORIA SOBRE SU DESEO
+- deseo= es lo que le vino a pedir a la Muerte; si no lo dijo, tema= es el que te toca leer. Toda la lectura contesta eso.
+- Escoge dos o tres datos como evidencia de esa historia y deja los demás. Ya oyó cada dato cuando lo dijo: no se los repitas en fila.
+- forma= te dice cómo abrir; síguela sin decirla ni nombrarla. No abras como ninguna de las lecturas de evita=.
+- Su signo: búrlate de su defecto más famoso, como acusación de cariño.
+- Su sueño: una imagen de sus propias palabras, leída hacia su deseo.
+- La carta: léela sobre su deseo, por su figura y su nombre. Solo cuando la línea dice de cabeza, lee su lado oscuro y dilo. La Muerte, El Diablo, La Torre y las demás no se suavizan ni se disculpan. Si dice tú la sacaste, puedes decir que tú no tienes la culpa; si dice la saqué yo, presúmelo. Si no quiso tarot, ni la menciones.
+- visión=: dila como si la estuvieras viendo, con una salida ("y si todavía no, ya viene"). Es lo único que puedes inventar.
+- Una verdad incómoda sobre su deseo, de las que pican. No la arregles después: puede quedarse picando.
+- Una tarea concreta: un objeto, una acción y un día de la semana o una fecha cercana a hoy=. Nada abstracto.
+- Termina con "tu palabra mágica es" y la palabra tal cual. La luna solo si cabe dentro de otra oración.
 
-TRUCOS DE MENTALISTA
-- Eco: una imagen de sus palabras vuelta visión ("veo dientes, una boda, una luz que te visita...").
-- Arcoíris: un rasgo y su opuesto en la misma frase ("te da miedo, y te da curiosidad").
-- Acierto: lo que te dio, dilo como si lo hubieras visto antes de que hablara.
-- Fallo vuelto futuro: lo que falta no se inventa; "eso todavía no te llega".
+LO QUE NO SE DICE (son frases gastadas, no temas)
+- Esta noche, más de una vez. Algo viejo se va. No te asustes. Todo va a salir bien. Energía, nueva etapa, abundancia, transformación, tu camino, el universo.
+- Bendiciones genéricas, consejos de taza de café, finales felices de cajón.
+- La lista de sus datos, uno por oración.
 
 LAS PISTAS (pistas=..., si vienen)
-- Son lo que tu ayudante vio del visitante, y son material para la lectura. No hace falta nombrarlas todas, pero que se noten.
-- Dilas como visiones, como un rasgo con su opuesto o como pregunta; nunca como algo que viste o que te contaron.
-- La edad cambia cómo le hablas; no hace falta decirla.
+- Son lo que tu ayudante vio del visitante: material para la lectura, dichas como visiones, nunca como algo que viste o que te contaron. Usa una, a lo mucho dos; nunca las enumeres.
+- La edad cambia cómo le hablas. Si viene en pareja, su pareja está oyendo: pícale a los dos.
 - Si una pista nombra una escuela, empresa o persona, usa el tema, nunca el nombre.
 
-EL LUGAR (lugar=...)
-- fiesta: una canción o un brindis. casa: los que ya no están y la ofrenda. universidad: los pasillos y el café como fondo; no des por hecho que estudia, puede ser profesor, egresado o invitado. Cualquier otro texto: úsalo tal cual como escenario, sin inventarle nombre.
-- El lugar es la sazón, no el plato: una pizca, nunca el tema.
-
-EL CASTILLO, LA TEMPORADA Y EL REGISTRO
-- Tu mundo es el castillo: el Gran Comedor, los fantasmas, el Bosque Prohibido, las pociones, las lechuzas, la sala común de su casa. Ahí viven tus visiones.
-- Calaveras, la ofrenda, los que ya cruzaron, velas, cempasúchil, pan de muerto, gatos negros, la luna: una pizca. La muerte es la invitada de honor y se puede nombrar; el humor es negro pero cariñoso.
-- Albures ligeros y picarones, romance y el ex, el dinero como fortuna: sí.
+EL LUGAR Y EL CASTILLO
+- fiesta: el trago, la canción, quien está en la otra mesa. casa: la familia y la ofrenda. universidad: los pasillos y el café; no des por hecho que estudia. Cualquier otro texto: úsalo tal cual como escenario.
+- El castillo, la temporada (calaveras, la Flaca, los que ya cruzaron, velas, cempasúchil) y el lugar son la sazón, no el plato: una pizca.
+- Albures ligeros, el ex, el dinero, el cuerpo y la muerte: sí.
 
 REGLAS FIJAS
+- Nunca inventes sus datos: ni signo, ni carta, ni deseo que no vengan en la línea.
 - Un lugar con nombre solo si el visitante lo dijo.
 - El género lo dice el nombre cuando es claro (Mónica, Rodrigo): concuerda los adjetivos con él. Si no hay nombre o no lo dice, evita adjetivos que lo digan; nunca lo preguntes.
-- Si falta un dato, no lo pidas ni lo inventes: pasa a lo siguiente.
-- Si te preguntan en serio si de verdad lees el futuro, responde con honestidad y en personaje: eres un sombrero de fiesta que usa trucos de mentalista."""
+- Si te preguntan en serio si de verdad lees el futuro, responde con honestidad y en personaje: eres un sombrero de fiesta que usa trucos de mentalista.
+
+EJEMPLOS (tres visitantes distintos; muestran el tono, no copies sus frases ni sus imágenes)
+<ejemplo>[ADIVINACIÓN: nombre=Daniela; lugar=fiesta; hoy=jueves 29 de octubre; signo=Libra; elemento=aire; deseo=amor ("que regrese mi ex"); carta=La Torre (de cabeza; la saqué yo); palabra=Catrinela; visión=un chat que tienes silenciado y abres a escondidas; forma=la primera oración dice su deseo como si lo supieras antes de que hablara]
+Daniela, tú no quieres que regrese tu ex: quieres que regrese a pedirte perdón, que es muy distinto. Libra hasta para el rencor: lo pesas y lo pesas, y nunca lo sueltas. La Torre salió de cabeza: lo que se cayó ya está en el piso, y tú sigues barriendo. Ese chat que tienes silenciado, bórralo antes del domingo. Tu palabra mágica es Catrinela.</ejemplo>
+<ejemplo>[ADIVINACIÓN: nombre=Rodrigo; lugar=universidad; hoy=jueves 29 de octubre; signo=Capricornio; elemento=tierra; sueño=escuela ("que no había estudiado para un examen"); deseo=dinero; carta=ninguna (no quiso tarot); palabra=Brujicanto; pistas=edad: adulto, compañía: amigos; visión=una suscripción que pagas y ya ni abres; forma=la primera oración acusa a su signo de su defecto más famoso]
+Capricornio, tú no ahorras: acumulas, como cabra con gastritis. Sueñas con exámenes porque sigues esperando que alguien te califique, Rodrigo, y nadie lo va a hacer. Pediste dinero, y el dinero contesta: cancela esa suscripción que pagas y ya ni abres. El sábado gástate algo en ti sin justificarlo en una hoja de cálculo. Tu palabra mágica es Brujicanto.</ejemplo>
+<ejemplo>[ADIVINACIÓN: lugar=casa; hoy=viernes 30 de octubre; signo=Aries; elemento=fuego; sueño=dientes ("se me caían los dientes en una boda"); deseo=venganza ("contra mi jefe"); carta=El Diablo (tú la sacaste); luna=llena; palabra=Velazumba; pistas=compañía: familia; visión=un audio largo que no has escuchado; forma=la primera oración le da una orden, en imperativo, sin anunciarla]
+Suelta la quijada, que se te acaban los dientes de tanto apretarlos. Aries pidiendo venganza contra el jefe, qué sorpresa: tú no planeas, tú embistes y luego preguntas. El Diablo lo sacaste tú, no me eches la culpa: la venganza que te toca es renunciar bonito, no quemar la oficina. Y ese audio largo que no has escuchado trae la oferta que esperabas; óyelo el lunes, antes del café. Tu palabra mágica es Velazumba.</ejemplo>"""

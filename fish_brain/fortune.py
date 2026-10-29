@@ -1,12 +1,14 @@
-"""The fortune act's tables and parsers (docs/adr/0019): pure, no state, no clips.
+"""The fortune act's tables and parsers (docs/adr/0019, 0026): pure, no state, no clips.
 
-The hat asks an adult visitor the day and month of birth, a recent dream, a tarot card, the
-shape in the cup and an animal, and everything heard is parsed here into ids the bank
+The hat asks an adult visitor the sign (or the day and month of birth), a recent dream, what
+they ask of La Muerte, whether they want a tarot card (named from a deck, or drawn by the hat)
+and the shape in the cup, and everything heard is parsed here into ids the bank
 (fortune_bank.py) has a line for and the model gets as a tag:
 
     parse_birth(text) -> (day, month)   sign_of(day, month)   lucky_number(day, month)
     dream_theme(text) -> a theme id     parse_card(text, deck) -> 0..21
-    parse_shape(text) -> a shape id     parse_animal(text) -> one of the four, or the phrase
+    parse_shape(text) -> a shape id     parse_wish(text) -> a wish id or "otro"
+    parse_yes_no(text) -> "yes" | "no"   said_reversed(text)   today_words() -> "jueves 29 de octubre"
     moon_tonight() -> a phase id        reading_tag(f, deck) -> "[ADIVINACIÓN: …; pistas=…] Haz la lectura."
     clean_reading(reply) -> the model's reading, or None when it breaks the register
 
@@ -31,7 +33,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
-from .show import match_option, phon_key
+from .show import phon_key
 from .visit import _fold, cue_pairs
 from .visit import clean_cue_text as _clean_text
 
@@ -593,129 +595,70 @@ def parse_shape(text: str) -> str | None:
     return _best_theme(ws, tuple(scored)) if scored else None
 
 
-# ---- the animal (a four-way question for show.match_option) ---------------------------------
-ANIMAL_Q: dict = {
-    "id": "animal",
-    "options": [
-        {"id": "gato", "words": ["gato", "gatos", "gato negro", "gatito", "un gato", "michi"]},
-        {"id": "buho", "words": ["buho", "buhos", "lechuza", "tecolote", "un buho"]},
-        {"id": "murcielago", "words": ["murcielago", "murcielagos", "un murcielago", "murcielaguito"]},
-        {"id": "sapo", "words": ["sapo", "sapos", "rana", "ranas", "un sapo", "ranita"]},
-    ],
-}
-ANIMAL_SAID: dict[str, str] = {"gato": "el gato negro", "buho": "el búho",
-                               "murcielago": "el murciélago", "sapo": "el sapo"}
-ANIMAL_TEXT_MAX = 40     # characters of the visitor's own animal that reach the model
-
-# Any other animal: the one-word animal names of the dream themes (animales, serpientes,
-# bichos), minus the words that name no animal. A word ending in "*" is a stem.
-_NOT_ANIMALS = frozenset({"animal", "animales", "rebano*", "telarana", "liendres", "cascabel"})
-ANIMAL_WORDS: tuple[str, ...] = tuple(
-    kw for tid in ("animales", "serpientes", "bichos") for kw in DREAM_BY_ID[tid].keywords
-    if " " not in kw and kw not in _NOT_ANIMALS)
-_WORD = re.compile(r"[0-9A-Za-zÀ-ÖØ-öø-ÿ]+")
-_CLAUSE_END = re.compile(r"[.,;:!?¡¿()]")
+# ---- the wish (what the visitor asks of La Muerte) ------------------------------------------
+WISHES: tuple[Theme, ...] = (
+    Theme("amor", "Amor", (
+        "amor", "amores", "el amor", "pareja", "novi*", "enamor*", "corazon", "mi crush", "crush",
+        "que me quiera", "que me quieran", "que regrese", "que vuelva", "mi ex", "ex", "casarme",
+        "boda", "ligar", "un hombre", "una mujer", "un marido", "una esposa", "romance")),
+    Theme("dinero", "Dinero", (
+        "dinero", "lana", "varo", "feria", "billete*", "rico", "rica", "riqueza", "millon*",
+        "trabajo", "chamba", "empleo", "negocio", "aumento", "loteria", "deuda*", "pagar",
+        "fortuna", "plata")),
+    Theme("salud", "Salud", (
+        "salud", "sano", "sana", "sanar", "curar*", "cura", "enferm*", "vivir mucho", "vida larga",
+        "larga vida", "bajar de peso")),
+    Theme("venganza", "Venganza", (
+        "venganza", "vengar*", "vengue", "desquit*", "que se arrepient*", "que le vaya mal",
+        "karma", "que pague", "que sufra"), weight=2),
+)
+WISH_BY_ID: dict[str, Theme] = {t.id: t for t in WISHES}
+WISH_IDS = tuple(t.id for t in WISHES)
+WISH_TEXT_MAX = 80       # characters of the visitor's own words that reach the model
 
 
-def _is_animal(word: str) -> bool:
-    return any(word.startswith(k[:-1]) if k.endswith("*") else word == k for k in ANIMAL_WORDS)
-
-
-def animal_phrase(text: str) -> str | None:
-    """The visitor's own words for an animal outside the four ("un perrito xoloitzcuintle",
-    "un ajolote"): from the article before the first animal word to the end of that clause,
-    at most ANIMAL_TEXT_MAX characters cut at a word, lower case at the start, no end
-    punctuation. None when no animal word is heard."""
-    text = strip_notes(text)
-    found = [(m, _fold(m.group(0))) for m in _WORD.finditer(text)]
-    for i, (m, w) in enumerate(found):
-        if not _is_animal(w):
-            continue
-        start = m.start()
-        if i > 0 and found[i - 1][1] in ("un", "una", "unos", "unas", "el", "la", "los",
-                                         "las", "mi", "mis"):
-            start = found[i - 1][0].start()
-        rest = text[start:]
-        cut = _CLAUSE_END.search(rest, m.end() - start)
-        phrase = rest[:cut.start()] if cut else rest
-        if len(phrase) > ANIMAL_TEXT_MAX:
-            phrase = phrase[:ANIMAL_TEXT_MAX + 1].rsplit(" ", 1)[0]
-        phrase = _clean_text(phrase)[:ANIMAL_TEXT_MAX].strip()
-        if not phrase:
-            return None
-        return phrase[0].lower() + phrase[1:]
-    return None
-
-
-# A short answer with no animal word is still the visitor's animal ("Escojo a un velociraptor",
-# "Gatosiraptor", 2026-10-27), but only as a last guess, when no re-ask is left: "¿cómo?",
-# "gracias" or "emm" would pass too. The words before it are dropped; what is left must be at
-# most three words, none of them a refusal, a question back or a person.
-_ANIMAL_LEAD = frozenset({"pues", "bueno", "este", "esta", "yo", "a", "al", "escojo", "escogo",
-                          "elijo", "eligo", "quiero", "prefiero", "tomo", "agarro", "creo",
-                          "que", "me", "quedo", "con", "seria", "sera", "es", "animal",
-                          "pienso", "en"})
-_NOT_AN_ANIMAL = frozenset({
-    "no", "nada", "ninguno", "ninguna", "ningun", "se", "nose", "si", "paso", "cualquiera",
-    "quieras", "quiera", "todos", "todas", "otro", "otra", "que", "cual", "tu", "usted", "lo",
-    "le", "ya", "ok", "okay", "vale", "bien", "listo", "aja", "ese", "esa", "eso", "este",
-    "como", "mande", "perdon", "repite", "repites", "repitelo", "repetir", "puedes", "otra",
-    "vez", "gracias", "ver", "hola", "adios", "idea", "sabe", "sepa", "quien", "depende",
-    "igual", "nel", "nop", "nope", "tampoco", "rindo", "pregunta", "miedo", "negro", "primero",
-    "segundo", "tercero", "cuarto", "ultimo", "mi", "mis", "su", "sus", "novia", "novio",
-    "esposa", "esposo", "mama", "papa", "suegra", "suegro", "hijo", "hija", "ex", "misma",
-    "mismo", "amigo", "amiga", "jefe", "jefa", "maestro", "maestra"})
-_FILLER = re.compile(r"^(?:[aeo]*h*m+h*|[aeo]+h*|h+m*|m+)$")    # emm, ehh, hmm, mmmm, ah
-_ANIMAL_FREE_WORDS = 3
-
-
-def named_answer(text: str) -> str | None:
-    """The visitor's own short answer as an animal when it has no animal word: the lead
-    words ("pues escojo a") and fillers dropped, then up to three words of the first clause
-    with nothing in _NOT_AN_ANIMAL, in the visitor's spelling, lower case
-    at the start. None otherwise."""
-    text = strip_notes(text)
-    found = [(m, _fold(m.group(0))) for m in _WORD.finditer(text)]
-    while found and (found[0][1] in _ANIMAL_LEAD or _FILLER.match(found[0][1])):
-        found.pop(0)
-    if not found:
+def parse_wish(text: str) -> str | None:
+    """The wish: one of WISHES by its words (venganza weighs 2: "venganza contra mi ex" is
+    venganza), "otro" for any other answer with words, None for nothing at all. The run keeps
+    the visitor's words either way."""
+    ws = tokens(text)
+    if not ws:
         return None
-    start = found[0][0].start()
-    end_at = _CLAUSE_END.search(text, start)
-    found = [(m, w) for m, w in found if end_at is None or m.start() < end_at.start()]
-    if not found or len(found) > _ANIMAL_FREE_WORDS:
-        return None
-    if any(w in _NOT_AN_ANIMAL or w.isdigit() or _FILLER.match(w) for _m, w in found):
-        return None
-    phrase = _clean_text(text[start:found[-1][0].end()])[:ANIMAL_TEXT_MAX].strip()
-    if not phrase:
-        return None
-    return phrase[0].lower() + phrase[1:]
+    return _best_theme(ws, WISHES) or "otro"
 
 
-def parse_animal(text: str, *, guess: bool = False) -> tuple[str, str | None]:
-    """The companion animal, in this order: one of the four said or named by its place
-    ("el primero") -> any other animal word, kept as the visitor's phrase -> one of the four
-    by sound -> with `guess` (no re-ask left), a short answer with no animal word, kept as
-    said (`named_answer`) -> none.
-    The sound comes after the lexicon: by sound "burro" is close to búho and "rata" to
-    sapo. Returns (kind, value): ("option", id), ("free", phrase), ("not_sure", None) or
-    ("none", None)."""
-    words = strip_notes(text)
-    heard = match_option(ANIMAL_Q, words)
-    if heard.kind == "not_sure":
-        return "not_sure", None
-    if heard.kind == "option" and heard.how in ("exact", "ordinal"):
-        return "option", heard.option
-    phrase = animal_phrase(words)
-    if phrase:
-        return "free", phrase
-    if heard.kind == "option":
-        return "option", heard.option
-    phrase = named_answer(words) if guess else None
-    if phrase:
-        return "free", phrase
-    return "none", None
+# ---- the card's yes or no ------------------------------------------------------------------
+_YES = frozenset("si sip simon claro va sale orale andale dale porfa obvio ok okey okay bueno "
+                 "quiero venga adelante aja leemela echamela lee echala sacala saca afirmativo "
+                 "smn".split())
+_YES_PHRASES = ("por favor", "a ver", "me late", "de una")
+_NO = frozenset("no nel nop nope paso nunca jamas tampoco".split())
+_NO_PHRASES = ("mejor no", "no gracias", "ni madres", "no creo", "no quiero", "no me gusta",
+               "ahorita no", "otro dia")
+
+
+def parse_yes_no(text: str) -> str | None:
+    """"yes", "no" or None for an answer to "¿Quieres que te lea una carta de tarot?". A no
+    wins when both are heard ("sí, no, mejor no"); "¿por qué no?" is a yes."""
+    ws = tokens(text)
+    if not ws:
+        return None
+    joined = " ".join(ws)
+    yes = any(w in _YES for w in ws) or any(re.search(rf"\b{p}\b", joined) for p in _YES_PHRASES)
+    if re.search(r"\bpor que no\b", joined):
+        return "yes"
+    no = any(w in _NO for w in ws) or any(re.search(rf"\b{p}\b", joined) for p in _NO_PHRASES)
+    if no:
+        return "no"
+    return "yes" if yes else None
+
+
+_REVERSED = re.compile(r"\b(?:de cabeza|al reves|invertid[ao]|volteada|volteado|patas arriba)\b")
+
+
+def said_reversed(text: str) -> bool:
+    """The visitor's card came out upside down ("la torre de cabeza", "invertida")."""
+    return bool(_REVERSED.search(" ".join(tokens(text))))
 
 
 # ---- the moon -------------------------------------------------------------------------------
@@ -754,7 +697,8 @@ PLACE_SAID: dict[str, str] = {"casa": "en casa, con la familia", "fiesta": "en u
 
 @dataclass
 class Fortune:
-    """What the act has heard so far (ids; the said forms are looked up when told)."""
+    """What the act has heard so far (ids; the said forms are looked up when told), and the
+    seeds the act deals for the model's reading (ADR 0026)."""
     nombre: str = ""
     lugar: str = ""                 # a place id, or the operator's free text
     casa: str | None = None         # the house act's verdict, when it just ran
@@ -763,11 +707,20 @@ class Fortune:
     numero: int | None = None
     sueno: str | None = None
     sueno_txt: str = ""
+    deseo: str | None = None        # a WISHES id or "otro"
+    deseo_txt: str = ""
+    tema: str | None = None         # no wish heard: the one the act dealt instead
     carta: int | None = None
+    carta_de: str = ""              # "sombrero" (the hat drew it) or "visitante"
+    carta_reves: bool = False
+    sin_carta: bool = False         # the visitor said no to the card
     taza: str | None = None
-    animal: str | None = None
     luna: str | None = None
     palabra: str = ""
+    hoy: str = ""                   # "jueves 29 de octubre", or "" when the clock is not sane
+    gancho: str = ""                # one high-probability specific (fortune_bank.GANCHOS), as visión=
+    forma: str = ""                 # how the reading opens (fortune_bank.FORMAS)
+    evita: tuple[str, ...] = ()     # the openings of the last readings
     pistas: dict = field(default_factory=dict)   # the operator's lit cues (visit.pending())
 
 
@@ -775,19 +728,32 @@ class Fortune:
 # keeps to itself): the theme's description goes instead.
 DREAM_NO_WORDS = frozenset({"seres_queridos", "otro"})
 
+WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 
-def _bare(said: str) -> str:
-    return re.sub(r"^(el|la|los|las) ", "", said)
+
+def today_words(now: datetime | None = None) -> str:
+    """"jueves 29 de octubre" in local time, for the model to name a day; "" when the clock
+    is not sane (moon_tonight's rule)."""
+    now = now or datetime.now()
+    if now.year < 2026:
+        return ""
+    return f"{WEEKDAYS[now.weekday()]} {now.day} de {MONTHS[now.month - 1]}"
+
+
+def _quoted(text: str) -> str:
+    return text.replace('"', "'").strip()
 
 
 def reading_tag(f: Fortune, deck: dict | None) -> str:
     """The one line the model gets for its reading: every datum heard, in its said form,
-    never the year. Missing keys are absent."""
+    never the year, then the act's seeds. Missing keys are absent."""
     parts = []
     if f.nombre:
         parts.append(f"nombre={f.nombre}")
     if f.lugar:
         parts.append(f"lugar={f.lugar}")
+    if f.hoy:
+        parts.append(f"hoy={f.hoy}")
     if f.signo in SIGN_BY_ID:
         s = SIGN_BY_ID[f.signo]
         parts.append(f"signo={s.said}")
@@ -798,21 +764,29 @@ def reading_tag(f: Fortune, deck: dict | None) -> str:
         label = DREAM_BY_ID[f.sueno].label
         parts.append(f"sueño={f.sueno} ({label[0].lower() + label[1:]})")
     elif f.sueno:
-        words = f.sueno_txt.replace('"', "'").strip()
+        words = _quoted(f.sueno_txt)
         parts.append(f'sueño={f.sueno} ("{words}")' if words else f"sueño={f.sueno}")
+    if f.deseo:
+        words = _quoted(_clean_text(f.deseo_txt)[:WISH_TEXT_MAX])
+        parts.append(f'deseo={f.deseo} ("{words}")' if words else f"deseo={f.deseo}")
+    elif f.tema:
+        parts.append(f"tema={f.tema} (no dijo qué pide: lee este)")
     if f.carta is not None and deck:
         try:
-            parts.append(f"carta={card_by_n(deck, f.carta).said}")
+            said = card_by_n(deck, f.carta).said
         except KeyError:
-            pass
+            said = ""
+        if said:
+            how = ["de cabeza"] if f.carta_reves else []
+            if f.carta_de == "sombrero":
+                how.append("la saqué yo")
+            elif f.carta_de == "visitante":
+                how.append("tú la sacaste")
+            parts.append(f"carta={said} ({'; '.join(how)})" if how else f"carta={said}")
+    elif f.sin_carta:
+        parts.append("carta=ninguna (no quiso tarot)")
     if f.taza:
         parts.append(f"taza={f.taza}")
-    if f.animal in ANIMAL_SAID:
-        parts.append(f"animal={_bare(ANIMAL_SAID[f.animal])}")
-    elif f.animal:
-        free = _clean_text(f.animal)[:ANIMAL_TEXT_MAX].strip()
-        if free:
-            parts.append(f"animal={free}")
     if f.luna in MOON_SAID:
         parts.append(f"luna={MOON_SAID[f.luna]}")
     if f.palabra:
@@ -822,7 +796,19 @@ def reading_tag(f: Fortune, deck: dict | None) -> str:
     pistas = ", ".join(f"{label}: {said}" for label, said in cue_pairs(f.pistas or {}))
     if pistas:
         parts.append(f"pistas={pistas}")
+    if f.gancho:
+        parts.append(f"visión={f.gancho}")     # "gancho" was said aloud as a word (2026-10-29)
+    if f.forma:
+        parts.append(f"forma={f.forma}")
+    evita = " | ".join(_quoted(e) for e in f.evita if e and e.strip())
+    if evita:
+        parts.append(f"evita={evita}")
     return "[ADIVINACIÓN: " + "; ".join(parts) + "] Haz la lectura."
+
+
+def opening(reading: str, words: int = 8) -> str:
+    """The first words of a reading, as the act remembers it for `evita`."""
+    return " ".join(strip_notes(reading or "").split()[:words])
 
 
 # ---- the reading's length (no word list: ADR 0025) ------------------------------------------

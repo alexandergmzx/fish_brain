@@ -1,5 +1,6 @@
-"""fortune_bank.py: every datum the parsers return has a clip, every clip keeps the adult
-register's rules, and the names are the contract's."""
+"""fortune_bank.py: every datum the parsers return has a clip (and in model mode a beat or a
+name beat), every clip keeps the adult register's rules, the names are the contract's, and the
+rules are the roast's (ADR 0026)."""
 import re
 
 import pytest
@@ -39,7 +40,7 @@ def test_the_sign_is_asked_first_and_the_date_is_the_fallback():
 
 
 def test_names_follow_the_contract():
-    assert fb.QIDS == ("fecha", "sueno", "carta", "taza", "animal")
+    assert fb.QIDS == ("fecha", "sueno", "deseo", "carta", "taza")
     assert fb.prompt_name("fecha") == "fortune_q_fecha"
     assert fb.prompt_name("carta") == "fortune_q_carta_tarot"
     assert fb.prompt_name("carta", fortune.DECKS["tarot"]) == "fortune_q_carta_tarot"
@@ -49,7 +50,9 @@ def test_names_follow_the_contract():
     assert fb.reaction_name("sueno", "dientes") == "fortune_re_sueno_dientes"
     assert fb.reaction_name("carta", 13, fortune.DECKS["tarot"]) == "fortune_re_carta_tarot_13"
     assert fb.reaction_name("taza", "estrella") == "fortune_re_taza_estrella"
-    assert fb.reaction_name("animal", "gato") == "fortune_re_animal_gato"
+    assert fb.reaction_name("deseo", "venganza") == "fortune_re_deseo_venganza"
+    assert fb.card_name_name(13, fortune.DECKS["tarot"]) == "fortune_nombre_tarot_13"
+    assert fb.card_name_name(13) == "fortune_nombre_tarot_13" and fb.REVERSED_NAME == "fortune_reves"
     assert fb.num_name(6) == "fortune_num_6" and fb.moon_name("llena") == "fortune_luna_llena"
     assert fb.pool_names("vision") == [f"fortune_vision_{i}" for i in range(1, 7)]
     for qid in fb.QIDS:
@@ -70,10 +73,15 @@ def test_every_datum_has_its_clip():
     assert "La Muerte" in P["fortune_re_carta_tarot_13"] and "El Diablo" in P["fortune_re_carta_tarot_15"]
     for t in fortune.CUP_SHAPES:
         assert fb.reaction_name("taza", t.id) in P
-    for o in fortune.ANIMAL_Q["options"]:
-        assert fb.reaction_name("animal", o["id"]) in P
-    assert fb.pool_names("re_animal_otro") == ["fortune_re_animal_otro_1", "fortune_re_animal_otro_2"]
-    assert all(n in P for n in fb.pool_names("re_animal_otro"))
+    for wish in fortune.WISH_IDS:
+        assert fb.reaction_name("deseo", wish) in P
+    assert fb.pool_names("re_deseo_otro") == ["fortune_re_deseo_otro_1", "fortune_re_deseo_otro_2"]
+    assert all(n in P for n in fb.pool_names("re_deseo_otro"))
+    for deck_id, deck in fortune.DECKS.items():                             # the name beats
+        for c in deck["cards"]:
+            name = fb.card_name_name(c.n, deck)
+            assert name in P and P[name].startswith(c.said), name
+    assert fb.REVERSED_NAME in P and "de cabeza" in P[fb.REVERSED_NAME]
     for n in range(1, 10):
         assert fb.num_name(n) in P
     for phase in fortune.MOON_PHASES:
@@ -87,9 +95,10 @@ def test_every_datum_has_its_clip():
 
 
 def test_the_counts_are_the_plans():
-    kinds = {"q": 5, "rq": 5, "re_fecha": 12, "re_sueno": 21, "re_carta_tarot": 22, "re_taza": 11,
-             "re_animal": 6, "num": 9, "luna": 8, "intro": 12, "vision": 6, "bridge": 2, "suspense": 2,
-             "magic": 12, "cierre": 8}
+    kinds = {"q": 5, "rq": 5, "re_fecha": 12, "re_sueno": 21, "re_deseo": 6, "re_carta_tarot": 22,
+             "re_taza": 11, "nombre_tarot": 22, "reves": 1, "num": 9, "luna": 8, "intro": 12,
+             "vision": 6, "bridge": 2, "suspense": 2, "magic": 12, "cierre": 8, "beat": 12,
+             "barajo": 3, "sin_carta": 2}
     got = {k: 0 for k in kinds}
     for name in P:
         rest = name[len("fortune_"):]
@@ -100,7 +109,7 @@ def test_the_counts_are_the_plans():
         else:
             raise AssertionError(name)
     assert got == kinds
-    assert sum(kinds.values()) == len(P) == 141
+    assert sum(kinds.values()) == len(P) == 181
 
 
 def test_magic_words_one_per_clip_in_order():
@@ -122,11 +131,39 @@ def test_the_english_is_spelled_right():
         assert any(house in t for t in P.values())
 
 
-def test_the_rules_are_the_adult_ones():
+def test_the_beats_are_short_and_say_nothing_about_the_answer():
+    for name in fb.pool_names("beat"):
+        assert len(P[name].split()) <= 9, name
+    for name in fb.pool_names("barajo") + fb.pool_names("sin_carta"):
+        assert name in P
+    assert "Óyela barajar" in P["fortune_barajo_1"]
+
+
+def test_the_ask_for_a_card_is_his_words():
+    assert P["fortune_q_carta_tarot"] == "¿Quieres que te lea una carta de tarot?"
+    assert "baraja" in P["fortune_rq_carta_tarot"]
+    assert all(w in P["fortune_q_deseo"] for w in ("amor", "dinero", "salud", "venganza", "Muerte"))
+
+
+def test_the_seeds_are_data_not_clips():
+    assert len(fb.GANCHOS) >= 20 and len(set(fb.GANCHOS)) == len(fb.GANCHOS)
+    assert len(fb.FORMAS) == 6
+    assert {need for need, _t in fb.FORMAS} == {"signo", "sueno", "carta", "deseo", None}
+    assert not any(g in P.values() for g in fb.GANCHOS)
+    assert set(fb.HAT_DRAW_EXTRA["tarot"]) == {6, 13, 15, 16, 18}
+    assert sorted(fb.REVERSED_BAG).count("cabeza") == 1 and len(fb.REVERSED_BAG) == 3
+
+
+def test_the_rules_are_the_roasts():
     r = fb.FORTUNE_RULES
-    assert "FORMATO" in r and "REGLAS FIJAS" in r and "cuatro oraciones" in r and "setenta" in r
-    for move in ("Eco", "Arcoíris", "Acierto", "Fallo vuelto futuro"):
-        assert move in r
+    assert "FORMATO" in r and "REGLAS FIJAS" in r and "setenta y cinco palabras" in r
+    assert "roast" in r and "UNA SOLA HISTORIA SOBRE SU DESEO" in r
+    for key in ("deseo=", "tema=", "visión=", "forma=", "evita=", "hoy="):
+        assert key in r, key
+    for stale in ("Esta noche, más de una vez", "Algo viejo se va", "No te asustes"):
+        assert stale in r, stale                      # named as stale, so the model avoids them
+    assert "dale un sentido bueno" not in r and "Fallo vuelto futuro" not in r
+    assert r.count("<ejemplo>") == 3 and "no copies sus frases" in r
     for place in ("fiesta", "casa", "universidad"):
         assert place in r
     assert "LAS PISTAS" in r and "pistas=" in r
@@ -134,9 +171,9 @@ def test_the_rules_are_the_adult_ones():
     for ban in ("Nunca digas que alguien murió", "nunca una muerte real", "Nada de enfermedades",
                 "Nunca explícito ni grosero", "lotería"):
         assert ban not in r, ban
-    assert "brindis" in r and "ofrenda" in r and "profesor" in r
+    assert "trago" in r and "ofrenda" in r and "no des por hecho que estudia" in r
     assert "La Muerte" in r and "El Diablo" in r and "tu palabra mágica es" in r
-    assert "Nunca repitas los corchetes" in r and "no hace falta decirla" in r
+    assert "Nunca repitas los corchetes" in r and "pícale a los dos" in r
     assert "enfermedades" not in r and "religión" not in r          # ADR 0025
     assert "Público familiar" not in r and "niños" not in r
 

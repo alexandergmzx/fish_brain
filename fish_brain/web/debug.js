@@ -1857,9 +1857,9 @@
   // on a load) and the buttons post to /fortune. An event without the key keeps the last view.
   // The big button is hidden unless the hat has the act, greyed and disabled until its clips are
   // rendered (show_tab's fortune alone says so) and off while an act is open.
-  const QUESTION_EN = { fecha: "birth date", sueno: "dreams", carta: "the card", taza: "the cup", animal: "the animal" };
-  const DATA_EN = { signo: "sign", elemento: "element", numero: "lucky number", sueno: "dream", carta: "card",
-                    taza: "cup", animal: "animal", luna: "moon", palabra: "magic word" };
+  const QUESTION_EN = { fecha: "birth date", sueno: "dreams", deseo: "the wish", carta: "the card", taza: "the cup" };
+  const DATA_EN = { signo: "sign", elemento: "element", numero: "lucky number", sueno: "dream", deseo: "wish",
+                    carta: "card", taza: "cup", luna: "moon", palabra: "magic word" };
   const fortuneRow = guard("fortune", () => {
     const row = $("fortuneRow"), btn = $("fortuneBtn"), q = $("fortuneQ"), heard = $("fortuneHeard");
     const data = $("fortuneData"), last = $("fortuneLast");
@@ -1953,8 +1953,8 @@
       still = true;
       btn.hidden = false;
       const qids = Object.keys(QUESTION_EN), of = qids.length, at = Math.min(STILL_Q, of);
-      const all = { signo: "Escorpio", elemento: "agua", numero: "6", sueno: "dientes", carta: "La Muerte",
-                    taza: "una estrella", animal: "el gato negro", luna: "llena", palabra: "Zumbalí" };
+      const all = { signo: "Escorpio", elemento: "agua", numero: "6", sueno: "dientes", deseo: "venganza",
+                    carta: "La Muerte (la sacó el sombrero)", taza: "una estrella", luna: "llena", palabra: "Zumbalí" };
       const have = [0, 3, 4, 5, 6, 9][Math.min(STILL_Q, 6) - 1];
       const f = { on: true, ready: true, open: true, deck: "tarot", cup: true, place: "fiesta", last: null, n: 1,
                   stage: STILL_Q > of ? "reading" : "ask", q: at, of, qid: qids[at - 1], tries: STILL_Q === 2 ? 1 : 0,

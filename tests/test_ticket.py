@@ -22,7 +22,7 @@ def act(**over) -> dict:
     """FortuneRun.v at the closing line of a clips act that heard everything."""
     v = {"n": 37, "first": "Mónica", "deck": TAROT, "place": "fiesta", "reading": None,
          "magic": "fortune_magic_1", "clips": [],
-         "data": {"signo": "escorpio", "numero": 6, "carta": 13, "animal": "gato",
+         "data": {"signo": "escorpio", "numero": 6, "carta": 13, "deseo": "amor",
                   "luna": "llena", "palabra": "Zumbalí"}}
     v.update(over)
     return v
@@ -111,7 +111,7 @@ def test_no_line_runs_over_its_columns_or_ends_in_an_opening_mark():
 
 def test_every_text_that_reaches_the_ticket_prints_as_written():
     texts = [*fb.NUMBER_LINES.values(), *fb.MOON_LINES.values(), *fb.POOLS["magic"],
-             *fortune.ANIMAL_SAID.values(), *fortune.MOON_SAID.values(), *fortune.PLACE_SAID.values(),
+             *(t.label.lower() for t in fortune.WISHES), *fortune.MOON_SAID.values(), *fortune.PLACE_SAID.values(),
              *fortune.MAGIC_WORDS, *tk.LABELS]
     for c in TAROT["cards"]:
         texts += [c.es, c.es.upper(), c.meaning, f"{tk.roman(c.n)} · {c.es.upper()}"]
@@ -136,7 +136,7 @@ def test_a_clips_act_prints_the_number_the_moon_and_the_word_it_said():
     assert t.body == (fb.NUMBER_LINES[6], fb.MOON_LINES["llena"], fb.POOLS["magic"][0])
     assert (t.n, t.first, t.deck, t.card, t.card_es, t.card_meaning) == (
         37, "Mónica", "tarot", 13, "La Muerte", "algo viejo se va")
-    assert (t.numero, t.luna, t.animal, t.palabra) == ("6", "llena", "el gato negro", "Zumbalí")
+    assert (t.numero, t.luna, t.deseo, t.palabra) == ("6", "llena", "amor", "Zumbalí")
     assert (t.day, t.place) == ("28 de octubre de 2026", "en una fiesta")
     with pytest.raises(dataclasses.FrozenInstanceError):
         t.n = 1
@@ -154,7 +154,7 @@ def test_end_at_the_second_question_prints_what_there_is():
     v = act(magic="fortune_magic_9", data={"signo": "leo", "luna": "nueva", "palabra": "Sombrambrú"})
     t = made(v)
     assert t.body == (P["fortune_luna_nueva"], P["fortune_magic_9"])
-    assert t.card is None and t.deck == "" and t.numero == "" and t.animal == ""
+    assert t.card is None and t.deck == "" and t.numero == "" and t.deseo == ""
     blocks = tk.layout(t)
     assert not any(isinstance(b, tk.Art) for b in blocks)
     lines = text_of(blocks)
@@ -192,13 +192,22 @@ def test_the_place_is_the_said_one_or_the_operators_text():
     assert tk.place_said("casa") == "en casa, con la familia" and tk.place_said(None) == ""
 
 
-def test_a_long_free_animal_goes_right_aligned_under_its_label():
-    phrase = "un ajolote rosado que vive en mi pecera"
-    t = made(act(data={**act()["data"], "animal": phrase}))
-    assert t.animal == phrase
+def test_a_long_wish_in_the_visitors_words_goes_right_aligned_under_its_label():
+    phrase = "que mis alumnos por fin lean algo"
+    t = made(act(data={**act()["data"], "deseo": "otro", "deseo_txt": phrase}))
+    assert t.deseo == phrase
     blocks = [b for b in tk.layout(t) if isinstance(b, tk.Line)]
-    i = [b.text for b in blocks].index("Animal")
+    i = [b.text for b in blocks].index("Pediste")
     assert blocks[i + 1].align == "r" and " ".join(b.text for b in blocks[i + 1:i + 3]) == phrase
+
+
+def test_a_card_the_hat_drew_reversed_says_so_and_drops_the_upright_meaning():
+    t = made(act(data={**act()["data"], "carta_de": "sombrero", "carta_reves": True}))
+    assert (t.card, t.card_es, t.card_meaning) == (13, "La Muerte, de cabeza", "")
+    lines = text_of(tk.layout(t))
+    assert "XIII · LA MUERTE, DE CABEZA" in lines and "algo viejo se va" not in lines
+    upright = made(act(data={**act()["data"], "carta_de": "sombrero"}))
+    assert (upright.card_es, upright.card_meaning) == ("La Muerte", "algo viejo se va")
 
 
 def test_a_ninety_word_reading_with_emoji_and_controls_is_clean_and_wrapped():
@@ -296,7 +305,7 @@ soñaste vuelve con final feliz.
 . . . . . . . . . . . . . . . .
 Número de la suerte .......... 6
 Luna ..................... llena
-Animal ........... el gato negro
+Pediste ................... amor
 Palabra mágica ......... Zumbalí
 . . . . . . . . . . . . . . . .
            Folio 0000

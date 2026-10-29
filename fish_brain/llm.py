@@ -28,6 +28,10 @@ class _Chat:
         # Rules for the current visitor (the reading), sent as a second system message right
         # after the persona. Empty = none; `reset()` clears them with the history.
         self.extra_rules: str = ""
+        # The thinking mode for the current visitor's calls, over the profile's (anthropic
+        # profiles only; the fortune's reading sets "disabled", ADR 0026). None = the profile's;
+        # `reset()` clears it with the rules.
+        self.thinking: str | None = None
         # Stats from the last reply() call (used by `python -m fish_brain.ab`).
         self.last_latency_s: float = 0.0
         self.last_usage = None
@@ -45,6 +49,7 @@ class _Chat:
         """Forget the history and the per-visitor rules (a new visitor)."""
         self._history.clear()
         self.extra_rules = ""
+        self.thinking = None
 
     def remember(self, user_text: str, answer: str) -> None:
         """Append one user/assistant pair to the history (trimmed to the last N pairs), as

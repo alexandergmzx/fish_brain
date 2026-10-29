@@ -923,9 +923,10 @@ def _place() -> str:
 
 @dataclass
 class FortuneConfig:
-    """The fortune act (fortune_run.py, ADR 0019): the hat asks the birth date, a dream, a
-    card, a shape in the cup and an animal, then tells the future from clips or from the
-    model. Only for a persona with a fortune (the hat); the fish has none."""
+    """The fortune act (fortune_run.py, ADR 0019, 0026): the hat asks the sign, a dream, the
+    wish, whether to read a card (named, or drawn by the hat) and the shape in the cup, then
+    tells the future from clips or from the model. Only for a persona with a fortune (the
+    hat); the fish has none."""
     deck: str = field(default_factory=_fortune_deck)      # tarot | off (no card question)
     cup: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_CUP", False))
     reprompts: int = 2           # per act: a question asked again at most this often
@@ -935,6 +936,11 @@ class FortuneConfig:
         "FISH_FORTUNE_STATE", str(Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
                                   / "fish_brain" / "fortune.json")))
     rules: str = field(default_factory=_fortune_rules)
+    # The reading's thinking on an anthropic profile, over the profile's (ADR 0026): with
+    # Haiku's thinking at effort low a reading took 6.5 to 8 s and 4 of 11 hit the 8 s client
+    # timeout; without it 1.5 to 2.7 s (docs/results/2026-10-29-roast-readings.md). "" = the
+    # profile's own.
+    thinking: str = "disabled"
     ticket: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_TICKET", True))   # the ticket at the closing line, when a printer is set
 
 

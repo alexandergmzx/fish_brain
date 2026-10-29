@@ -1,10 +1,16 @@
-"""The fortune act in the turn loop ("la adivinación", ADR 0019): the scripted visit's
+"""The fortune act in the turn loop ("la adivinación", ADR 0019, 0026): the scripted visit's
 sibling for an adult audience, started from the page.
 
-    intro + Q1 fecha -> reaction + Q2 sueño -> reaction + vision + Q3 carta (deck on)
-    -> reaction + Q4 taza (cup on) -> reaction + Q5 animal -> reaction + suspense
+    intro + Q1 fecha -> reaction + Q2 sueño -> reaction + vision + Q3 deseo -> reaction
+    + Q4 carta (deck on: a card named, or a yes and the hat draws, or a no) -> reaction
+    + Q5 taza (cup on) -> reaction + suspense
     -> [clips] number + moon + magic word + closing
     -> [model] the model's reading of the [ADIVINACIÓN: …] tag, said live, then the closing
+
+In model mode (the mode now, at each answer) an answer gets a short beat and a card its name
+beat; the reaction it would have had is held, and said first if the reading falls to the clips.
+The model's tag carries the act's seeds (a tema when no wish was heard, a gancho, a forma, the
+day, the openings of the last readings), dealt before repeat from the act's state file.
 
 Every answer comes by voice and is parsed by fortune.py; anything unclear gets the question
 once more, narrower, then a bridge line and the next question (at most `reprompts` re-asks
@@ -50,11 +56,10 @@ def _not_sure(text: str) -> bool:
 
 
 # ---- the act's pure steps (shared with tools/hat_rehearse.py) ---------------------------------
-def parse_answer(qid: str, words: str, deck: dict | None, data: dict, *,
-                 last_try: bool = False) -> tuple[str, object]:
+def parse_answer(qid: str, words: str, deck: dict | None, data: dict) -> tuple[str, object]:
     """One answer (notes stripped) into `data`: (what was found, its id), ("not_sure", None)
-    or ("none", None). Any animal outside the four is ("free", the visitor's phrase); on the
-    `last_try` (no re-ask left) a short answer with no animal word is one too. "No sé" is the
+    or ("none", None). At the card: ("card", n) for a card named (drawn by the visitor),
+    ("draw", None) for a yes (the run draws), ("no_card", None) for a no. "No sé" is the
     bridge, except at the dream: "no me acuerdo" is a theme of its own (`nada`, a line that
     needs no content), so its parser decides."""
     if qid != "sueno" and _not_sure(words):
@@ -77,42 +82,86 @@ def parse_answer(qid: str, words: str, deck: dict | None, data: dict, *,
             return "none", None
         data.update(sueno=theme, sueno_txt=clean_cue_text(words, DREAM_TEXT_MAX))
         return "theme", theme
+    if qid == "deseo":
+        wish = fortune.parse_wish(words)
+        if wish is None:
+            return "none", None
+        data.update(deseo=wish, deseo_txt=clean_cue_text(words, fortune.WISH_TEXT_MAX))
+        return "wish", wish
     if qid == "carta":
         n = fortune.parse_card(words, deck)
-        if n is None:
-            return "none", None
-        data["carta"] = n
-        return "card", n
+        if n is not None:
+            data.update(carta=n, carta_de="visitante", carta_reves=fortune.said_reversed(words))
+            return "card", n
+        yes_no = fortune.parse_yes_no(words)
+        if yes_no == "yes":
+            return "draw", None
+        if yes_no == "no":
+            data["sin_carta"] = True
+            return "no_card", None
+        return "none", None
     if qid == "taza":
         shape = fortune.parse_shape(words)
         if shape is None:
             return "none", None
         data["taza"] = shape
         return "shape", shape
-    if qid == "animal":
-        kind, value = fortune.parse_animal(words, guess=last_try)
-        if value is not None:
-            data["animal"] = value
-        return kind, value
     return "none", None
 
 
+def hat_draw(state, deck: dict, data: dict, *, reversible: bool) -> int:
+    """The hat draws the card itself (a yes, no card named): every card of the deck once and
+    the dark ones twice (fortune_bank.HAT_DRAW_EXTRA), dealt before repeat from `state` (a
+    ShowState); reversed one draw in three, only when `reversible` (model mode: the clips read
+    upright). Into `data`; returns the card's number."""
+    did = deck.get("id", "tarot")
+    names = [f"{c.n}" for c in deck["cards"]]
+    names += [f"{n}_bis" for n in fortune_bank.HAT_DRAW_EXTRA.get(did, ())]
+    n = int(state.pick(f"carta_{did}", names).split("_")[0])
+    reves = reversible and state.pick("reves", list(fortune_bank.REVERSED_BAG)) == "cabeza"
+    data.update(carta=n, carta_de="sombrero", carta_reves=reves)
+    return n
+
+
+def deal_seeds(state, data: dict, *, has: set) -> dict:
+    """The model's seeds for one reading, dealt before repeat from `state`: a tema when no wish
+    was heard, a gancho, a forma that fits the data `has` ("signo", "sueno", "carta")."""
+    seeds: dict = {}
+    if not data.get("deseo"):
+        seeds["tema"] = state.pick("tema", list(fortune.WISH_IDS))
+    i = int(state.pick("gancho", [f"{i:02d}" for i in range(len(fortune_bank.GANCHOS))]))
+    seeds["gancho"] = fortune_bank.GANCHOS[i]
+    have = has | {"deseo"}
+    fit = [f"{i}" for i, (need, _t) in enumerate(fortune_bank.FORMAS) if need is None or need in have]
+    seeds["forma"] = fortune_bank.FORMAS[int(state.pick("forma", fit))][1]
+    return seeds
+
+
 def fortune_of(data: dict, *, nombre: str = "", lugar: str = "",
-               casa: str | None = None, pistas: dict | None = None) -> fortune.Fortune:
+               casa: str | None = None, pistas: dict | None = None,
+               seeds: dict | None = None, hoy: str = "", evita=()) -> fortune.Fortune:
     """The act's data (parse_answer's dict, plus the moon and the magic word) as a Fortune;
-    `pistas` are the operator's lit cues (visit.pending())."""
-    d = data
+    `pistas` are the operator's lit cues (visit.pending()), `seeds` deal_seeds' dict."""
+    d, sd = data, seeds or {}
     return fortune.Fortune(nombre=nombre, lugar=lugar, casa=casa, pistas=dict(pistas or {}),
                            fecha=d.get("fecha"), signo=d.get("signo"), numero=d.get("numero"),
                            sueno=d.get("sueno"), sueno_txt=d.get("sueno_txt", ""),
-                           carta=d.get("carta"), taza=d.get("taza"), animal=d.get("animal"),
-                           luna=d.get("luna"), palabra=d.get("palabra", ""))
+                           deseo=d.get("deseo"), deseo_txt=d.get("deseo_txt", ""),
+                           tema=sd.get("tema"), carta=d.get("carta"),
+                           carta_de=d.get("carta_de", ""), carta_reves=bool(d.get("carta_reves")),
+                           sin_carta=bool(d.get("sin_carta")), taza=d.get("taza"),
+                           luna=d.get("luna"), palabra=d.get("palabra", ""), hoy=hoy,
+                           gancho=sd.get("gancho", ""), forma=sd.get("forma", ""),
+                           evita=tuple(evita))
 
 
-def reading_request(llm, rules: str, f: fortune.Fortune, deck: dict | None) -> str:
+def reading_request(llm, rules: str, f: fortune.Fortune, deck: dict | None, *,
+                    thinking: str = "") -> str:
     """The model set up for a reading (a fresh history: the data travel in the tag, the
-    fortune's rules after the persona); returns the tag to send."""
+    fortune's rules after the persona, `thinking` over the profile's until the next visitor's
+    reset); returns the tag to send."""
     begin_model(llm, rules)
+    llm.thinking = thinking or None
     return fortune.reading_tag(f, deck)
 
 
@@ -161,12 +210,11 @@ class FortuneRun:
         return fortune.DECKS.get(self.cfg.deck)
 
     def _questions(self, deck: dict | None) -> list[str]:
-        qs = ["fecha", "sueno"]
+        qs = ["fecha", "sueno", "deseo"]
         if deck is not None:
             qs.append("carta")
         if self.cfg.cup:
             qs.append("taza")
-        qs.append("animal")
         return qs
 
     def lines_ready(self) -> bool:
@@ -238,13 +286,23 @@ class FortuneRun:
         theme = _THEMES.get(d.get("sueno"))
         if theme is not None:
             out["sueno"] = theme.label
+        wish = fortune.WISH_BY_ID.get(d.get("deseo"))
+        if wish is not None:
+            out["deseo"] = wish.label.lower()
+        elif d.get("deseo"):
+            out["deseo"] = d.get("deseo_txt") or d["deseo"]
         if d.get("carta") is not None and deck is not None:
-            out["carta"] = fortune.card_by_n(deck, d["carta"]).es
+            card = fortune.card_by_n(deck, d["carta"]).es
+            if d.get("carta_reves"):
+                card += ", de cabeza"
+            if d.get("carta_de") == "sombrero":
+                card += " (la sacó el sombrero)"
+            out["carta"] = card
+        elif d.get("sin_carta"):
+            out["carta"] = "sin carta"
         shape = _SHAPES.get(d.get("taza"))
         if shape is not None:
             out["taza"] = shape.label
-        if d.get("animal"):
-            out["animal"] = fortune.ANIMAL_SAID.get(d["animal"], d["animal"])
         if d.get("luna"):
             out["luna"] = d["luna"].replace("_", " ")
         if d.get("palabra"):
@@ -312,6 +370,7 @@ class FortuneRun:
         self.v = {"n": n, "qs": qs, "i": 0, "tries": 0, "reprompts": 0, "data": {}, "heard": [],
                   "why": why, "deck": deck, "place": place, "first": first, "house": house,
                   "stage": "ask", "mode": None, "mode_why": "", "clips": [], "reading": None,
+                  "held": [], "seeds": {},
                   "t0": time.monotonic(), "last_s": now, "pistas": self._pistas()}
         self._last.pop("refused", None)
         self._probe_printer()
@@ -333,21 +392,41 @@ class FortuneRun:
         text = text or ""
         v["heard"].append((qid, text))
         words = fortune.strip_notes(text)
-        last_try = v["tries"] > 0 or v["reprompts"] >= self.cfg.reprompts
-        kind, value = parse_answer(qid, words, v["deck"], v["data"], last_try=last_try)
+        kind, value = parse_answer(qid, words, v["deck"], v["data"])
+        beats = self.mode_now()[0] == "llm"      # model mode: a beat now, the meaning read once
+        if kind == "draw":
+            value = hat_draw(self.state, v["deck"], v["data"], reversible=beats)
         shown = "" if value is None else value
+        if kind in ("card", "draw") and v["data"].get("carta_reves"):
+            shown = f"{shown} reversed"
         debug.turn_set(fortune=f"#{v['n']} {qid} {kind} {shown}")
         print(f"[fortune] #{v['n']} {qid} heard={text!r} -> {kind} {shown}", flush=True)
         if kind == "not_sure":
             return self._next([self._pick("bridge")])
         if kind == "none":
             return self.no_answer()
-        if kind == "free":                       # an animal outside the four: no clip by name
-            clips = [self._pick("re_animal_otro")]
+        if kind == "no_card":
+            return self._next([self._pick("sin_carta")])
+        if kind == "wish" and value == "otro":   # a wish outside the four: no clip by name
+            reaction = [self._pick("re_deseo_otro")]
+        elif kind == "draw":
+            reaction = [fortune_bank.reaction_name("carta", value, v["deck"])]
         else:
-            clips = [fortune_bank.reaction_name(qid, value, v["deck"])]
+            reaction = [fortune_bank.reaction_name(qid, value, v["deck"])]
         if qid == "sueno":
-            clips.append(self._pick("vision"))   # a mentalist line that needs no content
+            reaction.append(self._pick("vision"))   # a mentalist line that needs no content
+        lead = [self._pick("barajo")] if kind == "draw" else []
+        if not beats:
+            return self._next(lead + reaction)
+        if kind in ("card", "draw"):
+            clips = lead + [fortune_bank.card_name_name(value, v["deck"])]
+            if v["data"].get("carta_reves"):
+                clips.append(fortune_bank.REVERSED_NAME)
+            else:                                # an upright line would contradict "de cabeza"
+                v["held"] += reaction
+        else:
+            clips = [self._pick("beat")]
+            v["held"] += reaction
         return self._next(clips)
 
     def no_answer(self) -> bool:
@@ -388,8 +467,23 @@ class FortuneRun:
     def _fortune(self) -> fortune.Fortune:
         v = self.v
         v["pistas"] = self._pistas()     # the record keeps what the reading was given
-        return fortune_of(v["data"], nombre=v["first"], lugar=place_word(self.c.cfg.place),
-                          casa=v["house"], pistas=v["pistas"])
+        d = v["data"]
+        has = {k for k in ("signo", "sueno", "carta") if d.get(k) is not None}
+        v["seeds"] = deal_seeds(self.state, d, has=has)
+        return fortune_of(d, nombre=v["first"], lugar=place_word(self.c.cfg.place),
+                          casa=v["house"], pistas=v["pistas"], seeds=v["seeds"],
+                          hoy=fortune.today_words(), evita=self._recent())
+
+    # ---- the last readings' openings (the model is told not to open like them) ---------------
+    RECENT = 6
+
+    def _recent(self) -> list[str]:
+        return list(self.state.data.get("recent", []))[-self.RECENT:]
+
+    def _remember(self, reading: str) -> None:
+        recent = self._recent() + [fortune.opening(reading)]
+        self.state.data["recent"] = recent[-self.RECENT:]
+        self.state.save()
 
     def _ending(self, lead: list, *, clips_only: bool = False) -> bool:
         """The reading: the moon and the magic word join the data; the model's reading when
@@ -418,7 +512,8 @@ class FortuneRun:
         closing, each only when the act has it."""
         v = self.v
         data = v["data"]
-        clips = list(lead)
+        clips = list(lead) + v.get("held", [])   # the reactions model mode held back
+        v["held"] = []
         if data.get("numero"):
             clips.append(fortune_bank.num_name(data["numero"]))
         if data.get("luna"):
@@ -446,7 +541,8 @@ class FortuneRun:
         try:
             self.c._settle("llm")                # a stale job on the same model ends first
             llm = self.c.llm                     # the client is built here, on this thread
-            tag = reading_request(llm, self.cfg.rules, self._fortune(), v["deck"])
+            tag = reading_request(llm, self.cfg.rules, self._fortune(), v["deck"],
+                                  thinking=self.cfg.thinking)
             ask = llm.reply
 
             def work():
@@ -493,6 +589,7 @@ class FortuneRun:
             return False
         llm.remember(tag, raw)
         v["reading"] = text
+        self._remember(text)
         return True
 
     def _model_failed(self, why: str) -> None:
@@ -553,8 +650,8 @@ class FortuneRun:
         debug.emit("fortune", n=v["n"], mode=v["mode"], why=v["mode_why"], how=how,
                    place=v["place"], data=data, heard=[list(h) for h in v["heard"]],
                    clips=list(v["clips"]), reading=v["reading"], house=v["house"],
-                   first=v["first"], pistas=v.get("pistas", {}), seconds=seconds,
-                   ticket=v.get("ticket"))
+                   first=v["first"], pistas=v.get("pistas", {}), seeds=v.get("seeds", {}),
+                   seconds=seconds, ticket=v.get("ticket"))
         debug.turn_set(fortune=f"#{v['n']} reading ({how})", outcome=f"fortune: reading ({how})")
         self._last = {"n": v["n"], "mode": how, "why": v["mode_why"], "data": data}
         self.v = None
