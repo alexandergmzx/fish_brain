@@ -344,13 +344,16 @@ def test_snapshot_is_safe_from_another_thread(rig, tmp_path):
     seen, errors, stop = set(), [], threading.Event()
 
     def watch():
-        while not stop.is_set():
+        while True:                     # one more look after the stop: the ticket has ended
+            last = stop.is_set()
             try:
                 s = p.snapshot()
                 seen.add(s["state"])
                 assert {"alive", "why", "n", "busy", "reach", "bytes"} <= s.keys()
             except Exception as e:      # noqa: BLE001
                 errors.append(e)
+            if last:
+                break
     w = threading.Thread(target=watch)
     w.start()
     reader = threading.Thread(target=lambda: wait_for(lambda: port.peers) and read_all(port.peers[0]))
