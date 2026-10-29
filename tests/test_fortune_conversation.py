@@ -539,9 +539,9 @@ def test_a_reading_rendered_but_never_said_leaves_no_file(make, online, tmp_path
 @pytest.mark.parametrize("llm", [
     FakeLLM(fail=True),
     FakeLLM(delay=0.6),
-    FakeLLM(reply="Te espera una enfermedad larga. Y un gato."),
+    FakeLLM(reply="palabra " * 91),                     # one sentence too long to trim
     FakeLLM(reply=""),
-], ids=["error", "timeout", "dirty", "empty"])
+], ids=["error", "timeout", "too long", "empty"])
 def test_a_model_failure_falls_back_to_the_clips_and_marks_the_show(make, online, llm):
     c = make("auto", llm=llm)
     c.cfg.fortune.reading_s = 0.2

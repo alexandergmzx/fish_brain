@@ -29,11 +29,11 @@ Script: visitors separated by a blank line. In a block:
     animal: Un gato.              is the answer to its re-ask
 Without "gafete:" or "sin saludo" the visit opens with the canned greeting (New visitor).
 
-Checks per reply: no tag spoken ("[", "CASA", "ETAPA", "PISTAS"), sentences, words, banned
-words (fortune.banned_in); per visit: a house at the verdict; per reading: why the act would
-refuse it (fortune.reading_problems), a death said plainly, and a reading slower than the
-act waits for it ("would fall back to clips"). Per visitor, information only: which cues show
-up in the visit's replies and in the reading. Per profile: phrases repeated across verdicts
+Checks per reply: no tag spoken ("[", "CASA", "ETAPA", "PISTAS"), sentences, words, long
+questions; per visit: a house at the verdict; per reading: why the act would refuse it
+(fortune.reading_problems: empty or too long; no word list since ADR 0025), and a reading
+slower than the act waits for it ("would fall back to clips"). Per visitor, information
+only: which cues show up in the visit's replies and in the reading. Per profile: phrases repeated across verdicts
 and across readings, words per reply, seconds per stage.
 """
 from __future__ import annotations
@@ -54,8 +54,6 @@ _SENTENCE = re.compile(r"[^.!?…]+[.!?…]+|[^.!?…]+$")
 FORTUNE_QS = ("fecha", "sueno", "carta", "taza", "animal")
 _Q_ALIASES = {"sueño": "sueno", "fecha": "fecha", "sueno": "sueno", "carta": "carta",
               "taza": "taza", "animal": "animal"}
-# A death said plainly in a reading (folded): the rules ask for an image, never this.
-_DEATH = ("murio", "fallecio", "se murio", "fallecido", "fallecida")
 QUESTION_WORDS = 10             # the rules' limit for one question ("¿…?")
 _QUESTION = re.compile(r"¿([^?]*)\?")
 REPEAT_N = 4                    # words in a phrase that counts as repeated across verdicts
@@ -142,7 +140,6 @@ def check(spoken: str, *, verdict: bool) -> list[str]:
         out.append(f"{len(sentences)} sentences")
     if words > (55 if verdict else 30):
         out.append(f"{words} words")
-    out += [f"banned {w!r}" for w in fortune.banned_in(spoken)]
     for q in _QUESTION.findall(spoken):
         if len(q.split()) > QUESTION_WORDS:
             out.append(f"question of {len(q.split())} words")
@@ -321,8 +318,6 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
     spoken, _house = visit.split_reply(raw or "")
     text = fortune_run.reading_result(raw)
     problems = [] if error else fortune.reading_problems(spoken)
-    folded = " " + _fold(spoken) + " "
-    problems += [f"death said plainly {w!r}" for w in _DEATH if f" {w} " in folded]
     if seconds > cfg.fortune.reading_s:
         problems.append(f"{seconds:.1f} s > {cfg.fortune.reading_s:g} s: would fall back "
                         f"to clips")

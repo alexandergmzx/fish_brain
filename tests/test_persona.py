@@ -135,7 +135,8 @@ def test_the_visit_rules_are_the_adult_ones(monkeypatch):
     for kid in ("Público familiar", "niños", "niño o niña", "calaverita", "con el adulto",
                 "nada da miedo"):
         assert kid not in r, kid
-    assert "enfermedades" in r and "lotería" in r and "concuerda los adjetivos" in r
+    assert "enfermedades" not in r and "lotería" not in r and "grosero" not in r      # ADR 0025
+    assert "concuerda los adjetivos" in r and "Nunca apellidos" in r
     # the example has no clock time and no named venue (small models copy examples)
     example = re.sub(r"\[ETAPA \d/\d\]", "", r[r.index("EJEMPLO"):])
     assert not re.search(r"\d|\ba las\b|en punto", example)

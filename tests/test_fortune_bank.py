@@ -24,7 +24,6 @@ def test_every_clip_is_named_fortune_and_keeps_the_rules():
         assert text.strip() and not text.lstrip().startswith("-"), name     # loq reads "-" as an option
         assert len(text.split()) <= 40, (name, len(text.split()))
         assert sentences(text) <= 2, (name, text)
-        assert fortune.banned_in(text) == [], (name, fortune.banned_in(text))
         assert "feria" not in _fold(text) and "cenart" not in _fold(text), name
         if name.startswith(("fortune_q_", "fortune_rq_")):
             assert text.rstrip().endswith("?"), name
@@ -131,11 +130,14 @@ def test_the_rules_are_the_adult_ones():
     for place in ("fiesta", "casa", "universidad"):
         assert place in r
     assert "LAS PISTAS" in r and "pistas=" in r
-    assert "Nunca digas que alguien murió" in r and "nunca una muerte real" in r
+    # ADR 0025: no forbidden topics in the rules
+    for ban in ("Nunca digas que alguien murió", "nunca una muerte real", "Nada de enfermedades",
+                "Nunca explícito ni grosero", "lotería"):
+        assert ban not in r, ban
     assert "brindis" in r and "ofrenda" in r and "profesor" in r
     assert "La Muerte" in r and "El Diablo" in r and "tu palabra mágica es" in r
     assert "Nunca repitas los corchetes" in r and "no hace falta decirla" in r
-    assert "enfermedades" in r and "lotería" in r and "religión" in r
+    assert "enfermedades" not in r and "religión" not in r          # ADR 0025
     assert "Público familiar" not in r and "niños" not in r
 
 

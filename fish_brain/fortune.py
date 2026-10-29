@@ -650,7 +650,7 @@ def animal_phrase(text: str) -> str | None:
 # A short answer with no animal word is still the visitor's animal ("Escojo a un velociraptor",
 # "Gatosiraptor", 2026-10-27), but only as a last guess, when no re-ask is left: "¿cómo?",
 # "gracias" or "emm" would pass too. The words before it are dropped; what is left must be at
-# most three words, none of them a refusal, a question back, a person or a banned word.
+# most three words, none of them a refusal, a question back or a person.
 _ANIMAL_LEAD = frozenset({"pues", "bueno", "este", "esta", "yo", "a", "al", "escojo", "escogo",
                           "elijo", "eligo", "quiero", "prefiero", "tomo", "agarro", "creo",
                           "que", "me", "quedo", "con", "seria", "sera", "es", "animal",
@@ -672,7 +672,7 @@ _ANIMAL_FREE_WORDS = 3
 def named_answer(text: str) -> str | None:
     """The visitor's own short answer as an animal when it has no animal word: the lead
     words ("pues escojo a") and fillers dropped, then up to three words of the first clause
-    with nothing in _NOT_AN_ANIMAL and nothing banned, in the visitor's spelling, lower case
+    with nothing in _NOT_AN_ANIMAL, in the visitor's spelling, lower case
     at the start. None otherwise."""
     text = strip_notes(text)
     found = [(m, _fold(m.group(0))) for m in _WORD.finditer(text)]
@@ -688,7 +688,7 @@ def named_answer(text: str) -> str | None:
     if any(w in _NOT_AN_ANIMAL or w.isdigit() or _FILLER.match(w) for _m, w in found):
         return None
     phrase = _clean_text(text[start:found[-1][0].end()])[:ANIMAL_TEXT_MAX].strip()
-    if not phrase or banned_in(phrase):
+    if not phrase:
         return None
     return phrase[0].lower() + phrase[1:]
 
@@ -825,52 +825,18 @@ def reading_tag(f: Fortune, deck: dict | None) -> str:
     return "[ADIVINACIÓN: " + "; ".join(parts) + "] Haz la lectura."
 
 
-# ---- the register's filter -------------------------------------------------------------------
-# Folded words and phrases the reading must not carry (the adult rules: no illness, accidents,
-# real misfortune, explicit sex, religion as doctrine, prizes, the age). La muerte, las
-# calaveras and el diablo are the season's guests and stay; "muerto" as a blunt word goes,
-# except in the season's own names (EXEMPT).
-BANNED: tuple[str, ...] = (
-    "enfermedad", "enfermedades", "enfermo", "enferma", "enfermos", "enfermas", "hospital",
-    "hospitales", "tumor", "cirugia", "quimio", "tiene cancer", "tienes cancer", "tener cancer",
-    "con cancer", "un cancer", "el cancer", "del cancer", "contra el cancer", "cancer de mama",
-    "cancer de pulmon", "cancer de piel", "cancer terminal", "murio de cancer",
-    "accidente", "accidentes", "funeral", "velorio", "suicidio", "suicida", "asesinato",
-    "asesino", "asesina", "violacion", "violar", "muerto", "muerta", "muertos", "muertas",
-    "morir", "moriras", "morira", "mueres", "muere", "te mata", "matar",
-    "loteria", "premio", "premios", "melate", "rifa", "te sacas",
-    "dios", "iglesia", "rezar", "reza", "rezo", "misa", "biblia", "cristo", "jesus", "virgen",
-    "sexo", "sexual", "sexuales", "coger", "cogiendo", "verga", "pene", "vagina", "tetas",
-    "chichis", "orgasmo", "porno", "follar", "culo", "puta", "puto", "pendejo", "pendeja",
-    "chingar", "chingada", "chinga", "pinche",
-)
-EXEMPT: tuple[str, ...] = ("pan de muerto", "dia de muertos", "noche de muertos",
-                           "dia de los muertos", "fieles difuntos")
+# ---- the reading's length (no word list: ADR 0025) ------------------------------------------
 MAX_READING_SENTENCES = 6
 MAX_READING_WORDS = 90
 
 
-def banned_in(text: str) -> list[str]:
-    """The banned words in `text`, folded, in order; [] when clean. A year, a clock time and
-    the age pass since 2026-10-28 (his word: adults will not mind)."""
-    s = " " + " ".join(re.sub(r"[^a-z0-9ñ:]", " ", _fold(text or "")).split()) + " "
-    for phrase in EXEMPT:
-        s = s.replace(f" {phrase} ", "  ")
-    found = []
-    for word in BANNED:
-        if f" {word} " in s:
-            found.append(word)
-    return found
-
-
 def reading_problems(text: str) -> list[str]:
-    """Why a reading would be refused ([] = it would be said): empty, the banned words, more
-    than 6 sentences, more than 90 words. Bracket tags are removed
-    first, as for the voice."""
+    """Why a reading would be refused ([] = it would be said): empty, more than 6 sentences,
+    more than 90 words. Bracket tags are removed first, as for the voice."""
     text = strip_notes(text or "")
     if not text:
         return ["empty"]
-    out = [f"banned {w!r}" for w in banned_in(text)]
+    out = []
     sentences = len(re.findall(r"[.!?…]+(?:\s|$)", text)) or 1
     if sentences > MAX_READING_SENTENCES:
         out.append(f"{sentences} sentences")
@@ -902,7 +868,7 @@ def trim_reading(text: str) -> str:
 
 def clean_reading(reply: str) -> str | None:
     """The model's reading fit to be said: any bracket tag removed, whitespace collapsed, a
-    long one trimmed (trim_reading); None when it carries a banned word or still does not fit
-    in 6 sentences and 90 words."""
+    long one trimmed (trim_reading); None when it is empty or still does not fit in 6
+    sentences and 90 words."""
     text = trim_reading(strip_notes(reply or ""))
     return None if reading_problems(text) else text

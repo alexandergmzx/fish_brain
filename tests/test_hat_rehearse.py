@@ -122,9 +122,10 @@ def test_the_visitors_place_rides_every_visit_turn(monkeypatch):
                         "[ETAPA 3/4] [PISTAS: lugar=casa; compañía=pareja] y"]
 
 
-def test_banned_words_in_a_visit_reply_are_problems():
-    assert "banned 'pendejo'" in hat_rehearse.check("Eres un pendejo.", verdict=False)
-    assert hat_rehearse.check("Veo pan de muerto.", verdict=False) == []
+def test_no_word_is_a_problem_in_a_visit_reply():
+    # ADR 0025: no word list; only the shape of a reply is checked
+    assert hat_rehearse.check("Eres un pendejo.", verdict=False) == []
+    assert hat_rehearse.check("Algo muere esta noche.", verdict=False) == []
 
 
 def test_cue_coverage_finds_stems_and_free_text_words():
@@ -174,5 +175,5 @@ def test_a_fortune_block_runs_the_acts_steps(monkeypatch):
     assert kinds[-1] == ("animal", "free") and "animal=un perrito xoloitzcuintle" in tag
     assert tag.endswith("pistas=lleva: capa negra] Haz la lectura.")
     assert "would fall back to clips" in " ".join(rec["problems"])
-    assert any("death said plainly" in p for p in rec["problems"])
+    assert not any("death" in p for p in rec["problems"])      # no word list (ADR 0025)
     assert rec["used"] == ["lleva"]

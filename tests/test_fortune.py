@@ -6,7 +6,7 @@ import pytest
 
 from fish_brain import fortune
 from fish_brain.fortune import (ANIMAL_Q, DECKS, DREAM_THEMES, MOON_PHASES, SIGNS, Fortune,
-                                banned_in, clean_reading, dream_theme, lucky_number, moon_phase,
+                                clean_reading, dream_theme, lucky_number, moon_phase,
                                 moon_tonight, numbers_in, parse_birth, parse_card, parse_shape,
                                 parse_sign, reading_tag, sign_of, strip_notes, tokens)
 from fish_brain.show import match_option, phon_key
@@ -241,12 +241,12 @@ def test_the_animal_order(text, expect):
     # his takes, 2026-10-27: on the last try a short answer is the animal as said
     ("Escojo a un velociraptor.", "un velociraptor"), ("Gatosiraptor.", "gatosiraptor"),
     ("Me quedo con el kraken, porque es enorme", "el kraken"), ("Emm, un dragón.", "un dragón"),
-    # never an animal: a refusal, a question back, thanks, a filler, a person, a banned word
+    # never an animal: a refusal, a question back, thanks, a filler, a person; a swear word is one
     ("Sí.", None), ("El que tú quieras", None), ("Paso", None), ("¿Cómo?", None),
     ("¿Mande?", None), ("¿Puedes repetir?", None), ("Gracias.", None),
     ("Gracias por ver.", None), ("Hmm.", None), ("Ehh...", None), ("Ni idea.", None),
     ("Me da miedo.", None), ("Nel.", None), ("Mi novia.", None), ("Mi suegra.", None),
-    ("El negro.", None), ("Pendejo.", None), ("Puto.", None),
+    ("El negro.", None), ("Pendejo.", "pendejo"), ("Puto.", "puto"),     # ADR 0025: no word refused
     ("uno de los cuatro, el que sea", None), ("Un mamut lanudo gigante enorme", None),
 ])
 def test_the_last_guess_at_the_animal(text, expect):
@@ -335,32 +335,17 @@ def test_the_magic_words_and_places():
     assert set(fortune.PLACE_SAID) == set(fortune.PLACES)
 
 
-# ---- the filter -----------------------------------------------------------------------------
-@pytest.mark.parametrize("text,expect", [
-    ("Esta noche brindas con pan de muerto en el Día de Muertos.", []),
-    ("Tu abuelo muerto te mira", ["muerto"]), ("a las 3 de la tarde", []),
-    ("te veo a las once", []), ("son las 10:30", []),                 # his word 2026-10-28
-    ("naciste en 1990", []), ("Cáncer, de agua, sueña con mares.", []),
-    ("la lotería te sonríe", ["loteria"]), ("tiene cáncer", ["tiene cancer"]),
-    ("hace años", []), ("tu edad", []), ("Eres Cáncer", []),
-    ("La Muerte, la calavera y El Diablo te acompañan", []),
-    ("vas al hospital por un accidente", ["hospital", "accidente"]),
-    ("que Dios te bendiga", ["dios"]), ("pura chingada", ["chingada"]),
-])
-def test_banned_in(text, expect):
-    assert banned_in(text) == expect
-
-
+# ---- the reading's length (no word list: ADR 0025) ----------------------------------------
 def test_clean_reading():
     good = "[ADIVINACIÓN: x] Escorpio, de agua. Soñaste con dientes… ¿y la luna? Tu palabra mágica es Zumbalí."
     assert clean_reading(good) == "Escorpio, de agua. Soñaste con dientes… ¿y la luna? Tu palabra mágica es Zumbalí."
     assert clean_reading("") is None and clean_reading(None) is None
-    assert clean_reading("Vas al hospital.") is None
+    assert clean_reading("Vas al hospital.") == "Vas al hospital."           # ADR 0025: no word list
+    assert clean_reading("Algo muere esta noche, y la muerte te visita.") == "Algo muere esta noche, y la muerte te visita."
     assert clean_reading("Uno. Dos. Tres. Cuatro. Cinco. Seis. Siete.") == "Uno. Dos. Tres. Cuatro. Cinco. Siete."
     long = " ".join(["Una frase larga de diez palabras para llenar el espacio aqui."] * 9) + " Tu palabra mágica es Zumbalí."
     cut = clean_reading(long)
     assert cut.endswith("Tu palabra mágica es Zumbalí.") and len(cut.split()) <= 90 and cut.startswith("Una frase")
-    assert clean_reading("Vas al hospital. " * 3 + "Tu palabra es Zumbalí.") is None     # banned: never trimmed away
     assert clean_reading("palabra " * 91) is None
     assert clean_reading("Cuatro frases.  Con   espacios. De sobra. Y fin.") == "Cuatro frases. Con espacios. De sobra. Y fin."
 
@@ -382,7 +367,7 @@ def test_reading_problems_say_why_a_reading_is_refused():
     assert fortune.reading_problems("Escorpio, de agua. Tu palabra es Zumbalí.") == []
     assert fortune.reading_problems("[ADIVINACIÓN: x]") == ["empty"]
     assert fortune.reading_problems(None) == ["empty"]
-    assert fortune.reading_problems("Vas al hospital en 2027.") == ["banned 'hospital'"]
+    assert fortune.reading_problems("Vas al hospital en 2027, y tu abuelo muerto te mira.") == []
     assert fortune.reading_problems("Uno. Dos. Tres. Cuatro. Cinco. Seis. Siete.") == ["7 sentences"]
     assert fortune.reading_problems("palabra " * 91) == ["91 words"]
 
@@ -428,4 +413,4 @@ def test_fortune_of_and_the_reading_steps():
     tag = reading_request(llm, "RULES", f, TAROT)
     assert llm.resets == 1 and llm.extra_rules == "RULES" and tag == reading_tag(f, TAROT)
     assert reading_result("Tu luna es llena.\nCASA: Ravenclaw") == "Tu luna es llena."
-    assert reading_result("Vas al hospital.") is None and reading_result(None) is None
+    assert reading_result("Vas al hospital.") == "Vas al hospital." and reading_result(None) is None
