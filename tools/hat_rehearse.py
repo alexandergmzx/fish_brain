@@ -5,14 +5,17 @@ or motors.
     .venv/bin/python tools/hat_rehearse.py tools/hat_visitors.txt
     .venv/bin/python tools/hat_rehearse.py --profiles claude,luna tools/hat_visitors.txt
     .venv/bin/python tools/hat_rehearse.py --only 3 tools/hat_visitors.txt     # one visitor
+    .venv/bin/python tools/hat_rehearse.py --only 3 --repeat 20 tools/hat_visitors.txt   # collapse check
 
 Runs each scripted visitor through the same steps as the turn loop (fish_brain/visit.py):
 a new visit resets the model and attaches the visit's rules, the opener is seeded as the hat's
 first turn, every visitor line is tagged "[ETAPA n/4] [PISTAS: ...]", the reply is split
 from its "CASA:" line, and the pair is remembered as if spoken. A "fortuna:" block then runs
 the same person's fortune through the act's own steps (fish_brain/fortune_run.py:
-parse_answer, fortune_of, reading_request, reading_result) with tonight's moon and a magic
-word seeded by the visitor's number. FISH_PERSONA is forced to "hat". Keys come from .env and
+parse_answer, hat_draw, deal_seeds, fortune_of, reading_request, reading_result) with
+tonight's moon, today's date and a magic word seeded by the visitor's number; the draws, the
+seeds and the last readings' openings come from one in-memory state for the whole run, as the
+act's state file carries them from visitor to visitor. FISH_PERSONA is forced to "hat". Keys come from .env and
 are never printed.
 
 Script: visitors separated by a blank line. In a block:
@@ -25,14 +28,16 @@ Script: visitors separated by a blank line. In a block:
     anything else                 what the visitor says, one turn per line
     fortuna:                      from here on, the same person's fortune:
     fecha: Diecisiete de junio.   one answer per line, keyed by the question (fecha, sueno,
-    sueno: Soñé con ...           carta, taza, animal); a second line for the same question
-    animal: Un gato.              is the answer to its re-ask
+    sueno: Soñé con ...           deseo, carta, taza); a second line for the same question
+    deseo: Venganza.              is the answer to its re-ask
+    carta: Sí.                    a yes: the hat draws; a card's name: the visitor's; no: none
 Without "gafete:" or "sin saludo" the visit opens with the canned greeting (New visitor).
 
 Checks per reply: no tag spoken ("[", "CASA", "ETAPA", "PISTAS"), sentences, words, long
 questions; per visit: a house at the verdict; per reading: why the act would refuse it
 (fortune.reading_problems: empty or too long; no word list since ADR 0025), and a reading
-slower than the act waits for it ("would fall back to clips"). Per visitor, information
+slower than the act waits for it ("would fall back to clips"). Per profile, the readings'
+variety (ADR 0026): distinct openings, readings that use a stale phrase the rules name. Per visitor, information
 only: which cues show up in the visit's replies and in the reading. Per profile: phrases repeated across verdicts
 and across readings, words per reply, seconds per stage.
 """
@@ -51,9 +56,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 _LEAKS = ("[", "CASA", "ETAPA", "PISTAS")
 _SENTENCE = re.compile(r"[^.!?…]+[.!?…]+|[^.!?…]+$")
-FORTUNE_QS = ("fecha", "sueno", "carta", "taza", "animal")
-_Q_ALIASES = {"sueño": "sueno", "fecha": "fecha", "sueno": "sueno", "carta": "carta",
-              "taza": "taza", "animal": "animal"}
+FORTUNE_QS = ("fecha", "sueno", "deseo", "carta", "taza")
+_Q_ALIASES = {"sueño": "sueno", "fecha": "fecha", "sueno": "sueno", "deseo": "deseo",
+              "carta": "carta", "taza": "taza"}
+# The stale phrases FORTUNE_RULES names (folded); a reading that uses one is counted.
+STALE = ("esta noche", "algo viejo", "no te asustes", "todo va a salir bien", "energia",
+         "nueva etapa", "abundancia", "transformacion", "tu camino", "el universo", "salio derech",
+         "gancho", "tu vision:", "la verdad que pica", "tu verdad incomoda", "tu tarea")
+OPENING_WORDS = 3               # readings that open with the same words count as one opening
 QUESTION_WORDS = 10             # the rules' limit for one question ("¿…?")
 _QUESTION = re.compile(r"¿([^?]*)\?")
 REPEAT_N = 4                    # words in a phrase that counts as repeated across verdicts
@@ -105,7 +115,7 @@ def parse_script(text: str) -> list[dict]:
             key, sep, value = line.partition(":")
             qid = _Q_ALIASES.get(key.strip().lower())
             if not sep or qid is None:
-                raise ValueError(f"a fortune line must be 'fecha|sueno|carta|taza|animal: "
+                raise ValueError(f"a fortune line must be 'fecha|sueno|deseo|carta|taza: "
                                  f"...': {line!r}")
             cur["fortune"].append((qid, value.strip()))
         elif low in ("fortuna:", "fortuna"):
@@ -277,10 +287,14 @@ def place_of(cfg, visitor: dict) -> str:
 
 
 def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 0,
-                now=None) -> dict:
+                now=None, state=None, thinking: str | None = None) -> dict:
     """The visitor's "fortuna:" block through the act's steps; returns its record. The
-    reading is the model's, timed against the act's wait (cfg.fortune.reading_s)."""
+    reading is the model's, timed against the act's wait (cfg.fortune.reading_s). `state` (a
+    ShowState) carries the draws, the seeds and the last openings across visitors. The
+    reading thinks as the act's does (cfg.fortune.thinking) unless `thinking` says otherwise."""
     from fish_brain import fortune, fortune_run, visit
+    from fish_brain.show import ShowState
+    state = state if state is not None else ShowState(None, seed=f"rehearse-{seed}")
     deck = fortune.DECKS.get(cfg.fortune.deck)
     data: dict = {}
     answers = []
@@ -298,6 +312,10 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
         reprompts += bool(before)
         words = fortune.strip_notes(text)
         kind, value = fortune_run.parse_answer(qid, words, deck, data)
+        if kind == "draw":                       # the model reads it: a reversed draw may come
+            value = fortune_run.hat_draw(state, deck, data, reversible=True)
+            if data.get("carta_reves"):
+                value = f"{value} reversed"
         answers.append({"q": qid, "you": text, "kind": kind, "value": value})
     told = [a["you"] for a in answers if a["q"] == "sueno" and a["you"].strip()
             and not a["kind"].startswith("not asked")]
@@ -309,9 +327,14 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
     house = visit_rec["house"] if visit_rec else None
     nombre = visit_rec["first"] if visit_rec else ""
     cues = visit_rec["cues"] if visit_rec else {}
+    has = {k for k in ("signo", "sueno", "carta") if data.get(k) is not None}
+    seeds = fortune_run.deal_seeds(state, data, has=has)
+    recent = list(state.data.get("recent", []))[-fortune_run.FortuneRun.RECENT:]
     f = fortune_run.fortune_of(data, nombre=nombre, lugar=place_of(cfg, visitor), casa=house,
-                               pistas=accepted_cues(cues)[0])   # as the act: refused ones never lit
-    tag = fortune_run.reading_request(llm, cfg.fortune.rules, f, deck)
+                               pistas=accepted_cues(cues)[0],   # as the act: refused ones never lit
+                               seeds=seeds, hoy=fortune.today_words(now), evita=recent)
+    tag = fortune_run.reading_request(llm, cfg.fortune.rules, f, deck,
+                                      thinking=thinking or cfg.fortune.thinking)
     raw = llm.reply(tag, remember=False)
     seconds = getattr(llm, "last_latency_s", 0.0)
     error = llm.last_error
@@ -321,10 +344,22 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
     if seconds > cfg.fortune.reading_s:
         problems.append(f"{seconds:.1f} s > {cfg.fortune.reading_s:g} s: would fall back "
                         f"to clips")
+    if text and not error:                       # as the act: a said reading is remembered
+        state.data["recent"] = (recent + [fortune.opening(text)])[-fortune_run.FortuneRun.RECENT:]
     used, unused = coverage(cues, [spoken])
     return {"answers": answers, "tag": tag, "reading": spoken, "said": text, "s": seconds,
             "error": error, "usage": getattr(llm, "last_usage", None), "problems": problems,
             "used": used, "unused": unused}
+
+
+def variety(readings: list[str]) -> str:
+    """The readings' variety in one line: distinct openings (the first OPENING_WORDS words,
+    folded) and how many readings use each stale phrase."""
+    openings = {" ".join(_fold(r).split()[:OPENING_WORDS]) for r in readings}
+    stale = {p: sum(bool(re.search(rf"\b{p}", _fold(r))) for r in readings) for p in STALE}
+    used = ", ".join(f"{p!r} {n}" for p, n in stale.items() if n) or "none"
+    return (f"variety: {len(openings)} distinct openings in {len(readings)} readings; "
+            f"stale phrases: {used}")
 
 
 def _print_visit(i: int, profile: str, rec: dict) -> None:
@@ -376,6 +411,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("script", type=Path)
     ap.add_argument("--profiles", default="claude", help="comma-separated LLM profiles (default claude)")
     ap.add_argument("--only", type=int, help="run only visitor N (from 1)")
+    ap.add_argument("--thinking", choices=("disabled", "adaptive", "between_tools"),
+                    help="the thinking of every call, the visit's and the reading's (default: "
+                         "the profile's for the visit, cfg.fortune.thinking for the reading)")
+    ap.add_argument("--repeat", type=int, default=1,
+                    help="run the visitors N times over (the collapse check: --only 3 --repeat 20)")
     args = ap.parse_args(argv)
 
     try:
@@ -396,15 +436,20 @@ def main(argv: list[str] | None = None) -> int:
     visitors = parse_script(args.script.read_text(encoding="utf-8"))
     if args.only:
         visitors = [visitors[args.only - 1]]
+    visitors = visitors * max(1, args.repeat)
     worst = 0
     for name in [n.strip() for n in args.profiles.split(",") if n.strip()]:
         lcfg = LLMConfig(profile=name)
+        if args.thinking:
+            lcfg.thinking = args.thinking
         try:
             llm = make_conversation(lcfg)
         except Exception as e:                  # a missing key: name the variable only
             print(f"can't start profile {name!r}: set {lcfg.api_key_env} in .env "
                   f"({type(e).__name__})", file=sys.stderr)
             return 1
+        from fish_brain.show import ShowState
+        state = ShowState(None, seed=f"rehearse-{name}")   # one act state for the whole run
         by_stage: dict[str, list[float]] = {}
         houses = problems = readings = clean = 0
         cost = 0.0
@@ -427,7 +472,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"\n=== visitor {i} · {name} ===")
             frec = None
             if visitor["fortune"] is not None:
-                frec = run_fortune(llm, cfg, visitor, rec, seed=i)
+                frec = run_fortune(llm, cfg, visitor, rec, seed=i, state=state,
+                                   thinking=args.thinking)
                 _print_fortune(frec)
                 readings += 1
                 clean += not (frec["problems"] or frec["error"])
@@ -444,6 +490,8 @@ def main(argv: list[str] | None = None) -> int:
               f"{readings} readings clean and in time; {problems} problem(s); cost ${cost:.4f}")
         print(f"    words per reply: visit median {_median(reply_words)}, "
               f"reading median {_median(reading_words)}")
+        if reading_texts:
+            print("    " + variety([t for _i, t in reading_texts]))
         for label, items in (("verdicts", verdicts), ("readings", reading_texts)):
             rep = repeats([t for _i, t in items])
             if rep:

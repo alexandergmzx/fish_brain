@@ -88,11 +88,11 @@ def test_the_cost_of_a_claude_call_comes_from_its_profile_prices():
 # ---- the fortune block, coverage, banned words, repeats, refused cues ------------------------
 def test_parse_script_reads_a_fortune_block_and_the_place():
     text = ("lugar: casa\npistas: edad=adulto\nHola\nfortuna:\nfecha: Tres de marzo.\n"
-            "sueño: Soñé con agua.\nanimal: Un gato.\n")
+            "sueño: Soñé con agua.\ndeseo: Venganza.\ncarta: Sí.\n")
     v = hat_rehearse.parse_script(text)[0]
     assert v["place"] == "casa" and v["steps"] == [("cues", {"edad": "adulto"}), ("say", "Hola")]
     assert v["fortune"] == [("fecha", "Tres de marzo."), ("sueno", "Soñé con agua."),
-                            ("animal", "Un gato.")]
+                            ("deseo", "Venganza."), ("carta", "Sí.")]
 
 
 def test_a_bad_fortune_line_is_named():
@@ -160,20 +160,47 @@ def test_a_fortune_block_runs_the_acts_steps(monkeypatch):
     visitor = {"place": "fiesta", "fortune": [
         ("fecha", "Diecisiete de junio."), ("sueno", "Soñé que flotaba."),
         ("sueno", "Soñé con mi tío y un rebaño de borreguitos."), ("sueno", "otra vez"),
-        ("taza", "un corazón"), ("animal", "Un perrito xoloitzcuintle.")]}
+        ("deseo", "Que regrese mi ex."), ("carta", "Sí."), ("taza", "un corazón")]}
     vrec = {"house": "Hufflepuff", "first": "Albert", "cues": {"lleva": "capa negra"}}
     rec = hat_rehearse.run_fortune(llm, cfg, visitor, vrec, seed=1,
                                    now=datetime(2026, 10, 27, tzinfo=timezone.utc))
     kinds = [(a["q"], a["kind"]) for a in rec["answers"]]
     assert kinds[0] == ("fecha", "sign")
-    assert kinds[3] == ("sueno", "not asked again") and kinds[4] == ("taza", "not asked (off)")
+    assert kinds[3] == ("sueno", "not asked again") and kinds[-1] == ("taza", "not asked (off)")
     assert llm.extra_rules == cfg.fortune.rules and llm.resets == 1
     tag = llm.sent[0]
     assert tag == rec["tag"] and tag.startswith("[ADIVINACIÓN: nombre=Albert; lugar=fiesta;")
     assert "casa=Hufflepuff" in tag and "luna=" in tag and "palabra=" in tag
     assert kinds[1] == ("sueno", "theme") and 'sueño=volar ("Soñé que flotaba.")' in tag
-    assert kinds[-1] == ("animal", "free") and "animal=un perrito xoloitzcuintle" in tag
-    assert tag.endswith("pistas=lleva: capa negra] Haz la lectura.")
+    assert kinds[4] == ("deseo", "wish") and 'deseo=amor ("Que regrese mi ex.")' in tag
+    assert kinds[5] == ("carta", "draw") and "la saqué yo" in tag
+    assert "hoy=martes 27 de octubre" in tag
+    assert "pistas=lleva: capa negra; visión=" in tag and "; forma=" in tag
+    assert tag.endswith("] Haz la lectura.")
     assert "would fall back to clips" in " ".join(rec["problems"])
     assert not any("death" in p for p in rec["problems"])      # no word list (ADR 0025)
     assert rec["used"] == ["lleva"]
+
+
+def test_variety_counts_openings_and_stale_phrases():
+    line = hat_rehearse.variety(["Escorpio, tú no perdonas. Esta noche sí.",
+                                 "Escorpio, tú no olvidas.", "Suelta la quijada, que la energía…"])
+    assert line.startswith("variety: 2 distinct openings in 3 readings")
+    assert "'esta noche' 1" in line and "'energia' 1" in line
+
+
+def test_the_act_state_carries_the_draws_and_the_openings_across_visitors(monkeypatch):
+    from fish_brain.show import ShowState
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+    monkeypatch.delenv("FISH_FORTUNE_DECK", raising=False)
+    cfg = Config()
+    state = ShowState(None, seed="r")
+    visitor = {"place": "fiesta", "fortune": [("deseo", "Dinero."), ("carta", "Sí.")]}
+    cards = []
+    for i in range(3):
+        llm = ScriptLLM([f"Lectura número {i} y algo más. Tu palabra mágica es X."])
+        rec = hat_rehearse.run_fortune(llm, cfg, visitor, None, seed=i, state=state)
+        cards.append(rec["answers"][1]["value"])
+        if i:
+            assert "evita=Lectura número 0" in rec["tag"] and f"Lectura número {i - 1}" in rec["tag"]
+    assert len(set(cards)) == 3

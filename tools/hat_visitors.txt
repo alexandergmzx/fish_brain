@@ -4,6 +4,9 @@
 # starts a new visitor. Cue values today's code refuses (pareja, escéptico, fiestero, joven,
 # mayor, disfraz) are reported by the rehearsal and not sent.
 
+# Since ADR 0026 (2026-10-29) the animal is gone: each fortune has a wish (deseo) and the card
+# is a yes (the hat draws), a card named (the visitor's deck) or a no.
+
 # 1 his visit, 2026-10-27 (the cues as he set them; the costume note is not his joke text)
 pistas: edad=adulto; compania=amigos; color=amarillo; impresion=sonriente; lleva=capa negra
 Hola, soy Albert.
@@ -12,7 +15,8 @@ Toco la puerta.
 fortuna:
 fecha: Diecisiete de junio.
 sueno: Soñé con mi tío que se murió y tenía un rebaño de borreguitos.
-animal: Un perrito xoloitzcuintle.
+deseo: Que me vaya bien con mi novia.
+carta: Sí, porfa.
 
 # 2 a couple at a party
 lugar: fiesta
@@ -23,8 +27,8 @@ Que no se acabe la noche.
 fortuna:
 fecha: Tres de marzo.
 sueno: Soñé que se me caían los dientes.
+deseo: Amor, aunque ya lo tenemos.
 carta: La luna.
-animal: Un gato negro.
 
 # 3 a sceptic
 pistas: edad=mayor; compania=solo; impresion=escéptico
@@ -34,8 +38,9 @@ Pues una cerveza.
 fortuna:
 fecha: Escorpión.
 sueno: No me acuerdo.
+deseo: Dinero, ya que estamos.
 carta: La que sea.
-animal: Ninguno.
+carta: Bueno, sí.
 
 # 4 a smiling adult in a costume
 pistas: edad=adulto; impresion=sonriente; disfraz=tenebroso; color=morado; lleva=maquillaje de catrina
@@ -45,8 +50,8 @@ Los muertos me caen bien.
 fortuna:
 fecha: Veintinueve de febrero.
 sueno: Soñé que volaba sobre un panteón.
+deseo: Venganza contra mi ex.
 carta: El diablo.
-animal: Un murciélago.
 
 # 5 one-word answers
 pistas: edad=joven; impresion=tímido
@@ -56,7 +61,8 @@ Abrir.
 fortuna:
 fecha: Mayo.
 sueno: Agua.
-animal: Búho.
+deseo: Salud.
+carta: Sí.
 
 # 6 a sad one: a dead relative
 pistas: edad=adulto; compania=familia
@@ -66,8 +72,8 @@ La extraño mucho.
 fortuna:
 fecha: Doce de diciembre.
 sueno: Soñé con mi abuela, me abrazaba en su cocina.
-carta: La estrella.
-animal: Un gato.
+deseo: Salud para mi familia.
+carta: No, gracias, no me gustan esas cosas.
 
 # 7 a rude one
 pistas: edad=joven; compania=amigos; impresion=fiestero
@@ -78,7 +84,8 @@ fortuna:
 fecha: Qué te importa.
 fecha: Ya te dije que no.
 sueno: Soñé que te echaba al fuego, sombrero.
-animal: Una rata.
+deseo: Que te calles.
+carta: No.
 
 # 8 the robot question
 pistas: edad=adulto; impresion=curioso; nota=trabaja en sistemas
@@ -88,8 +95,8 @@ Programar cosas.
 fortuna:
 fecha: Primero de enero.
 sueno: Soñé que mi computadora hablaba.
+deseo: Un trabajo nuevo.
 carta: El mago.
-animal: Un sapo.
 
 # 9 at the house, on the night of the dead
 lugar: casa
@@ -100,8 +107,8 @@ A mi esposo, que ya se fue.
 fortuna:
 fecha: Dos de noviembre.
 sueno: Soñé con flores de cempasúchil por todo el patio.
+deseo: Salud.
 carta: La estrella.
-animal: Un búho.
 
 # 10 a badge, friends, a funny costume
 gafete: Laura
@@ -112,7 +119,8 @@ Me molesta más aburrirme.
 fortuna:
 fecha: Veinte de agosto.
 sueno: Soñé que llegaba tarde a un examen.
-animal: Gato.
+deseo: Amor.
+carta: Sí, échamela.
 
 # 11 a professor at the university, not a student
 lugar: universidad
@@ -123,4 +131,5 @@ La estudio primero y luego la abro.
 fortuna:
 fecha: Nueve de septiembre.
 sueno: Soñé que daba clase en un salón vacío.
-animal: Un cuervo.
+deseo: Que mis alumnos lean.
+carta: Bueno, a ver.
