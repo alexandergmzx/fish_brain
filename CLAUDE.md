@@ -258,6 +258,9 @@ without `evdev` or `msgpack`.
 
 - Alexander runs every `sudo` step, flashes the MCU, changes router units and Wi-Fi profiles,
   and pushes. Give him the command and what it changes.
+- Exception (his word, 2026-10-28): when he asks, Claude copies a Wi-Fi profile from his laptop
+  to the board, secrets included. The secret moves machine to machine only: never in a command
+  line, a log, a doc, a commit or the chat.
 - Claude runs everything else, including read-only checks on the board over ssh, and reports.
 - **`apt update` always comes before `apt install`**, in commands handed to him and in every
   doc and script (his word, 2026-10-10).

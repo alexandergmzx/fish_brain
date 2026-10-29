@@ -286,6 +286,20 @@ with nobody logged in. No `sudo` on this image. Saving does not need the phone t
 not drop your ssh session; `connect` (or `nmcli connection up fish-hotspot`) does drop it if you
 came in over the home Wi-Fi.
 
+The university network `Tec` (WPA2-Enterprise: PEAP, MSCHAPv2, no CA certificate, his account)
+was copied from his laptop on 2026-10-28 with priority 5, below the hotspot: the board joins it
+only when the hotspot is off. The identity and password went through ssh's standard input into
+`nmcli connection edit Tec`, never in a command line. Again from the laptop:
+
+```bash
+ssh arduino@segunda.local 'nmcli connection add type wifi con-name Tec ifname wlan0 ssid Tec \
+    wifi-sec.key-mgmt wpa-eap 802-1x.eap peap 802-1x.phase2-auth mschapv2 \
+    802-1x.identity placeholder connection.autoconnect-priority 5'
+{ printf 'set 802-1x.identity %s\n' "$(nmcli -g 802-1x.identity connection show Tec)"
+  printf 'set 802-1x.password %s\n' "$(nmcli --show-secrets -g 802-1x.password connection show Tec)"
+  printf 'save\nquit\n'; } | ssh arduino@segunda.local 'nmcli connection edit Tec >/dev/null'
+```
+
 On the hotspot, open the page from the phone at `http://segunda.local:8723/?token=<FISH_VIZ_TOKEN>`
 or, where `.local` does not resolve, at `http://<board ip>:8723/?token=<FISH_VIZ_TOKEN>`.
 An Android phone that is itself the hotspot most likely cannot resolve `.local` (its own network is
