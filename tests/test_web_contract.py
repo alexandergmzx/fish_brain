@@ -435,3 +435,23 @@ def test_the_hardware_taps_are_pessimistic_and_symmetric():
     assert "if (ph && armedByTap[part] && ((failed && !out.ok) || (!failed && out.ok)))" in block
     assert "(!failed || !out.ok)" not in block      # a refused clear leaves the phone on
     assert "const armedByTap = { speaker: false, mic: false };" in js
+
+
+def test_the_ticket_sits_after_the_last_fortune_and_its_toggle_beside_the_cup():
+    html = (WEB_DIR / "debug.html").read_text(encoding="utf-8")
+    visit = _panel(html, "visit")
+    order = [visit.index(x) for x in ('id="fortuneBtn"', 'id="fortuneLast"', 'id="ticketRow"', 'id="reprintBtn"',
+                                      'id="ticketLine"', 'id="cVisit"', 'id="cupBtn"', 'id="ticketBtn"', 'id="actMsg"')]
+    assert order == sorted(order)
+    assert re.search(r'<div class="picks" id="ticketRow" hidden>', visit)
+    assert re.search(r'id="ticketBtn" data-fortune="ticket" aria-pressed="false" hidden>', visit)
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    block = js[js.index("const fortuneRow = guard("):js.index("const phoneMic = guard(")]
+    assert 'post("/fortune", { action: "reprint" })' in block and 'explain(out, "the printer")' in block
+    assert "ticket(r) {" in block and "status(page, tab, printer) {" in block
+    assert 'case "ticket": fortuneRow.ticket(r); break;' in js
+    assert "fortuneRow.status(page, tab, S.state.printer)" in js
+    assert '"printing": "a ticket is printing: wait for it"' in js and '"no ticket yet": "no fortune has ended yet"' in js
+    setup = _fn(js, "function renderSetup() {")
+    assert '$("ticketBtn").hidden = !prn.present;' in setup and 'switchValue("fortune_ticket")' in setup
+    assert 'setFromTap("fortune_ticket", on)' in js

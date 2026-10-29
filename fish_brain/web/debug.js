@@ -109,7 +109,8 @@
   const PHONE = matchMedia("(max-width: 700px)");
   // One sentence for every refusal a POST can bring back (docs/debug.md): the status first, then
   // the server's `why` or `error`. `what` names the act a 503 says is off ("the fortune").
-  const WHY = { "visit open": "finish the visit first (or Force a house)" };
+  const WHY = { "visit open": "finish the visit first (or Force a house)",
+                "printing": "a ticket is printing: wait for it", "no ticket yet": "no fortune has ended yet" };
   const BUSY = { recording: "the hat is recording", speaking: "the hat is speaking",
                  "a phone is the microphone": "a phone is the microphone", "link off": "the motor link is off",
                  "test running": "a test is running" };
@@ -270,6 +271,7 @@
                     if (live) fish.listening(); mark("pipe"); wakeLevel(); break;
       case "action": case "http": push(S.acts, r, CAP.act); mark("clients"); break;
       case "llm": case "stt": case "tts": push(S[r.kind], r, 50); mark("model"); break;
+      case "ticket": fortuneRow.ticket(r); break;
       case "visitor":                              // a new visitor: the earlier one's records go
         S.llm = []; S.stt = []; S.tts = []; S.modelOnly = null; S.openCalls.clear();
         mark("model"); break;
@@ -612,7 +614,7 @@
       const page = S.state.page && !S.state.page.error ? S.state.page : {};
       const tab = S.state.show_tab && !S.state.show_tab.error ? S.state.show_tab : {};
       visitRow.status(page);
-      fortuneRow.status(page, tab);
+      fortuneRow.status(page, tab, S.state.printer);
       phoneMic.status(page, dev());
       phoneSpeaker.status(dev());
       if (page.visit && !S.visit) { S.visit = page.visit; fish.visit(page.visit, false); visitRow.view(page.visit); }
@@ -747,6 +749,11 @@
     pressed('[data-fortune="deck"]', (b) => b.dataset.val === deck);
     const cup = switchValue("fortune_cup");
     $("cupBtn").setAttribute("aria-pressed", (cup !== undefined ? cup : ft.cup) ? "true" : "false");
+    // The ticket's toggle only where a printer was made at start-up (st.printer.present).
+    const prn = st.printer && !st.printer.error ? st.printer : {};
+    $("ticketBtn").hidden = !prn.present;
+    const tk = switchValue("fortune_ticket");
+    $("ticketBtn").setAttribute("aria-pressed", (tk !== undefined ? tk : prn.tickets) ? "true" : "false");
   }
   setInterval(() => mark("panels"), 5000);      // the stale check runs even when nothing arrives
   let volDragging = false, volTimer = 0;
@@ -801,6 +808,11 @@
     const on = $("cupBtn").getAttribute("aria-pressed") !== "true";
     $("cupBtn").setAttribute("aria-pressed", on ? "true" : "false");
     setFromTap("fortune_cup", on);
+  });
+  $("ticketBtn").addEventListener("click", () => {
+    const on = $("ticketBtn").getAttribute("aria-pressed") !== "true";
+    $("ticketBtn").setAttribute("aria-pressed", on ? "true" : "false");
+    setFromTap("fortune_ticket", on);
   });
   // Hardware he marks failed. Marking the speaker or the microphone failed also arms this phone
   // for it in the same tap (a browser lets sound and the microphone start only from a tap).
@@ -1851,6 +1863,8 @@
   const fortuneRow = guard("fortune", () => {
     const row = $("fortuneRow"), btn = $("fortuneBtn"), q = $("fortuneQ"), heard = $("fortuneHeard");
     const data = $("fortuneData"), last = $("fortuneLast");
+    const tRow = $("ticketRow"), tLine = $("ticketLine"), reprintBtn = $("reprintBtn");
+    let tBusy = false, tAt = 0;
     let open = false, ready = false, wantOpen = false, btnTimer = 0, still = false, label = "🔮 Fortune";
     function refuse(out) {
       msg(null, "fortune: " + explain(out, "the fortune"), 6000, true);
@@ -1887,6 +1901,28 @@
       last.textContent = l.n ? "last fortune: " + (got.length ? got.join(" · ") : "nothing heard") + (l.mode ? " (" + (l.mode === "llm" ? "model" : l.mode) + ")" : "") : "";
       paint();
     }
+    // The ticket (printer.py): a "ticket" record live, the printer's snapshot on each state; the
+    // newer of the two wins. Reprint waits while one is on its way.
+    const TICKET_EN = { queued: "waiting", connecting: "connecting…", printing: "printing…" };
+    function ticketText(x) {
+      const what = (x.reprint ? "reprint #" : "ticket #") + x.n;
+      if (TICKET_EN[x.state]) return what + ": " + TICKET_EN[x.state];
+      if (x.state === "printed") return what + " printed" + (x.seconds ? " (" + x.seconds + " s)" : "");
+      if (x.state === "failed") return what + " failed" + (x.why ? ": " + x.why : "") + " · Reprint when it is back";
+      return "";
+    }
+    function ticketPaint(x) {
+      tBusy = !!TICKET_EN[x.state];
+      reprintBtn.disabled = tBusy;
+      tLine.classList.toggle("warn-text", x.state === "failed");
+      tLine.textContent = x.n ? ticketText(x) : x.reach === false ? "printer not reachable" : "";
+    }
+    reprintBtn.addEventListener("click", async () => {
+      if (reprintBtn.disabled) return;
+      reprintBtn.disabled = true;
+      const out = await post("/fortune", { action: "reprint" });
+      if (!out.ok) { reprintBtn.disabled = tBusy; msg(null, "reprint: " + explain(out, "the printer"), 6000, true); }
+    });
     function view(f, v) {
       if (still) return;
       if (f === undefined) f = S.fortune;          // an event without the key: the last view stays
@@ -1929,16 +1965,20 @@
       if (f.stage === "reading") fish.foresee(f.data.signo);
     }
     return {
-      status(page, tab) {
+      status(page, tab, printer) {
         if (still) return;
         btn.hidden = !page.fortune_enabled;
+        const p = printer && !printer.error ? printer : {};
+        tRow.hidden = !p.present || !page.fortune_enabled;
+        if (p.present && performance.now() - tAt > 2000) ticketPaint(p);   // a record just now is newer
         const ft = tab && tab.fortune;
         ready = !!ft && (typeof ft.ready === "boolean" ? ft.ready : typeof ft.ready === "number" && !(ft.lines && ft.ready < ft.lines));
         paint();
       },
       view,
+      ticket(r) { tAt = performance.now(); ticketPaint(r); },
     };
-  }, { status() {}, view() {} });
+  }, { status() {}, view() {}, ticket() {} });
 
   // ---- the phone's microphone: off unless he turns it on (the Voice tab) --------------------------
   // On: the permission prompt (inside the tap), then the board is told to take recordings from

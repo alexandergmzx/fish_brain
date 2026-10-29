@@ -262,6 +262,9 @@
                          its lines are rendered, off while one is open. -->
                     <button id="fortuneBtn" type="button" class="act" hidden>🔮 Fortune</button>
                     <span id="fortuneLast" class="note"></span>
+                    <!-- The fortune's ticket (printer.py): the last ticket's state, and Reprint (the
+                         last ticket again, even with tickets off). Hidden without a printer. -->
+                    <div class="picks" id="ticketRow" hidden><button type="button" class="pick" id="reprintBtn">🎫 Reprint</button><span id="ticketLine" class="note" role="status" aria-live="polite"></span></div>
                     <!-- The hat's visit (visit.py): the cues the hat turns into "visions". A lit chip
                          is what the hat knows about this visitor: every turn carries it until the
                          act closes; the row draws what the server holds. The labels are English,
@@ -285,7 +288,7 @@
                         <span id="readMsg" class="note" role="status" aria-live="polite"></span>
                     </div>
                     <!-- The evening's place and the fortune's extras (switches: place, place_text,
-                         fortune_deck, fortune_cup); a restart brings back .env. Refusals go to #actMsg. -->
+                         fortune_deck, fortune_cup, fortune_ticket); a restart brings back .env. Refusals go to #actMsg. -->
                     <h3>Place <small>where the hat is tonight: the intro and the closing follow it</small></h3>
                     <div class="picks" role="group" aria-label="Place"><button type="button" class="pick" data-place="casa">Home</button><button type="button" class="pick" data-place="fiesta">Party</button><button type="button" class="pick" data-place="universidad">University</button><button type="button" class="pick" data-place="otro">Other</button></div>
                     <div id="placeOther" hidden>
@@ -294,7 +297,7 @@
                     </div>
                     <h3>Fortune <small>the extras the hat asks for</small></h3>
                     <div class="picks" role="group" aria-label="Deck"><button type="button" class="pick" data-fortune="deck" data-val="tarot">Tarot deck</button><button type="button" class="pick" data-fortune="deck" data-val="off">No deck</button><button type="button" class="pick" disabled title="a lotería deck comes later">Lotería (later)</button></div>
-                    <div class="picks"><button type="button" class="pick" id="cupBtn" data-fortune="cup" aria-pressed="false">☕ Read the cup</button></div>
+                    <div class="picks"><button type="button" class="pick" id="cupBtn" data-fortune="cup" aria-pressed="false">☕ Read the cup</button><button type="button" class="pick" id="ticketBtn" data-fortune="ticket" aria-pressed="false" hidden>🎫 Print the ticket</button></div>
                     <span id="actMsg" class="note" role="status" aria-live="polite"></span>
                 </div>
                 <div class="panel" id="p-checks">
