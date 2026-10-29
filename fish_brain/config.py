@@ -7,6 +7,7 @@ from the environment / .env so you don't have to edit code for the common ones.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -936,6 +937,7 @@ class FortuneConfig:
         "FISH_FORTUNE_STATE", str(Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
                                   / "fish_brain" / "fortune.json")))
     rules: str = field(default_factory=_fortune_rules)
+    ticket: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_TICKET", True))   # the ticket at the closing line, when a printer is set
 
 
 @dataclass
@@ -966,6 +968,41 @@ class RecordConfig:
     beat_s: float = field(default_factory=lambda: _env_float("FISH_RECORD_BEAT_S", 60.0))
 
 
+_MAC = re.compile(r"^([0-9A-F]{2}:){5}[0-9A-F]{2}$")
+
+
+@dataclass
+class PrinterConfig:
+    """The fortune's ticket printer (printer.py): empty = none (the laptop), `mock` = the
+    stand-in that logs the ticket as text, or the printer's Bluetooth address (RFCOMM).
+    Its pacing and timeouts are the printer's own: constants in printer.py, not settings."""
+    device: str = field(default_factory=lambda: _env("FISH_PRINTER", ""))
+    channel: int = field(default_factory=lambda: _env_int("FISH_PRINTER_CHANNEL", 1))
+
+    def kind(self) -> str:
+        """off | mock | rfcomm | bad. A bad value turns the printer off, never the fish."""
+        d = self.device.strip()
+        if not d:
+            return "off"
+        if d.lower() == "mock":
+            return "mock"
+        if _MAC.match(self.mac) and 1 <= self.channel <= 30:
+            return "rfcomm"
+        return "bad"
+
+    @property
+    def mac(self) -> str:
+        return self.device.strip().upper()
+
+    def problem(self) -> str:
+        """Why the setting is unusable, or "" (off is not a problem)."""
+        if self.kind() != "bad":
+            return ""
+        if not _MAC.match(self.mac):
+            return f"FISH_PRINTER={self.device.strip()!r} is neither a Bluetooth address nor mock"
+        return f"FISH_PRINTER_CHANNEL={self.channel} is not an RFCOMM channel (1 to 30)"
+
+
 @dataclass
 class Config:
     serial: SerialConfig = field(default_factory=SerialConfig)
@@ -988,6 +1025,7 @@ class Config:
     audio: AudioConfig = field(default_factory=AudioConfig)
     fortune: FortuneConfig = field(default_factory=FortuneConfig)
     place: PlaceConfig = field(default_factory=PlaceConfig)
+    printer: PrinterConfig = field(default_factory=PrinterConfig)
 
 
 def load() -> Config:
