@@ -142,3 +142,9 @@ month as the fallback; a sign alone gives no lucky number (the tag and the clips
 `fortune.banned_in` no longer flags a year, a clock time, `edad` or `años`; the illness,
 death-as-event, sex, religion and lottery words stay. The fortune's rules name the castle as
 the world and the season as a pinch ([results](../results/2026-10-28-short-turns-in-the-castle.md)).
+
+## Amendment, 2026-10-28 (ADR 0024)
+
+With `FISH_PRINTER` set, the reading also goes home on a ticket, handed to the printer as the
+closing line starts, one an act; `FISH_FORTUNE_TICKET` and the Visit tab's switch turn it off
+([0024](0024-the-fortunes-ticket.md)).
