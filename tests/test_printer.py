@@ -198,6 +198,45 @@ def test_a_printer_that_never_answers_fails_after_late_s(rig, capsys):
     assert "ticket #0 failed: not reachable" in err
 
 
+def test_late_s_counts_from_the_hand_over_not_from_the_pick_up(rig):
+    port = PairPort(fail=10_000)
+    p = rig(port)
+    t0 = time.monotonic()
+    assert p.submit(ticket.sample(0))
+    assert wait_for(lambda: port.opened == 1)
+    assert p.submit(ticket.sample(1))                         # queued behind the first
+    assert p.wait(3)
+    took = time.monotonic() - t0
+    assert took < FAST.late_s + 0.5                            # not two windows end to end
+    assert p.snapshot()["failed"] == 2
+
+
+def test_a_ticket_queued_past_late_s_fails_without_a_connect(rig):
+    port = PairPort()
+    held = threading.Event()
+    real = port.open
+    timeouts = []
+
+    def slow(timeout):
+        timeouts.append(timeout)
+        if len(timeouts) == 1:
+            held.wait(3)
+            raise ConnectionRefusedError(111, "Connection refused")
+        return real(timeout)
+    port.open = slow
+    p = rig(port, timing=printer.Timing(**{**FAST.__dict__, "connect_s": 5.0}))
+    assert p.submit(ticket.sample(0))
+    assert wait_for(lambda: timeouts)
+    assert timeouts[0] <= FAST.late_s                          # capped by what is left
+    assert p.submit(ticket.sample(1))
+    time.sleep(FAST.late_s + 0.1)
+    held.set()
+    assert p.wait(3)
+    snap = p.snapshot()
+    assert len(timeouts) == 1                                  # the second never connected
+    assert snap["failed"] == 2 and snap["why"] == "late"
+
+
 def test_no_bluetooth_sockets_fail_at_once_with_the_hint(monkeypatch, rig):
     monkeypatch.delattr(socket, "AF_BLUETOOTH", raising=False)
     with pytest.raises(RuntimeError, match="FISH_PRINTER=mock"):

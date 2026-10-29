@@ -15,7 +15,8 @@ standby while connected.
     printer.close()                          wakes the worker, joins 1 s at most
 
 Failure policy: each connect is bounded by CONNECT_S and retried every RETRY_S until LATE_S
-after the ticket was handed over; a stall or a drop mid-ticket fails with no resend (there is
+after the ticket was handed over (time queued behind another job counts, and no connect runs
+past it); a stall or a drop mid-ticket fails with no resend (there is
 no cutter, the paper would come out twice): Reprint is the human retry. A reason is logged
 once until it changes.
 
@@ -107,6 +108,10 @@ def _close(sock) -> None:
 
 class _Stopped(Exception):
     pass
+
+
+class _Late(Exception):
+    """LATE_S after the hand-over has passed before a connect could start."""
 
 
 # ---- ports: how a connection is made -----------------------------------------------------------
@@ -262,7 +267,7 @@ class Printer:
             if not self._thread.is_alive() or self._stop.is_set():
                 return False
             try:
-                self._q.put_nowait(("ticket", t, False))
+                self._q.put_nowait(("ticket", t, False, time.monotonic()))
             except queue.Full:
                 return False
             self._busy += 1
@@ -283,7 +288,7 @@ class Printer:
             if self._busy:
                 return False, "printing"
             try:
-                self._q.put_nowait(("ticket", t, True))
+                self._q.put_nowait(("ticket", t, True, time.monotonic()))
             except queue.Full:
                 return False, "printing"
             self._busy += 1
@@ -302,7 +307,7 @@ class Printer:
                     and time.monotonic() - self._contact < self.timing.probe_s):
                 return False
             try:
-                self._q.put_nowait(("probe", None, False))
+                self._q.put_nowait(("probe", None, False, 0.0))
             except queue.Full:
                 return False
             self._probing = True
@@ -364,12 +369,12 @@ class Printer:
                 continue
             if job is None:
                 break
-            kind, t, again = job
+            kind, t, again, at = job
             try:
                 if kind == "probe":
                     self._probe()
                 else:
-                    self._print(t, again)
+                    self._print(t, again, at)
             except Exception as e:         # a bug must not kill the worker
                 _log(f"worker error: {type(e).__name__}: {e}")
                 if kind == "ticket":
@@ -391,10 +396,16 @@ class Printer:
         if seconds > 0 and self._stop.wait(seconds):
             raise _Stopped
 
-    def _open(self):
-        """One connect attempt, after the reopen gap. Returns the connection."""
+    def _open(self, deadline: float | None = None):
+        """One connect attempt, after the reopen gap, bounded by CONNECT_S and by `deadline`
+        (monotonic) when one is given. Returns the connection."""
         self._pause(self.timing.reopen_s - (time.monotonic() - self._closed_at))
-        conn = self.port.open(self.timing.connect_s)
+        limit = self.timing.connect_s
+        if deadline is not None:
+            limit = min(limit, deadline - time.monotonic())
+            if limit <= 0:
+                raise _Late
+        conn = self.port.open(limit)
         with self._lock:
             self._conn = conn
         if self._stop.is_set():
@@ -431,7 +442,9 @@ class Printer:
         self._release(conn)
         self._contacted(True)
 
-    def _print(self, t: ticket.Ticket, again: bool) -> None:
+    def _print(self, t: ticket.Ticket, again: bool, at: float) -> None:
+        """`at` is the monotonic time of the hand-over: the time queued behind another job
+        counts toward LATE_S."""
         t0 = time.monotonic()
         blocks = ticket.layout(t, art_root=self.art_root)
         parts = ticket.encode(blocks)
@@ -440,14 +453,18 @@ class Printer:
             self._set(state="connecting", n=t.n, why="", reprint=again, bytes=size,
                       seconds=0.0, connect_s=0.0)
         self._emit(t.n, "connecting", reprint=again, bytes=size)
-        deadline = t0 + self.timing.late_s
+        deadline = at + self.timing.late_s
         conn = None
+        why = ""
         while conn is None:
             c0 = time.monotonic()
             try:
-                conn = self._open()
+                conn = self._open(deadline)
             except _Stopped:
                 return self._done(t, again, t0, "failed", "stopped")
+            except _Late:                  # queued past the limit, or no time left to connect
+                return self._done(t, again, t0, "failed",
+                                  f"not reachable ({why})" if why else "late")
             except RuntimeError as e:      # no Bluetooth sockets: retrying cannot help
                 self._contacted(False, str(e))
                 return self._done(t, again, t0, "failed", str(e))
