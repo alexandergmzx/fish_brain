@@ -147,3 +147,11 @@ closing line starts, one an act; `FISH_FORTUNE_TICKET` and the Visit tab's switc
 
 No censoring: the word list, its checks and the forbidden topics in the rules are gone
 ([0025](0025-no-censoring.md)).
+
+## Amendment, 2026-10-29 (ADR 0026)
+
+The animal is gone; the wish ("¿Qué le vienes a pedir a la Muerte?") comes after the dream, and
+the card is a question: a card named from his deck, or on a yes one the hat draws itself. In
+model mode an answer gets a short beat and the model reads the meaning once, from a tag with the
+act's seeds; the reading is a roast and does not think
+([0026](0026-the-reading-roasts.md)).

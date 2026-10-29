@@ -66,3 +66,9 @@ a bank of questions of 10 words or fewer; two short lines and a question (30 wor
 reading turn, 55 words for the verdict; the age may be said, a named place only when the
 visitor said it. Haiku keeps the short questions and the castle and ignores the word counts
 (34 to 47 words a turn: [results](../results/2026-10-28-short-turns-in-the-castle.md)).
+
+## Amendment, 2026-10-29 (ADR 0026)
+
+The fortune has no animal any more (decision 4's animal part is superseded). The fortune's
+reading runs with thinking disabled; the visit's turns keep thinking at effort low
+([0026](0026-the-reading-roasts.md)).

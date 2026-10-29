@@ -353,8 +353,9 @@ nothing of them reaches `/status` or `/face`.
   the fortune's: `{"on": true, "ready", "open", "deck", "cup", "place", "last": {n, mode, why,
   data}}` always, and while an act is open `n`, `stage` (`ask` or `reading`), `q`, `of`,
   `qid`, `tries`, `question` (the text asked), `heard` (the last transcript), `data` (the said
-  forms of what is known so far: `signo`, `elemento`, `numero`, `sueno`, `carta`, `taza`,
-  `animal`, `luna`, `palabra`), `first`, `house`, `why`. A page that connects gets the **last
+  forms of what is known so far: `signo`, `elemento`, `numero`, `sueno`, `deseo`, `carta`
+  (with ", de cabeza" and "(la sacó el sombrero)" when so, or "sin carta"), `taza`, `luna`,
+  `palabra`), `first`, `house`, `why`. A page that connects gets the **last
   pushed view** replayed, with its `show` and `fortune` blocks, so an open act survives a
   reconnect; `GET /debug/state`'s `page.visit` carries the same.
 - **`POST /visit`** (a new visitor: the house act; `409 busy`, `503 no visit`), **`POST /cues
