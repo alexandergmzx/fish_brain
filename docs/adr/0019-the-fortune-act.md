@@ -57,18 +57,13 @@ line.
    the suspense clip, the number, the moon, the magic word and the closing, from the clips.
    Model: the model job starts first, then the suspense clip is said on the loop's thread, and
    the reply gets `reading_s` (8 s) from the end of the clip; a clean reply is rendered live and
-   remembered, then the closing clip. Any failure (timeout, error, a reply the filter rejects)
+   remembered, then the closing clip. Any failure (timeout, error, a reply empty or too long)
    ends on the script's clips and marks the show as the house act does. No error line, ever.
 10. **The adult register.** Spooky and cheeky: death and the calaveras as the season's guests,
     the Death and the Devil cards by name, romance and the ex, money as "fortuna" (never a
     prize), dark humour, light albures ("picarones, nunca groseros"), the naked-in-public dream
-    as comedy, a drink or a song. Still banned, in the model's rules and in every clip: illness,
-    accidents, real misfortune, explicit sex, cruelty about the body, politics, religion as
-    doctrine, prizes, the age, a year, a clock time. `fortune.BANNED` holds the words (muerte,
-    calavera and diablo pass; muerto/a(s) only inside the season's names, pan de muerto and
-    Día de Muertos; Cáncer only as the sign; a four-digit year and a clock time are hits),
-    `banned_in` checks every clip in the tests, `clean_reading` drops a model reply on a hit or
-    past six sentences or 90 words. The house act keeps its kid rules until his later pass.
+    as comedy, a drink or a song. `clean_reading` drops a model reply past six sentences or
+    90 words. *Amended 2026-10-29 ([0025](0025-no-censoring.md)): no filter, no content bans.*
 11. **The place is a setting**, not a per-visitor cue: `FISH_PLACE=casa|fiesta|universidad|otro`
     and `FISH_PLACE_TEXT` (free text, read by the model only), both on the Settings tab (on the
     Visit tab since 2026-10-27, see the amendment). The intro and the closing pools have a
@@ -115,7 +110,7 @@ A miss is the narrower re-ask, then a bridge line and the next question. The rea
   the deploy: about 10 min (estimate, from 166 clips in 681 s on 2026-10-26,
   [results](../results/2026-10-26-hat-offline-visit.md)). Fortune is greyed until then.
 - The lines are drafts, his to edit: the omens, the vision pool, the cards' meanings, the magic
-  words, the moon and number lines, the banned list.
+  words, the moon and number lines.
 - The house act's 143 kid lines keep their register until his later pass, and its model rules
   get the `lugar` line then.
 - Canary writes a spoken date as words, never digits (Loquendo-voiced clips, `../results/2026-10-27-fortune-answers-canary.md`); his voice is not yet measured; a miss costs one re-ask and the sign and
@@ -139,8 +134,7 @@ The cues reach the reading; any animal is taken as said; the dream's words are l
 His word: adults will not mind the year, the age or a clock time, and the hat may ask the
 zodiac sign outright. `fortune_q_fecha` asks "¿De qué signo eres?", the re-ask is the day and
 month as the fallback; a sign alone gives no lucky number (the tag and the clips skip it).
-`fortune.banned_in` no longer flags a year, a clock time, `edad` or `años`; the illness,
-death-as-event, sex, religion and lottery words stay. The fortune's rules name the castle as
+The fortune's rules name the castle as
 the world and the season as a pinch ([results](../results/2026-10-28-short-turns-in-the-castle.md)).
 
 ## Amendment, 2026-10-28 (ADR 0024)
@@ -148,3 +142,8 @@ the world and the season as a pinch ([results](../results/2026-10-28-short-turns
 With `FISH_PRINTER` set, the reading also goes home on a ticket, handed to the printer as the
 closing line starts, one an act; `FISH_FORTUNE_TICKET` and the Visit tab's switch turn it off
 ([0024](0024-the-fortunes-ticket.md)).
+
+## Amendment, 2026-10-29 (ADR 0025)
+
+No censoring: the word list, its checks and the forbidden topics in the rules are gone
+([0025](0025-no-censoring.md)).
