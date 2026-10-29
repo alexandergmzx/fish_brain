@@ -208,6 +208,20 @@ def _remote(hub) -> dict:
     return out
 
 
+def _printer(hub) -> dict:
+    """The ticket printer (printer.py): the setting, the fortune's ticket switch and the
+    worker's snapshot. `present` is whether a printer was made at start-up."""
+    cfg, convo = hub.cfg, hub.convo
+    pc = cfg.printer
+    out = {"setting": pc.kind(), "problem": pc.problem(), "tickets": bool(cfg.fortune.ticket)}
+    p = getattr(convo, "printer", None) if convo is not None else None
+    if p is None:
+        out["present"] = False
+        return out
+    out.update({"present": True, **p.snapshot()})
+    return out
+
+
 def _backends(hub) -> dict:
     cfg, convo = hub.cfg, hub.convo
     out = {"stt": cfg.stt.backend, "tts": cfg.tts.backend, "llm_profile": cfg.llm.profile,
@@ -512,7 +526,8 @@ def _facts(hub, st: dict, cards=None):
         online=cloud.is_online(),
         net_state=str(net.get("state", "")),
         net_connection=str(net.get("connection", "") or ""),
-        offline_ok=offline_ok)
+        offline_ok=offline_ok,
+        printer=_dict(st.get("printer")))
 
 
 def _devices(hub, st: dict, cards=None) -> list[dict]:
@@ -565,6 +580,7 @@ def build(hub) -> dict:
     except Exception:
         snd = None
     timing["sound"] = round((time.perf_counter() - t0) * 1000, 1)
+    sec("printer", lambda: _printer(hub))
     sec("devices", lambda: _devices(hub, st, cards))
     if isinstance(st["devices"], list):
         from . import devices

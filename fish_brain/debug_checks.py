@@ -5,7 +5,7 @@
 `warn` or `skip` (not applicable on this machine). Everything is read from the state the
 debug view already built, from plain files under /proc and /sys, and from a cache of what
 the sound server says. The rows about a part's presence (the USB port and devices, the
-remote's devices, the link, the internet) take their status from the device table
+remote's devices, the link, the internet, the ticket printer) take their status from the device table
 (`st["devices"]`, ADR 0021) through `devices.check_status`, so a check never disagrees with
 the Status tab; the file facts (the port node, the router's socket, the sound rows) stay
 here. That cache is filled by a one-shot thread started when a debug page
@@ -290,6 +290,16 @@ def run(st: dict, hub, root: str = "/", snd="ask", cards=None) -> list[dict]:
             "a key outside FISH_PTT_KEY arrived: see the hint and the Inputs tab")
     else:
         row("Remote", "A remote is configured", "skip", "FISH_PTT_DEVICE is empty: the page or the keyboard triggers")
+
+    # -- the ticket printer: an extra, so at worst a warning (the device table's level)
+    prn = dev.get("printer") or {}
+    if prn.get("level", "off") == "off":
+        row("Printer", "A ticket printer is set", "skip",
+            prn.get("state") if prn.get("state") == "tickets off"
+            else "FISH_PRINTER is empty: no tickets")
+    else:
+        row("Printer", "The ticket printer", devices.check_status(prn["level"]),
+            prn.get("state", ""), prn.get("fix", ""))
 
     # -- link
     link = st.get("link") or {}

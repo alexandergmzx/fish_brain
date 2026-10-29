@@ -45,6 +45,9 @@ Derivation:
 | internet | the mark, the probe, fish-net's state, whether the script covers an outage | online | marked or offline with the script covering it | marked or offline with a cloud stage in the turn path | |
 | phone_speaker | the routes, the pages that armed it, the next route | armed, or not needed | needed (no other route) and not armed | | `phone` not among the routes |
 | phone_mic | capture, the mark, the board microphone, the pages | a page ready, or not needed | needed and no page ready | | capture `host`, nothing marked or out, no page |
+| printer | FISH_PRINTER, the fortune's ticket switch, the worker's snapshot (printer.py) | not checked yet, ready, printing #n, mock | misconfigured, did not start, its worker stopped, not reachable, the last ticket stalled or dropped | never: the reading is spoken and Reprint prints it later | none configured, tickets off |
+
+`printer` is not a hardware mark (hw.PARTS): a ticket is an extra, never the act.
 """
 from __future__ import annotations
 
@@ -52,13 +55,14 @@ import fnmatch
 from dataclasses import dataclass, field
 
 IDS = ("usb_port", "usb_devices", "speaker", "mic", "remote", "motors", "internet",
-       "phone_speaker", "phone_mic")
+       "phone_speaker", "phone_mic", "printer")
 LABELS = {"usb_port": "USB port", "usb_devices": "USB devices", "speaker": "Speaker",
           "mic": "Microphone", "remote": "Remote", "motors": "Motors", "internet": "Internet",
-          "phone_speaker": "Phone speaker", "phone_mic": "Phone microphone"}
+          "phone_speaker": "Phone speaker", "phone_mic": "Phone microphone",
+          "printer": "Ticket printer"}
 TABS = {"usb_port": "board", "usb_devices": "board", "speaker": "voice", "mic": "inputs",
         "remote": "inputs", "motors": "motors", "internet": "cloud", "phone_speaker": "voice",
-        "phone_mic": "inputs"}
+        "phone_mic": "inputs", "printer": "visit"}
 LEVELS = ("ok", "warn", "bad", "off")
 ZERO_FRAC = 0.95            # a recording this much exact zeros: the microphone sent nothing
 
@@ -97,6 +101,7 @@ class Facts:
     net_state: str = ""                      # fish-net: "client", "ap", ...
     net_connection: str = ""
     offline_ok: bool = False                 # the script and local stages cover an outage
+    printer: dict = field(default_factory=dict)        # debug_state._printer ({} = none set)
 
 
 def _rec(id_, *, present=None, marked=False, dead=False, in_use=False, level="ok",
@@ -399,9 +404,45 @@ def _phone_mic(f: Facts) -> dict:
     return _rec("phone_mic", present=False, state="off (not needed)", pages=0)
 
 
+def _printer(f: Facts) -> dict:
+    p = f.printer or {}
+    setting = p.get("setting", "off")
+    if setting == "off":
+        return _rec("printer", level="off", state="none configured")
+    if setting == "bad":
+        return _rec("printer", level="warn", state="misconfigured",
+                    reason=p.get("problem") or "FISH_PRINTER is not usable",
+                    fix="set FISH_PRINTER to the printer's address (or mock) and restart")
+    if not p.get("present"):
+        return _rec("printer", level="warn", state="did not start",
+                    reason="no tickets this run", fix="see the [printer] line in the log")
+    if not p.get("tickets", True):
+        return _rec("printer", present=p.get("reach"), level="off", state="tickets off")
+    if p.get("alive") is False:
+        return _rec("printer", dead=True, level="warn", state="stopped",
+                    reason="its worker stopped: no ticket prints", fix="restart the hat")
+    n, state, why = p.get("n"), p.get("state", "idle"), p.get("why", "")
+    reach = p.get("reach")
+    if state in ("queued", "connecting", "printing"):
+        return _rec("printer", present=reach, state=f"printing #{n}" if n else "printing")
+    if reach is False:
+        return _rec("printer", present=False, level="warn", state="not reachable",
+                    reason=why or "the last connect failed",
+                    fix="is it on, charged, with paper? Reprint once it is")
+    if state == "failed" and why.startswith(("stalled", "dropped")):
+        return _rec("printer", present=True, level="warn", state=f"ticket #{n} failed",
+                    reason=why, fix="check the paper and the battery; Reprint")
+    mock = "mock: " if p.get("device") == "mock" else ""
+    if reach is None:
+        return _rec("printer", state=mock + "not checked yet")
+    printed = p.get("printed") or 0
+    return _rec("printer", present=True,
+                state=mock + "ready" + (f" · {printed} printed" if printed else ""))
+
+
 _ROWS = {"usb_port": _usb_port, "usb_devices": _usb_devices, "speaker": _speaker, "mic": _mic,
          "remote": _remote, "motors": _motors, "internet": _internet,
-         "phone_speaker": _phone_speaker, "phone_mic": _phone_mic}
+         "phone_speaker": _phone_speaker, "phone_mic": _phone_mic, "printer": _printer}
 
 
 def build(f: Facts) -> list[dict]:

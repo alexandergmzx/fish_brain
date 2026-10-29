@@ -17,7 +17,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-SHOWN = ("start", "voice", "turn", "action", "stop", "end")
+SHOWN = ("start", "voice", "turn", "action", "ticket", "stop", "end")
+TICKET_ENDS = ("printed", "failed")     # a ticket's other states are its way there
 
 
 def _summary(line: dict) -> str:
@@ -33,6 +34,14 @@ def _summary(line: dict) -> str:
         return f"{v.get('commit', '')} stt={line.get('stt')} llm={line.get('llm')} tts={line.get('tts')}"
     if kind == "action":
         return f"{line.get('what', '')} {line.get('result', '')}".strip()
+    if kind == "ticket":
+        what = "reprint" if line.get("reprint") else "ticket"
+        out = f"{what} #{line.get('n')} {line.get('state')}"
+        if line.get("why"):
+            out += f" ({line['why']})"
+        if line.get("state") == "printed":
+            out += f" {line.get('bytes')} B in {line.get('seconds')} s, connect {line.get('connect_s')} s"
+        return out
     if kind == "stop":
         return " ".join(f"{k}={v}" for k, v in line.items()
                         if k not in ("kind", "mono", "wall", "synced"))
@@ -45,6 +54,8 @@ def table(lines: list[dict]) -> str:
     t0 = lines[0].get("mono", 0.0)
     rows = ["| t (s) | Kind | What |", "|---|---|---|"]
     for line in lines:
+        if line.get("kind") == "ticket" and line.get("state") not in TICKET_ENDS:
+            continue
         if line.get("kind") in SHOWN:
             rows.append(f"| {line.get('mono', 0.0) - t0:.1f} | {line['kind']} | "
                         f"{_summary(line).replace('|', '/')} |")
@@ -69,9 +80,13 @@ def _self_test() -> int:
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "a.jsonl"
         p.write_text('{"kind":"start","mono":10}\n{"kind":"turn","mono":12.5,"outcome":"spoken",'
-                     '"times":{"stt":0.6}}\n{"kind":"tu')
+                     '"times":{"stt":0.6}}\n{"kind":"ticket","mono":13,"n":1,"state":"queued"}\n'
+                     '{"kind":"ticket","mono":16,"n":1,"state":"printed","bytes":900,"seconds":3.1,'
+                     '"connect_s":1.2}\n{"kind":"tu')
         out = table(read(p))
         assert "| 2.5 | turn | spoken stt=0.6 |" in out and "No end line" in out, out
+        assert "| 6.0 | ticket | ticket #1 printed 900 B in 3.1 s, connect 1.2 s |" in out, out
+        assert "queued" not in out, out
     print("self-test: all passed")
     return 0
 

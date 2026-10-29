@@ -30,7 +30,7 @@ def test_the_laptop_with_nothing_set_has_no_bad_row_and_hides_the_board_rows():
             assert d["fix"] == ""
     lv = {d["id"]: d["level"] for d in table}
     assert lv["usb_port"] == lv["usb_devices"] == lv["remote"] == "off"
-    assert lv["phone_speaker"] == lv["phone_mic"] == "off"
+    assert lv["phone_speaker"] == lv["phone_mic"] == lv["printer"] == "off"
     assert lv["speaker"] == "ok" and lv["mic"] == "ok" and lv["internet"] == "ok"
     mic = row(Facts(), "mic")
     assert mic["capture"] == "host" and mic["recorder"] == "host" and mic["last_rec"] == {}
@@ -257,3 +257,44 @@ def test_every_combination_of_marks_builds_valid_rows():
             for d in build(f):
                 assert d["level"] in devices.LEVELS
                 assert d["marked"] == (d["id"] in marks)
+
+
+# ---- the ticket printer: an extra, never red ----------------------------------------------------
+
+def _prn(**kw) -> dict:
+    p = {"setting": "rfcomm", "problem": "", "tickets": True, "present": True,
+         "device": "DC:0D:51:92:74:DA ch1", "alive": True, "state": "idle", "why": "", "n": None,
+         "reach": None, "printed": 0}
+    p.update(kw)
+    return row(Facts(printer=p), "printer")
+
+
+def test_printer_row():
+    assert row(Facts(), "printer")["level"] == "off" and row(Facts(), "printer")["tab"] == "visit"
+    assert _prn(setting="off", present=False)["state"] == "none configured"
+    bad = _prn(setting="bad", present=False, problem="FISH_PRINTER='x' is neither ...")
+    assert bad["level"] == "warn" and bad["state"] == "misconfigured" and "neither" in bad["reason"]
+    assert _prn(present=False)["state"] == "did not start"
+    off = _prn(tickets=False)
+    assert off["level"] == "off" and off["state"] == "tickets off"
+    assert _prn(alive=False)["level"] == "warn" and _prn(alive=False)["dead"]
+    first = _prn()
+    assert first["level"] == "ok" and first["state"] == "not checked yet"
+    assert _prn(device="mock")["state"] == "mock: not checked yet"
+    assert _prn(state="printing", n=3, reach=True)["state"] == "printing #3"
+    far = _prn(reach=False, why="timed out")
+    assert far["level"] == "warn" and far["state"] == "not reachable" and far["reason"] == "timed out"
+    assert "Reprint" in far["fix"]
+    stall = _prn(state="failed", why="stalled", n=2, reach=True)
+    assert stall["level"] == "warn" and stall["state"] == "ticket #2 failed"
+    assert _prn(state="failed", why="stopped", n=2, reach=True)["level"] == "ok"
+    ok = _prn(state="printed", n=2, reach=True, printed=2)
+    assert ok["level"] == "ok" and ok["state"] == "ready · 2 printed" and ok["present"] is True
+
+
+def test_the_printer_is_never_red_and_never_a_mark():
+    for kw in ({"setting": "bad", "present": False}, {"present": False}, {"alive": False},
+               {"reach": False}, {"state": "failed", "why": "dropped (x)"}):
+        assert _prn(**kw)["level"] == "warn", kw
+    from fish_brain import hw
+    assert "printer" not in hw.PARTS

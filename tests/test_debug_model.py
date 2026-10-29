@@ -298,3 +298,18 @@ def test_the_capture_card_check_is_lenient_when_a_phone_records(hub, tmp_path):
     r = rows(hub, root, SND, facts={"capture": "browser", "mic_pages": 1})
     assert r[("Microphone", "A capture sound card is present")]["status"] == "warn"
     assert ("Microphone", "Phones can record (HTTPS)") in r
+
+
+def test_the_printer_check_follows_its_row_and_is_never_a_failure(hub, tmp_path):
+    root = board_root(tmp_path)
+    r = rows(hub, root, SND)
+    assert r[("Printer", "A ticket printer is set")]["status"] == "skip"
+    base = {"setting": "rfcomm", "tickets": True, "present": True, "device": "mock",
+            "alive": True, "state": "idle", "why": "", "n": None, "reach": False}
+    r = rows(hub, root, SND, facts={"printer": base})
+    assert r[("Printer", "The ticket printer")]["status"] == "warn"
+    assert "Reprint" in r[("Printer", "The ticket printer")]["fix"]
+    r = rows(hub, root, SND, facts={"printer": {**base, "reach": True}})
+    assert r[("Printer", "The ticket printer")]["status"] == "pass"
+    r = rows(hub, root, SND, facts={"printer": {**base, "tickets": False}})
+    assert r[("Printer", "A ticket printer is set")]["detail"] == "tickets off"

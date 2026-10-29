@@ -393,7 +393,7 @@ def test_switches_list_their_value_their_start_and_what_changed(rig):
     assert set(sw) == {"mode", "llm_profile", "stt", "stt_online", "stt_model", "tts", "gestures", "reading_look",
                        "voice_quit", "burble", "filler", "visit", "filler_delay_s",
                        "max_record_s", "silence_end_s", "mic", "show", "motors", "fortune_deck", "fortune_cup",
-                       "place", "place_text"}
+                       "fortune_ticket", "place", "place_text"}
     assert sw["mode"]["value"] == "llm" and not any(w["changed"] for w in sw.values())
     assert rig.act.set("gestures", False) == (200, {"ok": True, "value": False})
     assert rig.cfg.gesture.enabled is False
@@ -544,6 +544,23 @@ def test_the_fortune_and_place_switches(rig):
     sw = _values(rig)
     assert sw["place"]["changed"] and not sw["place_text"]["changed"]
     assert "web model" in sw["place_text"]["note"]
+
+
+def test_the_ticket_switch_turns_on_only_with_a_printer(rig, monkeypatch):
+    sw = _values(rig)
+    assert sw["fortune_ticket"]["value"] is True and "FISH_PRINTER" in sw["fortune_ticket"]["note"]
+    assert rig.act.set("fortune_ticket", False)[0] == 200 and rig.cfg.fortune.ticket is False
+    assert rig.act.set("fortune_ticket", True)[1]["error"] == "FISH_PRINTER is not set"
+    assert rig.cfg.fortune.ticket is False
+    rig.cfg.printer.device = "AA:BB"                 # a typo: its own words
+    assert "neither a Bluetooth address" in rig.act.set("fortune_ticket", True)[1]["error"]
+    rig.cfg.printer.device = "mock"                  # set, but no printer was made
+    assert "did not start" in rig.act.set("fortune_ticket", True)[1]["error"]
+    rig.convo.printer = object()
+    assert rig.act.set("fortune_ticket", True) == (200, {"ok": True, "value": True})
+    assert rig.cfg.fortune.ticket is True and "closing line" in _values(rig)["fortune_ticket"]["note"]
+    assert rig.act.set("fortune_ticket", False)[0] == 200
+    assert "Reprint" in _values(rig)["fortune_ticket"]["note"]
 
 
 def test_ending_the_visit_drops_an_open_fortune(rig):

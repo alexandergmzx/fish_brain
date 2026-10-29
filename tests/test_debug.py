@@ -386,6 +386,9 @@ def test_state_carries_the_device_table_its_summary_and_the_timings(make_hub, mo
     assert "mic_pages" not in st["clients"]
     mic = devices.by_id(st["devices"])["mic"]
     assert mic["capture"] == hub.cfg.ptt.capture and mic["recorder"] == "host"
+    # No printer set: the section says so and the row is off (the laptop).
+    assert st["printer"]["setting"] == "off" and st["printer"]["present"] is False
+    assert devices.by_id(st["devices"])["printer"]["level"] == "off"
     # The board's role reaches the USB rows; a failing system section hides them.
     monkeypatch.setattr(debug_state, "system", lambda: {"usb_role": "host [device]", "usb": []})
     rows = devices.by_id(hub.state()["devices"])

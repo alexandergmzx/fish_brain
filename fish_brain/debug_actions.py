@@ -260,6 +260,17 @@ _gest, _look, _quit, _limit = (_attr("gesture.enabled"), _attr("reading.look"),
 _fill, _fill_delay, _burble = (_attr("filler.enabled"), _attr("filler.delay_s"),
                                _attr("burble.enabled"))
 _silence_end = _attr("ptt.silence_end_s")
+
+
+def _set_ticket(a, value: bool) -> str:
+    """Tickets on only with a printer made at start-up; off always (Reprint still works)."""
+    if value and getattr(a.convo, "printer", None) is None:
+        pc = getattr(a.cfg, "printer", None)
+        problem = pc.problem() if pc is not None else ""
+        return problem or ("FISH_PRINTER is not set" if pc is None or pc.kind() == "off"
+                           else "the printer did not start: see the [printer] line")
+    a.cfg.fortune.ticket = bool(value)
+    return ""
 SWITCHES: dict = {
     "mode": ("Mode", "choice", ("echo", "llm"),
              lambda a: "echo" if getattr(a.convo, "echo", False) else "llm", _set_mode),
@@ -297,6 +308,8 @@ SWITCHES: dict = {
                      lambda a, v: setattr(a.cfg.fortune, "deck", v) or ""),
     "fortune_cup": ("Fortune: read the cup", "bool", (), lambda a: bool(a.cfg.fortune.cup),
                     lambda a, v: setattr(a.cfg.fortune, "cup", bool(v)) or ""),
+    "fortune_ticket": ("Fortune: print the ticket", "bool", (),
+                       lambda a: bool(a.cfg.fortune.ticket), _set_ticket),
     "place": ("Place", "choice", ("casa", "fiesta", "universidad", "otro"),
               lambda a: a.cfg.place.place, lambda a, v: setattr(a.cfg.place, "place", v) or ""),
     "place_text": ("Place, in words", "text", (PLACE_TEXT_MAX,), lambda a: a.cfg.place.text,
@@ -310,6 +323,11 @@ def _switch_note(a, name: str, value) -> str:
                 else "no card question")
     if name == "fortune_cup":
         return "the hat asks what shape the visitor sees in the cup" if value else "no cup question"
+    if name == "fortune_ticket":
+        if getattr(a.convo, "printer", None) is None:
+            return "no printer (FISH_PRINTER)"
+        return ("the reading on a ticket as the hat says its closing line" if value
+                else "no ticket; Reprint still prints the last act's")
     if name == "place":
         return ("the intro and the closing lines of the fortune, and what the model is told; "
                 "'otro' takes the words below")
