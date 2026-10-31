@@ -1,7 +1,7 @@
 # On-screen fish (`--viz`)
 
 > **Since 2026-10-16 ([ADR 0011](adr/0011-one-page-for-the-operator.md)) `/` serves the
-> operator's page ([`debug.md`](debug.md)): the debug view with the drawn hat, made for his
+> operator's page ([`debug.md`](debug.md)): the debug view with his hat sprites, made for his
 > phone.** This file describes the old visitor face (`index.html`, `fish.js`, `fish.css`),
 > which stays at `/face` (`/face?kiosk=1`, `/face?debug=1`, `/face?talk=1`) until after the
 > fair and is then removed. Where it says `/`, read `/face`.

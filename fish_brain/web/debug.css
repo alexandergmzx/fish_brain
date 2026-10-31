@@ -257,9 +257,7 @@ details.bad > summary { color: var(--hoja-mal); }
     border-radius: 14px;
     background: radial-gradient(ellipse 60% 55% at 50% 62%, rgba(255, 196, 120, 0.42), transparent 75%), linear-gradient(180deg, #2a2550, #1b1a3a);
 }
-#hat { display: block; width: 100%; height: auto; overflow: visible; }
 #hatSprite { display: block; width: 100%; height: auto; transform-origin: 50% 86%; }
-#hatSprite[hidden] { display: none; }
 .perch, .perch-kick, .perch-fx { transform-origin: 50% 90%; }
 .perch { animation: respira 4.2s var(--sine) infinite alternate; }
 @keyframes respira { from { transform: translateY(0) scale(1, 1); } to { transform: translateY(-2px) scale(1.012, 1.018); } }
@@ -268,15 +266,8 @@ details.bad > summary { color: var(--hoja-mal); }
 #eyes { transform-box: fill-box; transform-origin: 50% 60%; animation: parpadea 7s linear infinite; }
 @keyframes parpadea { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(0.12); } }
 /* poses go on the wrappers only: the script writes the attributes of the parts inside */
-#browsPose, #eyesPose, #tipPose { transform-box: fill-box; transform-origin: 50% 50%; transition: transform 0.45s var(--spring); }
-#tipPose { transform-origin: 100% 100%; }
 .perch-kick { transition: transform 0.5s var(--spring); }
 #hatBox.st-listening .perch-kick { transform: rotate(-3deg) scale(1.03); }
-#hatBox.st-listening #browsPose { transform: translateY(-9px); }
-#hatBox.st-listening #eyesPose { transform: scale(1.12); }
-#hatBox.st-thinking #eyesPose { transform: translate(6px, -7px) scaleY(0.8); }
-#hatBox.st-thinking #tipPose { animation: swirl 1.4s var(--sine) infinite alternate; }
-@keyframes swirl { from { transform: rotate(-7deg); } to { transform: rotate(9deg); } }
 #hatBox.kick .perch-kick { animation: kick 1.5s var(--sine) 1; }
 @keyframes kick {
     0% { transform: rotate(0deg) scale(1, 1); } 12% { transform: rotate(3.2deg) scale(1.03, 0.97); }
@@ -284,11 +275,6 @@ details.bad > summary { color: var(--hoja-mal); }
     76% { transform: rotate(-0.6deg); } 100% { transform: rotate(0deg); }
 }
 /* the visit, Akinator-style: the face grows surer from the greeting to the verdict */
-#hatBox.s2 #eyesPose { transform: scaleY(0.78); }
-#hatBox.s3 #browsPose { transform: translateY(-4px) rotate(-5deg); }
-#hatBox.s3 #eyesPose { transform: scaleY(0.7); }
-#hatBox.s4 #browsPose, #hatBox.sdone #browsPose { transform: translateY(-6px); }
-#hatBox.s4 #eyesPose, #hatBox.sdone #eyesPose { transform: scale(1.08); }
 #hatBox.reveal .perch-fx { animation: reveal 1.2s var(--spring) 1; }
 @keyframes reveal { 0% { transform: scale(1); } 30% { transform: scale(1.14) rotate(-4deg); } 60% { transform: scale(0.97) rotate(2deg); } 100% { transform: scale(1); } }
 #hatBox.h-gryffindor { background: radial-gradient(ellipse 70% 60% at 50% 60%, rgba(220, 40, 40, 0.75), transparent 78%), linear-gradient(180deg, #4a1010, #2a0808); }
@@ -300,10 +286,10 @@ details.bad > summary { color: var(--hoja-mal); }
 #hatBox.err .perch-fx { animation: shake 0.6s linear 2; }
 @keyframes shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-7px) rotate(-3deg); } 40% { transform: translateX(6px) rotate(2deg); } 60% { transform: translateX(-4px); } 80% { transform: translateX(3px); } }
 #hatBox.st-offline .perch-kick { transform: translateY(16px) rotate(7deg) scale(0.95); }
-#hatBox.st-offline #hat { opacity: 0.45; }
+#hatBox.st-offline #hatSprite { opacity: 0.45; }
 #hatBox.no-net::after { content: "NO INTERNET"; position: absolute; top: 4px; left: 4px; padding: 1px 6px; border-radius: 6px; background: var(--hoja-mal); color: var(--hoja); font: 700 11px var(--mono); }
-body.still .perch, body.still #tip, body.still #eyes, body.still #tipPose { animation: none !important; }
-@media (prefers-reduced-motion: reduce) { .perch, #tip, #eyes, #tipPose { animation: none !important; } }
+body.still .perch { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .perch { animation: none !important; } }
 .lamps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 #motorNote { margin: 0; }
 .lamp { padding: 3px 9px; border: 2px solid var(--hoja-linea); border-radius: 999px; font: 700 11px/1.3 var(--mono); color: var(--hoja-tenue); opacity: 0.55; transition: opacity 0.25s ease, transform 0.2s var(--spring); }

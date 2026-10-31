@@ -301,40 +301,34 @@
   }
 
   // ---- the hat: what the fish is doing, at a glance -------------------------------------------
-  // The drawing is the old face's (svg#hat): the mouth follows the reply's loudness track through
-  // a critically damped spring and lifts the brows; a NECK stroke in one direction holds or
-  // returns the tip, a chain is a passing window; TAIL wags the brim; the burble (a sound with an
-  // empty track) perks the tip. Around it: a pose and a colour for what the fish is doing, the
+  // His sprites: the mouth follows the reply's loudness track through a critically damped spring;
+  // a NECK stroke in one direction holds or returns the tip, a chain is a passing window; TAIL wags
+  // the brim; the burble (a sound with an empty track) perks the tip. Around it: a pose and a colour for what the fish is doing, the
   // visit's stage, a shake when a turn dies, and lamps for every line the link really sent.
   let hostListening = true;
   const HOUSE = { Gryffindor: "gryffindor", Hufflepuff: "hufflepuff", Ravenclaw: "ravenclaw", Slytherin: "slytherin" };
   const DIED_IN = ["the trigger", "the microphone", "speech-to-text", "the model", "the voice", "the speaker", "the motors"];
   const fish = guard("hat", () => {
-    const box = $("hatBox"), mouthEl = $("mouth"), lipLower = $("lip-lower"), brows = $("brows"),
-          tipBend = $("tip-bend"), brimParts = [$("brim"), $("brim-front"), $("brim-fold")];
+    const box = $("hatBox");
     const mouth = { value: 0, vel: 0 };
     const tip = { value: 0, vel: 0, k: 40, d: 7 }, brim = { value: 0, vel: 0, k: 90, d: 19 };
-    const shown = { m: -1, tip: -1, brim: -1 };
     let track = null, clock0 = 0, trackEnd = 0, windows = [], neck = [], perkUntil = 0;
     let running = false, last = 0, lastDraw = 0;
-    // His sprites: one whole hat per mouth opening (0 closed … 3 widest). Once all four are
-    // here the canvas replaces the drawing; the tip (NECK) and the brim (TAIL), which have no
-    // sprites of their own, tilt the whole picture instead.
+    // One whole hat per mouth opening (0 closed … 3 widest); the tip (NECK) and the brim (TAIL),
+    // which have no sprites of their own, tilt the whole picture. A sprite that fails is asked for
+    // again until it comes (the phone's Wi-Fi drops); meanwhile the nearest opening stands in.
     const sprite = $("hatSprite"), sctx = sprite.getContext("2d"), frames = [];
-    let sprites = false, shownFrame = -1, shownTilt = "", stillMouth = null;
+    let shownFrame = null, shownTilt = "", stillMouth = null;
     for (let m = 0; m < 4; m++) {
-      const im = new Image();
+      const im = new Image(), src = "/img/neckRest_mouth" + m + "_tailRest.png";
+      let tries = 0;
       im.onload = () => {
         frames[m] = im;
-        if (!sprites && [0, 1, 2, 3].every((i) => frames[i])) {
-          sprites = true;
-          $("hat").setAttribute("hidden", "");
-          sprite.hidden = false;
-          shownFrame = -1;
-          draw(stillMouth !== null ? stillMouth : mouth.value, performance.now());
-        }
+        shownFrame = null;
+        draw(stillMouth !== null ? stillMouth : mouth.value, performance.now());
       };
-      im.src = "/img/neckRest_mouth" + m + "_tailRest.png";
+      im.onerror = () => { setTimeout(() => { im.src = src + "?try=" + ++tries; }, 2000); };
+      im.src = src;
     }
     // What the fish is doing: waiting | listening | thinking | speaking (offline is an overlay).
     const ST = { state: "waiting", since: performance.now(), sub: "", speakUntil: 0 };
@@ -345,29 +339,16 @@
       sp.value += sp.vel * dt;
     }
     function draw(m, now) {
-      if (sprites) {
-        const f = Math.min(3, Math.round(m * 3));
-        if (f !== shownFrame) {
-          shownFrame = f;
-          sctx.clearRect(0, 0, 600, 500);
-          sctx.drawImage(frames[f], 0, 0, 600, 500);
-        }
-        const brimA = 3.5 * brim.value * Math.sin(now * 0.018), tipA = -6 * tip.value;
-        const tilt = `rotate(${(brimA + tipA).toFixed(2)}deg) translateY(${(-6 * tip.value).toFixed(1)}px)`;
-        if (tilt !== shownTilt) { shownTilt = tilt; sprite.style.transform = tilt; }
-        return;
+      const want = Math.min(3, Math.round(m * 3));
+      const near = [0, 1, 2, 3].filter((i) => frames[i]).sort((x, y) => Math.abs(x - want) - Math.abs(y - want))[0];
+      if (near !== undefined && frames[near] !== shownFrame) {
+        shownFrame = frames[near];
+        sctx.clearRect(0, 0, 600, 500);
+        sctx.drawImage(shownFrame, 0, 0, 600, 500);
       }
-      const mr = Math.round(m * 200) / 200;
-      if (mr !== shown.m) {
-        shown.m = mr;
-        mouthEl.setAttribute("d", `M214,338 Q302,${(328 - 4 * mr).toFixed(1)} 396,336 Q302,${(346 + 64 * mr).toFixed(1)} 214,338 Z`);
-        lipLower.setAttribute("d", `M224,346 Q302,${(354 + 66 * mr).toFixed(1)} 386,344`);
-        brows.setAttribute("transform", `translate(0 ${(-7 * mr).toFixed(2)})`);
-      }
-      const tr = Math.round(tip.value * 400) / 400;
-      if (tr !== shown.tip) { shown.tip = tr; tipBend.setAttribute("transform", `rotate(${(24 * tr).toFixed(2)} 316 150)`); }
-      const a = Math.round(3.5 * brim.value * Math.sin(now * 0.018) * 50) / 50;
-      if (a !== shown.brim) { shown.brim = a; for (const part of brimParts) part.setAttribute("transform", `rotate(${a} 300 415)`); }
+      const brimA = 3.5 * brim.value * Math.sin(now * 0.018), tipA = -6 * tip.value;
+      const tilt = `rotate(${(brimA + tipA).toFixed(2)}deg) translateY(${(-6 * tip.value).toFixed(1)}px)`;
+      if (tilt !== shownTilt) { shownTilt = tilt; sprite.style.transform = tilt; }
     }
     function level(now) {
       if (!track) return 0;

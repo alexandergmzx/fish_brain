@@ -170,6 +170,11 @@ def test_his_hat_sprites_are_served_from_img_hat(server):
     assert get(server.url + "/img/neckOut_mouth0_tailFlap.png")[0] == 404   # the fish's, parked
 
 
+def test_the_operators_page_has_only_his_hat(server):
+    status, body = get(server.url + "/")
+    assert status == 200 and b'id="hatSprite"' in body and b'id="hat"' not in body   # his word, twice
+
+
 def test_post_without_a_length_is_411(server):
     conn = http.client.HTTPConnection("127.0.0.1", server._httpd.server_address[1], timeout=3)
     conn.putrequest("POST", "/ptt?token=s3cret-token")
