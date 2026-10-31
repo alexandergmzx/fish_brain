@@ -158,3 +158,10 @@ act's seeds; the reading is a roast and does not think
 
 The reading's wait (`reading_s`) is 15 s since 2026-10-29, with one more suspense line at 7 s,
 and the reading speaks as an oracle ([0027](0027-the-oracles-voice.md)).
+
+A question back ("¿Cómo?", "¿Y cómo que muerte?", "¿Qué carta?") is never an answer: it gets
+the question once more, narrower, once a question and outside the act's budget of two re-asks
+(his word, 2026-10-31); "¿Cómo? Dinero." keeps "Dinero.". A long card answer is decided by its
+latest sentence that names a card or says yes or no, so a protest that ends "Sí, saco una carta"
+is the hat's draw. The name the visitor says to the greeting, when the hat echoes it, reaches the
+fortune like a typed one.

@@ -93,3 +93,15 @@ mode with the meaning read once.
 The register is the old sorcerer's oracle, no longer a roast: the structure of decision 6 stands
 (one story about the wish, the sting, the task), said gravely. The model mode's beats, shuffles
 and suspense lines are re-worded to match ([0027](0027-the-oracles-voice.md)).
+
+## Amendment, 2026-10-31 (his three fortunes on the board)
+
+Two of three visitors took "¿qué le vienes a pedir a la Muerte?" for the tarot card
+([results](../results/2026-10-31-fortunes-on-the-board-jorge.md)). His word: "this is a hat,
+not la muerte". The wish is asked by the hat ("Y ahora lo importante: amor, dinero, salud,
+venganza, lo que sea… ¿tienes algún deseo?", a draft); its reactions and the reading's rule
+follow, and La Muerte stays a card and part of the season. The card question says "carta",
+never "tarot" ("¿Quieres que te lea una carta?"). "No deck" on the Visit tab means no card
+anywhere: no question, no beat that names a card, no `carta=` in the tag, and the rules' "la
+carta lo confirma" only when a card came. A declined card is not in the tag at all, the hat's
+draw is "la saqué yo", and the hat speaks of itself in the first person.
