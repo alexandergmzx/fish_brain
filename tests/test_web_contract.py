@@ -153,7 +153,7 @@ def test_the_nav_begins_visit_status_settings_and_each_control_sits_in_its_panel
     for needle in ('id="showSummary"', 'id="goRows"'):
         assert needle in status and needle not in setup and needle not in visit
     for needle in ('data-mode="auto"', 'data-hw="speaker"', 'id="volSlider"', 'data-net="ap"', 'id="spkBtn"',
-                   'id="setupMsg"'):
+                   'id="setupMsg"', 'id="btBlock"', 'id="btFind"', 'id="btPin"'):
         assert needle in setup and needle not in status and needle not in visit, needle
     for needle in ('id="fortuneRow"', 'id="fortuneBtn"', 'id="showRow"', 'id="cVisit"', 'id="cRead"', 'id="readName"',
                    'data-place="casa"', 'data-place="otro"', 'id="placeText"', 'data-fortune="deck"', 'id="cupBtn"',

@@ -420,3 +420,19 @@ body.still .perch, body.still #tip, body.still #eyes, body.still #tipPose { anim
 .summary.wait { color: var(--hoja-tenue); }
 .picks.hw .pick[aria-pressed="true"] { background: var(--hoja-mal); border-color: var(--hoja-mal); color: #1a1a1a; }
 .picks.hw .pick[aria-pressed="true"]::before { content: "✗ "; }
+
+/* Bluetooth speakers (ADR 0029): one thumb, long names wrap, nothing wider than the phone */
+#btBlock h4 { margin: 10px 0 4px; font-size: 13px; color: var(--hoja-tenue); }
+.bt-rows { display: flex; flex-direction: column; gap: 6px; }
+.bt-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bt-main { flex: 1 1 60%; min-width: 0; display: flex; justify-content: space-between; gap: 10px; text-align: left; border-radius: 12px; padding: 8px 14px; }
+.bt-name { overflow-wrap: anywhere; }
+.bt-word { flex: none; font-size: 13px; opacity: .8; }
+.bt-more { flex: 1 1 100%; order: 3; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bt-more[hidden], .bt-more-btn[hidden] { display: none; }
+.bt-step { display: flex; gap: 6px; align-items: center; }
+.bt-delay { font-size: 13px; text-align: center; }
+.bt-forget { border-color: var(--hoja-mal); }
+.bt-ask { margin: 8px 0; padding: 8px; border-radius: 8px; background: rgba(127,127,127,.08); }
+#btPin { min-height: 44px; flex: 1 1 8em; min-width: 0; font-size: 16px; padding: 0 10px; background: var(--hoja-campo); color: var(--hoja-texto); border: 1px solid var(--hoja-linea); border-radius: 8px; }
+#btAllBtn { margin-top: 6px; }

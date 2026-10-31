@@ -113,7 +113,7 @@
                 "printing": "a ticket is printing: wait for it", "no ticket yet": "no fortune has ended yet" };
   const BUSY = { recording: "the hat is recording", speaking: "the hat is speaking",
                  "a phone is the microphone": "a phone is the microphone", "link off": "the motor link is off",
-                 "test running": "a test is running" };
+                 "test running": "a test is running", working: "a speaker is being connected", "not heard": "the phrase was not heard" };
   function explain(out, what) {
     const s = (out || {}).status, e = (out || {}).error || "";
     if (s === 0) return "no connection";
@@ -617,6 +617,7 @@
       fortuneRow.status(page, tab, S.state.printer);
       phoneMic.status(page, dev());
       phoneSpeaker.status(dev());
+      btSpeaker.status(S.state.bluetooth, dev());
       if (page.visit && !S.visit) { S.visit = page.visit; fish.visit(page.visit, false); visitRow.view(page.visit); }
       if (page.visit && page.visit.fortune && !S.fortune) { fortuneRow.view(page.visit.fortune, page.visit); fish.fortune(page.visit.fortune, false); }
       fish.reconcile(S.state.mode);
@@ -901,6 +902,161 @@
       },
     };
   }, { play() {}, stop() {}, enable() {}, disable() {}, isOn: () => false, status() {} });
+
+  // ---- Bluetooth speakers (ADR 0029) ----------------------------------------------------------------
+  // Find, tap a row, Ready, Test. Rows are kept by address and keep their order, and the PIN box is
+  // static, so a refresh never takes a row from under his thumb or wipes what he is typing. The
+  // state comes with /debug/state; while something runs it is polled every second.
+  const btSpeaker = guard("bluetooth", () => {
+    const STEP = { starting: "Starting…", pairing: "Pairing…", connecting: "Connecting…", sound: "Waiting for sound…" };
+    const KIND = { speaker: "speaker", headphones: "headphones", unknown: "" };
+    let view = null, more = "", sure = "", showAll = false, searched = false, poll = 0, device = {};
+    async function act(body) {
+      const out = await post("/debug/bluetooth", body);
+      if (out.bt) show(out.bt);
+      else $("btResult").textContent = out.status === 0 ? "No connection. The board goes on by itself." : "Bluetooth: " + explain(out, "Bluetooth");
+      return out;
+    }
+    function status(item) {
+      if (view.phase === "working" && view.target && view.target.mac === item.mac) return STEP[view.step] || "Working…";
+      if (item.chosen) return item.ready ? "Ready" : view.chosen && view.chosen.trying ? "Lost, trying…" : "Lost";
+      return item.ready || item.connected ? "Connected" : KIND[item.kind] || "";
+    }
+    function buildRow(item) {
+      const r = el("div", "bt-row");
+      r.dataset.mac = item.mac;
+      const main = el("button", "pick bt-main");
+      main.type = "button";
+      main.appendChild(el("span", "bt-name"));
+      main.appendChild(el("span", "bt-word"));
+      main.addEventListener("click", () => {
+        const it = r._item;
+        if (it.chosen && it.ready) { more = more === it.mac ? "" : it.mac; show(view); return; }
+        act({ do: "use", mac: it.mac });
+      });
+      r.appendChild(main);
+      const box = el("div", "bt-more");
+      box.hidden = true;
+      const test = el("button", "pick", "Test");
+      test.type = "button";
+      test.addEventListener("click", async () => {   // his press: the only sound this block makes
+        const out = await post("/debug/say", { name: "welcome" });
+        $("btResult").textContent = out.ok ? "Played. Did you hear it?" : "Test: " + explain(out);
+      });
+      const minus = el("button", "pick", "-50"), plus = el("button", "pick", "+50"), ms = el("span", "bt-delay");
+      minus.type = plus.type = "button";
+      const step = (d) => act({ do: "delay", mac: r._item.mac, ms: Math.max(0, Math.min(800, r._item.delay_ms + d)) });
+      minus.addEventListener("click", () => step(-50));
+      plus.addEventListener("click", () => step(50));
+      const stopUse = el("button", "pick", "Stop using"), forget = el("button", "pick bt-forget", "Forget");
+      stopUse.type = forget.type = "button";
+      stopUse.addEventListener("click", () => { more = ""; act({ do: "stop_using", mac: r._item.mac }); });
+      forget.addEventListener("click", () => {
+        const mac = r._item.mac;
+        if (sure !== mac) { sure = mac; show(view); setTimeout(() => { if (sure === mac) { sure = ""; show(view); } }, 4000); return; }
+        sure = ""; more = "";
+        act({ do: "forget", mac, confirm: true });
+      });
+      const stepper = el("span", "bt-step");
+      for (const c of [minus, ms, plus]) stepper.appendChild(c);
+      for (const c of [test, stopUse, forget, stepper]) box.appendChild(c);
+      r.appendChild(box);
+      const again = el("button", "pick bt-more-btn", "More");
+      again.type = "button";
+      again.addEventListener("click", () => { more = more === r._item.mac ? "" : r._item.mac; show(view); });
+      r.appendChild(again);
+      r._parts = { main, box, ms, forget, again };
+      return r;
+    }
+    function fillRows(node, items, mine) {
+      const have = new Map(Array.from(node.children, (c) => [c.dataset.mac, c]));
+      let at = node.firstChild;
+      for (const item of items) {
+        let r = have.get(item.mac);
+        if (r) have.delete(item.mac); else r = buildRow(item);
+        r._item = item;
+        const p = r._parts;
+        p.main.children[0].textContent = item.name + (item.battery !== undefined ? "  " + item.battery + " %" : "");
+        p.main.children[1].textContent = status(item);
+        p.main.disabled = view.phase === "working";
+        p.main.setAttribute("aria-pressed", item.chosen && item.ready ? "true" : "false");
+        p.again.hidden = !mine;
+        p.box.hidden = !(mine && more === item.mac);
+        p.ms.textContent = "Mouth delay " + item.delay_ms + " ms" + (item.delay_measured ? "" : " (estimate)");
+        p.forget.textContent = sure === item.mac ? "Really forget?" : "Forget";
+        if (r === at) at = at.nextSibling; else node.insertBefore(r, at);
+      }
+      for (const r of have.values()) r.remove();
+    }
+    function show(v) {
+      view = v;
+      const box = $("btBlock");
+      box.hidden = !v || !v.present;
+      if (box.hidden) return;
+      const sp = device.speaker || {}, working = v.phase === "working", scanning = v.phase === "scanning";
+      $("btNow").textContent = sp.state ? "playing on: " + sp.state + (v.setting === "mock" ? " (stand-in)" : "") : "";
+      const prob = v.problem || (v.alive && !v.powered ? "Bluetooth is off on the board." : "");
+      $("btProblem").textContent = prob;
+      $("btProblem").hidden = !prob;
+      $("btMineHead").hidden = !v.mine.length;
+      fillRows($("btMine"), v.mine, true);
+      if (scanning) searched = true;
+      const find = $("btFind");
+      find.hidden = scanning || working;
+      find.disabled = !!prob || !!v.busy;
+      find.textContent = searched && !v.nearby.length ? "Find again" : "Find speakers";
+      $("btStop").hidden = !scanning;
+      $("btCancel").hidden = !working;
+      const help = $("btHelp");
+      if (scanning) help.textContent = "Searching… " + v.scan_left_s + " s. Put it in pairing mode, next to the hat.";
+      else if (working) help.textContent = (v.target ? v.target.name + ": " : "") + (STEP[v.step] || "");
+      else if (v.busy === "printing") help.textContent = "A ticket is printing: search when it ends.";
+      else if (v.busy) help.textContent = "The hat is busy: search when it waits.";
+      else if (searched && !v.nearby.length) help.textContent = "Nothing found. Is it in pairing mode? Is a phone connected to it?";
+      else help.textContent = v.mine.length ? "" : "Put it in pairing mode, next to the hat.";
+      const ask = v.ask;
+      const asking = !!ask && ask.kind !== "authorize";
+      $("btAsk").hidden = !asking;
+      if (asking) {
+        const name = v.target ? v.target.name : "It";
+        $("btAskText").textContent = ask.kind === "confirm" ? name + ": does it show " + ask.number + "?"
+          : ask.kind === "show" ? "Type " + ask.number + " on " + name + "." : name + " asks for a PIN.";
+        $("btPinRow").hidden = ask.kind !== "pin" && ask.kind !== "passkey";
+        $("btYesNo").hidden = ask.kind !== "confirm";
+      } else $("btPin").value = "";
+      const res = v.result;
+      const lost = v.chosen && v.chosen.lost ? v.chosen.name + " lost. " + (sp.state ? "Now on " + sp.state + ". " : "") + "Is it on? Is a phone connected to it?" : "";
+      $("btResult").textContent = res && !res.ok ? (res.name ? "Could not use " + res.name + ". " : "") + res.text : lost;
+      $("btNearHead").hidden = !v.nearby.length;
+      fillRows($("btNear"), v.nearby, false);
+      const all = $("btAllBtn");
+      all.hidden = !(v.others || []).length;
+      all.textContent = (showAll ? "Hide others (" : "Show all nearby (") + (v.others || []).length + ")";
+      $("btAll").hidden = !showAll;
+      fillRows($("btAll"), v.others || [], false);
+      clearTimeout(poll);
+      if (scanning || working || (v.chosen && v.chosen.trying)) {
+        poll = setTimeout(async () => {
+          const out = await post("/debug/bluetooth", { do: "view" });
+          if (out.bt) show(out.bt);
+          else { $("btHelp").textContent = "No connection. The board goes on by itself: a search stops alone, a pairing ends alone."; poll = setTimeout(() => show(view), 2000); }
+        }, 1000);
+      }
+    }
+    $("btFind").addEventListener("click", () => { searched = true; act({ do: "find" }); });
+    $("btStop").addEventListener("click", () => act({ do: "stop" }));
+    $("btCancel").addEventListener("click", () => act({ do: "cancel" }));
+    $("btPinOk").addEventListener("click", () => act({ do: "answer", pin: $("btPin").value.trim() }));
+    $("btYes").addEventListener("click", () => act({ do: "answer", yes: true }));
+    $("btNo").addEventListener("click", () => act({ do: "answer", yes: false }));
+    $("btAllBtn").addEventListener("click", () => { showAll = !showAll; show(view); });
+    return {
+      status(v, d) {
+        device = d || {};
+        if (v && !v.error) show(v);
+      },
+    };
+  }, { status() {} });
 
   // ---- render ----------------------------------------------------------------------------------
   function render() {
