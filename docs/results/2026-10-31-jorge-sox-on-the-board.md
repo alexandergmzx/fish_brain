@@ -34,7 +34,9 @@ them is the licence warning.
 
 **PASS.**
 
+His ear (2026-10-31, `welcome` and `fortune_vision_1` from the new cache as MP3): "they are good".
+
 Not measured:
 - a live turn's `tts=`;
-- the set on the speaker (his ear);
+- the set on the board's speaker;
 - the mouth on the reverb tail (level 4).
