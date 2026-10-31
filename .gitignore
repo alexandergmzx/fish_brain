@@ -16,6 +16,8 @@ venv/
 /tmp_audio/
 ab_results.csv
 /tickets/
+# rehearsal logs and scripts made from the board's records: real visitors' names and dreams
+/rehearsals/
 
 # assistant settings: only the curated file is tracked
 /.claude/*

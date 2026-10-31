@@ -1,6 +1,7 @@
 """tools/hat_rehearse.py: the script parser and one visit against a fake model."""
 import os
 import sys
+from pathlib import Path
 
 TOOLS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
 sys.path.insert(0, TOOLS)
@@ -34,7 +35,8 @@ def test_parse_script_blocks_badges_cues_and_comments():
     v = hat_rehearse.parse_script(text)
     assert len(v) == 2
     assert v[0] == {"badge": "Sofía", "greet": True, "place": None, "fortune": None,
-                    "steps": [("cues", {"edad": "niño", "color": "azul"}), ("say", "Hola")]}
+                    "steps": [("cues", {"edad": "niño", "color": "azul"}), ("say", "Hola")],
+                    "name": "", "then": [], "then_reading": ""}
     assert v[1]["greet"] is False and v[1]["steps"] == [("say", "Hey")]
 
 
@@ -173,13 +175,15 @@ def test_a_fortune_block_runs_the_acts_steps(monkeypatch):
     assert "casa=Hufflepuff" in tag and "luna=" in tag and "palabra=" in tag
     assert kinds[1] == ("sueno", "theme") and 'sueño=volar ("Soñé que flotaba.")' in tag
     assert kinds[4] == ("deseo", "wish") and 'deseo=amor ("Que regrese mi ex.")' in tag
-    assert kinds[5] == ("carta", "draw") and "la saqué yo" in tag
+    assert kinds[5] == ("carta", "draw") and "la sacó el sombrero" in tag
     assert "hoy=martes 27 de octubre" in tag
     assert "pistas=lleva: capa negra; visión=" in tag and "; forma=" in tag
     assert tag.endswith("] Haz la lectura.")
-    assert "would fall back to clips" in " ".join(rec["problems"])
+    assert not any(" s > " in p for p in rec["problems"])      # the rehearsal does not time
     assert not any("death" in p for p in rec["problems"])      # no word list (ADR 0025)
     assert rec["used"] == ["lleva"]
+    assert "L A   A D I V I N A C I Ó N" in rec["ticket"] and "p a r a   A l b e r t" in rec["ticket"]
+    assert "Pediste ................... amor" in rec["ticket"]
 
 
 def test_variety_counts_openings_and_stale_phrases():
@@ -204,3 +208,43 @@ def test_the_act_state_carries_the_draws_and_the_openings_across_visitors(monkey
         if i:
             assert "evita=Lectura número 0" in rec["tag"] and f"Lectura número {i - 1}" in rec["tag"]
     assert len(set(cards)) == 3
+
+
+def test_a_logged_run_names_its_commit_script_and_rules(tmp_path, monkeypatch):
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+    cfg = Config()
+    f = hat_rehearse.open_log(tmp_path / "logs", Path("rehearsals/real.txt"), cfg, ["--log", "x"])
+    f.write("reading> hola\n")
+    f.close()
+    (log,) = (tmp_path / "logs").iterdir()
+    text = log.read_text()
+    assert log.name.endswith("-real.txt") and oct(log.stat().st_mode)[-3:] == "600"
+    assert text.startswith("# hat_rehearse run ") and "# commit " in text
+    assert "# script rehearsals/real.txt · args --log x" in text
+    assert "fortune " in text and "reading thinking disabled" in text and text.endswith("reading> hola\n")
+
+
+def test_hat_records_self_test():
+    import subprocess
+    import sys as _sys
+    tool = Path(__file__).resolve().parent.parent / "tools" / "hat_records.py"
+    assert subprocess.run([_sys.executable, str(tool), "--self-test"], capture_output=True).returncode == 0
+
+
+def test_the_then_lines_and_the_typed_name_reach_the_markdown():
+    text = ("nombre: Alberto\nHola, soy Albert.\n# then: ¡Albert! ¿Mapa o libro?\nfortuna:\n"
+            "fecha: Tres de marzo.\n# then reading: Veo borregos.\n")
+    (v,) = hat_rehearse.parse_script(text)
+    assert v["name"] == "Alberto" and v["then"] == ["¡Albert! ¿Mapa o libro?"]
+    assert v["then_reading"] == "Veo borregos." and v["fortune"] == [("fecha", "Tres de marzo.")]
+    rec = {"first": "", "cues": {}, "house": "Hufflepuff", "done": True,
+           "turns": [{"you": "(nuevo visitante)", "hat": "¡Hola!"},
+                     {"you": "Hola, soy Albert.", "hat": "Albert, veo.", "s": 1.2, "problems": []}]}
+    frec = {"answers": [{"q": "fecha", "you": "Tres de marzo.", "kind": "sign", "value": "piscis"}],
+            "tag": "[ADIVINACIÓN: x]", "reading": "Piscis, ya.", "said": "Piscis, ya.", "s": 2.0,
+            "problems": [], "error": None, "ticket": "  L A\n"}
+    md = hat_rehearse.visitor_markdown(1, v, rec, frec, "# hat_rehearse run X\n# commit abc\n")
+    assert md.startswith("# Visitor 1 · Alberto\n\nhat_rehearse run X\ncommit abc")
+    assert "**Visitor:** Hola, soy Albert." in md and "**Hat now**: Albert, veo." in md
+    assert "*Hat then:* ¡Albert! ¿Mapa o libro?" in md and "> Veo borregos." in md
+    assert "- **fecha:** Tres de marzo. (sign → piscis)" in md and "```\n  L A\n```" in md
