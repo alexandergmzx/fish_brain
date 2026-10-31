@@ -115,8 +115,9 @@ def test_the_hat_has_no_ingredient_bank(monkeypatch):
 def test_the_visit_rules_are_the_adult_ones(monkeypatch):
     monkeypatch.setenv("FISH_PERSONA", "hat")
     r = VisitConfig().rules
-    assert "FORMATO" in r and "REGLAS FIJAS" in r and "BANCO DE PREGUNTAS" in r and "CASA:" in r
-    assert "público adulto" in r and "tenebroso y pícaro" in r and "humor negro" in r
+    assert "FORMATO" in r and "REGLAS FIJAS" in r and "LO QUE BUSCAS CON TUS PREGUNTAS" in r and "CASA:" in r
+    assert "público adulto" in r and "ominoso" in r and "humor negro" in r
+    assert "nace de esa respuesta" in r    # ADR 0029: it follows the answer, no list to copy
     for move in ("Eco", "Arcoíris"):
         assert move in r
     # the cues: all material, never the age, the latest win, themes not names
@@ -127,10 +128,10 @@ def test_the_visit_rules_are_the_adult_ones(monkeypatch):
     # the verdict: one prediction from their words, a cue and the place; no list, hour or venue
     assert "una sola predicción" in r and "algo que dijo, una pista y el lugar" in r
     assert "ni hora" not in r and "solo si el visitante lo dijo" in r
-    assert "30 palabras" in r and "10 palabras" in r
+    assert "35 palabras" in r and "veinte palabras" in r
     assert "[FUTURO" not in r and "ingredientes" not in r
-    # the question bank kept, with the adult questions
-    assert "una isla" in r and "puerta cerrada" in r and "fantasma" in r and "quidditch" in r and "EL CASTILLO" in r
+    # what the questions look for, and the castle as their world (ADR 0029)
+    assert "Bosque Prohibido" in r and "EL CASTILLO" in r
     # the kid register gone
     for kid in ("Público familiar", "niños", "niño o niña", "calaverita", "con el adulto",
                 "nada da miedo"):

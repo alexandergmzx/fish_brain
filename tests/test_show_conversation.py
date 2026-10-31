@@ -55,6 +55,17 @@ class NoLLM:
         pass
 
 
+
+def W(qid, i):
+    """What a visitor says for option i of a question."""
+    return show_bank.question(qid)["options"][i]["words"][0]
+
+
+def O(qid, i):
+    """That option's id."""
+    return show_bank.question(qid)["options"][i]["id"]
+
+
 @pytest.fixture
 def make(monkeypatch, tmp_path):
     def build(mode="script", llm=None):
@@ -83,13 +94,13 @@ def test_a_whole_visit_from_answers_with_no_model(make):
     say(c, "hola")
     first = c.speaker.stages[-1]
     assert first[0].startswith("show_greet_") and first[-1] == "show_q_A1"
-    say(c, "la fiesta")
-    assert c.speaker.stages[-1] == ["show_re_A1_fiesta", "show_q_A2"]
-    say(c, "un volcán")
-    assert c.speaker.stages[-1] == ["show_re_A2_volcan", "show_q_A3"]
-    say(c, "el mapa")
+    say(c, "la " + W("A1", 0))
+    assert c.speaker.stages[-1] == [f"show_re_A1_{O('A1', 0)}", "show_q_A2"]
+    say(c, "un " + W("A2", 0))
+    assert c.speaker.stages[-1] == [f"show_re_A2_{O('A2', 0)}", "show_q_A3"]
+    say(c, "el " + W("A3", 0))
     verdict = c.speaker.stages[-1]
-    assert verdict[0] == "show_re_A3_mapa"
+    assert verdict[0] == f"show_re_A3_{O('A3', 0)}"
     assert any(n.startswith("show_house_G_") for n in verdict)
     assert verdict[-1].startswith("show_farewell_")
     assert c.visit.house == "Gryffindor" and not c.show.open
@@ -149,8 +160,8 @@ def test_every_age_gets_every_question(make):
     c.visit.set_cues({"edad": "joven"})
     say(c, "hola")
     assert len(c.show.v["qs"]) == 3
-    say(c, "fiesta")
-    say(c, "jardín")
+    say(c, W("A1", 0))
+    say(c, W("A2", 1))
     assert c.show.open and c.visit.house is None
 
 
@@ -159,7 +170,7 @@ def test_the_scripts_verdict_files_the_cues_cut_before_it_speaks(make):
     clock = [1000.0]
     c._clock = c.visit._clock = lambda: clock[0]
     c.visit.set_cues({"color": "rojo", "disfraz": "elegante"})
-    say(c, "hola"); say(c, "la fiesta"); say(c, "un volcán")
+    say(c, "hola"); say(c, "la " + W("A1", 0)); say(c, "un " + W("A2", 0))
     spoken = c.speaker.say_sequence
 
     def during_the_verdict(names, **kw):
@@ -169,7 +180,7 @@ def test_the_scripts_verdict_files_the_cues_cut_before_it_speaks(make):
         return spoken(names, **kw)
     c.speaker.say_sequence = during_the_verdict
     clock[0] += 1
-    say(c, "el mapa")
+    say(c, "el " + W("A3", 0))
     assert c.visit.house is not None
     assert c.visit.view()["used"] == {"color": "rojo"}     # elegante was dropped by the tap
     assert c.visit.pending() == {"edad": "mayor"}          # the next visitor's
@@ -250,15 +261,15 @@ def test_the_operators_taps_answer_force_and_skip(make):
     say(c, "hola")
     view = c.show.view()
     assert view["open"] and view["qid"] == "A1"
-    assert [o["label"] for o in view["options"]] == ["Fiesta", "Acertijo"]
-    c._handle_item(ShowInput("answer", "acertijo"))
-    assert c.speaker.stages[-1] == ["show_re_A1_acertijo", "show_q_A2"]
+    assert [o["label"] for o in view["options"]] == [show_bank.label(O("A1", 0)), show_bank.label(O("A1", 1))]
+    c._handle_item(ShowInput("answer", O("A1", 1)))
+    assert c.speaker.stages[-1] == [f"show_re_A1_{O('A1', 1)}", "show_q_A2"]
     c._handle_item(ShowInput("skip"))
     assert c.speaker.stages[-1][0].startswith("show_bridge_") and c.speaker.stages[-1][-1] == "show_q_A3"
     c._handle_item(ShowInput("force", "H"))
     assert c.visit.house == "Hufflepuff" and not c.show.open
     assert c.show.view()["last"] == {"n": 1, "house": "Hufflepuff", "how": "operator"}
-    c._handle_item(ShowInput("answer", "fiesta"))          # no visit open: ignored
+    c._handle_item(ShowInput("answer", O("A1", 0)))          # no visit open: ignored
     assert c.visit.house == "Hufflepuff"
 
 
@@ -267,7 +278,7 @@ def test_a_wrong_option_from_the_page_is_ignored(make):
     c = make()
     say(c, "hola")
     n = len(c.speaker.stages)
-    c._handle_item(ShowInput("answer", "trofeo"))          # not an option of A1
+    c._handle_item(ShowInput("answer", O("A3", 3)))          # not an option of A1
     assert len(c.speaker.stages) == n and c.show.v["i"] == 0
 
 
@@ -276,7 +287,7 @@ def test_the_page_view_during_the_verdict_has_no_question(make):
     views = []
     real = c._push_visit
     c._push_visit = lambda: (views.append(c.show.view()), real())[1]
-    say(c, "hola"); say(c, "fiesta"); say(c, "volcán"); say(c, "mapa")
+    say(c, "hola"); say(c, W("A1", 0)); say(c, W("A2", 0)); say(c, W("A3", 0))
     assert c.visit.house == "Gryffindor" and not c.show.open
     during = [v for v in views if v.get("open") and v.get("qid") is None]
     assert during and during[-1]["options"] == []

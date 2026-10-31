@@ -15,6 +15,11 @@ def opts(qid):
     return [o["id"] for o in show_bank.question(qid)["options"]]
 
 
+def said(qid, i):
+    """What a visitor says for option i: the noun as the question has it."""
+    return show_bank.question(qid)["options"][i]["words"][0]
+
+
 @pytest.mark.parametrize("set_id", sorted(show_bank.SETS))
 def test_the_cross_gives_four_paths_per_house_and_no_tie(set_id):
     q1, q2, q3 = (q["id"] for q in show_bank.SETS[set_id])
@@ -65,7 +70,7 @@ def test_four_silent_visitors_get_four_houses(tmp_path):
 
 def test_the_ladder_force_preference_veto():
     q1, q2, q3 = (q["id"] for q in show_bank.SETS["A"])
-    answers = {q1: "fiesta", q2: "volcan", q3: "mapa"}            # Gryffindor
+    answers = {q1: opts(q1)[0], q2: opts(q2)[0], q3: opts(q3)[0]}   # Gryffindor
     assert decide(answers, {}, force="S") == ("S", "operator")
     assert decide(answers, {}, preference="R") == ("R", "preference")
     assert decide(answers, {}, preference="R", vetoes={"R"})[0] == "G"
@@ -75,46 +80,41 @@ def test_the_ladder_force_preference_veto():
 
 def test_a_tie_goes_to_the_trait_answer_then_the_bag(tmp_path):
     q1, q2, q3 = (q["id"] for q in show_bank.SETS["A"])
-    assert decide({q1: "fiesta", q2: None, q3: "amigo"}, {}) == ("H", "answers")
+    assert decide({q1: opts(q1)[0], q2: None, q3: opts(q3)[2]}, {}) == ("H", "answers")
     # Only Q1 heard: G and H tied, nothing else -> the bag.
     st = ShowState(tmp_path / "s.json", seed="x")
-    house, how = decide({q1: "fiesta", q2: None, q3: None}, {}, bag=st.house_bag)
+    house, how = decide({q1: opts(q1)[0], q2: None, q3: None}, {}, bag=st.house_bag)
     assert house in ("G", "H") and how == "tie: bag"
-    assert decide({q1: "fiesta"}, {"color": "amarillo"}) == ("H", "answers")
+    assert decide({q1: opts(q1)[0]}, {"color": "amarillo"}) == ("H", "answers")
 
 
-@pytest.mark.parametrize("text,expect", [
-    ("La fiesta.", "fiesta"), ("¡fiesta!", "fiesta"), ("Fiestas", "fiesta"),
-    ("Acertijo.", "acertijo"), ("una adivinanza", "acertijo"),
-    ("yo digo el primero", "fiesta"), ("la segunda", "acertijo"), ("el último", "acertijo"),
-])
-def test_matching_options(text, expect):
-    h = match_option(show_bank.question("A1"), text)
-    assert h.kind == "option" and h.option == expect, h
+@pytest.mark.parametrize("qid", [q["id"] for qs in show_bank.SETS.values() for q in qs])
+def test_every_word_of_an_option_means_that_option_and_no_other(qid):
+    for o in show_bank.question(qid)["options"]:
+        for word in o["words"]:
+            for text in (word, f"La {word}.", f"¡{word}!"):
+                h = match_option(show_bank.question(qid), text)
+                assert h.kind == "option" and h.option == o["id"], (text, h)
 
 
-@pytest.mark.parametrize("text,expect", [
-    ("Bolcán", "volcan"), ("jardin", "jardin"), ("Un litro.", "libro"), ("el mapa", "mapa"),
-    ("Mi mejor amiga", "amigo"), ("trofeo", "trofeo"), ("tro feo", "trofeo"),
-])
-def test_spelling_slips_still_match(text, expect):
-    qid = "A2" if expect in ("volcan", "jardin") else "A3"
-    h = match_option(show_bank.question(qid), text)
-    assert h.option == expect, h
+def test_ordinals_pick_by_position():
+    a, b = opts("A1")
+    for text, expect in (("yo digo el primero", a), ("la segunda", b), ("el último", b)):
+        assert match_option(show_bank.question("A1"), text).option == expect
 
 
 @pytest.mark.parametrize("text,kind", [
     ("", "none"), ("Sí.", "none"), ("No.", "none"), ("simón", "none"),
     ("No sé.", "not_sure"), ("los dos", "not_sure"), ("me da igual", "not_sure"),
     ("hola cómo estás me gusta mucho la pizza con queso y jamón", "none"),
-    ("perro", "none"),
+    ("zanahoria", "none"),
 ])
 def test_what_is_not_an_answer(text, kind):
     assert match_option(show_bank.question("A1"), text).kind == kind
 
 
 def test_a_tie_between_two_options_is_no_answer():
-    assert match_option(show_bank.question("A1"), "fiesta o acertijo").kind == "none"
+    assert match_option(show_bank.question("A1"), f"{said('A1', 0)} o {said('A1', 1)}").kind == "none"
 
 
 @pytest.mark.parametrize("text,pref,vetoes", [
@@ -200,13 +200,8 @@ def test_the_lines_are_for_the_season_and_their_english_is_spelled_right():
 
 
 def test_an_article_run_into_the_word_still_matches():
-    assert match_option(show_bank.question("A2"), "Unbolkan.").option == "volcan"
-    assert match_option(show_bank.question("A2"), "elvolcan").option == "volcan"
-
-
-def test_the_trick_or_treat_answer_counts_for_the_neighbourhood_option():
-    assert match_option(show_bank.question("C1"), "trick or treat").option == "puertas"
-    assert match_option(show_bank.question("C1"), "¡dulce o truco!").option == "puertas"
+    for prefix in ("un", "el"):
+        assert match_option(show_bank.question("A2"), prefix + said("A2", 0)).option == opts("A2")[0]
 
 
 def test_canarys_spelling_of_slytherin_is_a_veto():

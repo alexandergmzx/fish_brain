@@ -7,8 +7,10 @@ sibling for an adult audience, started from the page.
     -> [clips] number + moon + magic word + closing
     -> [model] the model's reading of the [ADIVINACIÓN: …] tag, said live, then the closing
 
-In model mode (the mode now, at each answer) an answer gets a short beat and a card its name
-beat; the reaction it would have had is held, and said first if the reading falls to the clips.
+In model mode (the mode now, at each answer) the model reacts to the answer and asks the next
+question (ADR 0029: `_ask_line`; the code decides what is asked and when, the model how), or, when
+it fails or is refused, a short beat and the clip; a card gets its name beat; the reaction an
+answer would have had is held, and said first if the reading falls to the clips.
 The model's tag carries the act's seeds (a tema when no wish was heard, a gancho, a forma, the
 day, the openings of the last readings), dealt before repeat from the act's state file.
 
@@ -201,6 +203,28 @@ def reading_has(data: dict) -> set:
     clear is not one, and is not in the tag either."""
     has = {k for k in ("signo", "sueno", "carta") if data.get(k) is not None}
     return has - {"sueno"} if data.get("sueno_vago") else has
+
+
+def ask_dijo(qid: str, words: str, data: dict) -> str:
+    """The visitor's words as the question turn may send them. A dream's words go only when its
+    theme is clear and not one the model never gets (fortune.DREAM_NO_WORDS): an unclear one may
+    be anything, and would stay in the act's history. A question back or a bare no is no dream."""
+    if qid != "sueno":
+        return words
+    if data.get("sueno") and data["sueno"] not in fortune.DREAM_NO_WORDS:
+        return words
+    asked, rest = fortune.split_ask_back(words, fortune.ECHO["sueno"])
+    if asked and not fortune.has_answer(rest):
+        return words
+    bare_no = fortune.parse_yes_no(words) == "no" and len(fortune.tokens(words)) <= 2
+    return words if bare_no else ""
+
+
+def ask_model(llm, tag: str, asks: str, deck: dict | None) -> tuple[str, str | None]:
+    """One question line from the model: (raw, the line to say or None)."""
+    raw = llm.reply(tag, remember=False)
+    spoken, _house = split_reply(raw or "")
+    return raw, None if llm.last_error else fortune.ask_result(spoken, asks, deck)
 
 
 def hat_draw(state, deck: dict, data: dict, *, reversible: bool) -> int:
@@ -433,6 +457,7 @@ class FortuneRun:
             return True
         if item.action == "skip" and self.v["stage"] == "ask":
             self.v["tries"] = 1                  # no second ask: the bridge and the next one
+            self.v["said"] = ""                  # no words to react to: the clip
             self.no_answer()
         elif item.action == "end" and self.v["stage"] == "ask":
             self._ending([])
@@ -467,7 +492,8 @@ class FortuneRun:
             visit.next_act(carry=house is not None, now=now)
         n = self._next_n()
         self.v = {"n": n, "qs": qs, "i": 0, "tries": 0, "reprompts": 0, "asked_back": set(),
-                  "data": {}, "heard": [],
+                  "data": {}, "heard": [], "said": "", "asked": [], "ask_off": False,
+                  "ask_begun": False,
                   "why": why, "deck": deck, "place": place, "first": first, "house": house,
                   "stage": "ask", "mode": None, "mode_why": "", "clips": [], "reading": None,
                   "held": [], "seeds": {},
@@ -492,6 +518,7 @@ class FortuneRun:
         text = text or ""
         v["heard"].append((qid, text))
         words = fortune.strip_notes(text)
+        v["said"] = words
         kind, value = parse_answer(qid, words, v["deck"], v["data"])
         beats = self.mode_now()[0] == "llm"      # model mode: a beat now, the meaning read once
         if kind == "draw":
@@ -502,7 +529,7 @@ class FortuneRun:
         debug.turn_set(fortune=f"#{v['n']} {qid} {kind} {shown}")
         print(f"[fortune] #{v['n']} {qid} heard={text!r} -> {kind} {shown}", flush=True)
         if kind == "not_sure":
-            return self._next([self._pick("bridge")])
+            return self._next([self._pick("bridge")], filler=True)
         if kind in ("none", "ask_back"):
             return self.no_answer(kind)
         if kind == "no_card":
@@ -527,6 +554,7 @@ class FortuneRun:
         else:
             clips = [self._pick("beat")]
             v["held"] += reaction
+            return self._next(clips, filler=True)
         return self._next(clips)
 
     def no_answer(self, kind: str = "none") -> bool:
@@ -539,20 +567,84 @@ class FortuneRun:
             return False
         qid = v["qs"][v["i"]]
         if reask(kind, qid, v, self.cfg.reprompts):
+            line = self._ask_line(qid, "repite")
+            if line is not None and self._say_line(line):
+                return True
             return self._say([fortune_bank.reprompt_name(qid, v["deck"])]) or True
         if qid == "sueno" and "sueno" not in v["data"]:
             told = told_dream(v["heard"])
             if told:
                 v["data"].update(sueno="otro", sueno_vago=True,
                                  sueno_txt=clean_cue_text(told, DREAM_TEXT_MAX))
-        return self._next([self._pick("bridge")])
+        return self._next([self._pick("bridge")], filler=True)
 
-    def _next(self, clips: list) -> bool:
+    # ---- the question turn: the model reacts and asks (ADR 0029) --------------------------------
+    def _ask_line(self, asks: str, modo: str) -> str | None:
+        """The model's line for the question `asks`, or None for the clip: clips only, no words
+        to react to (a tap, a fault), or a failure, which leaves the rest of the act on clips so
+        no second wait is lost. Never an error line. Nothing is remembered until it is said."""
+        v = self.v
+        if (not self.cfg.ask or v["ask_off"] or not v["said"].strip()
+                or self.mode_now()[0] != "llm"):
+            return None
+        try:
+            llm = self.c.llm                     # the client is built here, on this thread
+            if not v["ask_begun"]:
+                begin_model(llm, self.cfg.ask_rules)
+                llm.thinking = self.cfg.thinking or None
+                v["ask_begun"] = True
+            dijo = ask_dijo(v["qs"][v["i"] if modo == "repite" else v["i"] - 1], v["said"], v["data"])
+            f = fortune_of(v["data"], nombre=v["first"], lugar=place_word(self.c.cfg.place),
+                           casa=v["house"], pistas=self._pistas(), hoy=fortune.today_words())
+            tag = fortune.ask_tag(asks, modo, dijo, f, v["deck"])
+            raw, line = self.c._await("llm", lambda: ask_model(llm, tag, asks, v["deck"]))
+        except Exception as e:                   # TurnTimeout among them: the clip, at once
+            print(f"[fortune] the model's question gave way to the clip: {type(e).__name__}: {e}",
+                  flush=True)
+            v["ask_off"] = True
+            return None
+        if line is None:
+            print(f"[fortune] the model's question was refused: {(raw or '')[:120]!r}", flush=True)
+            v["ask_off"] = bool(llm.last_error)   # a refused line: only this question is the clip
+            return None
+        v["pending"] = {"tag": tag, "raw": raw, "q": asks, "modo": modo}
+        return line
+
+    def _say_line(self, line: str) -> bool:
+        """The model's question said live; False leaves the clip to say it."""
+        v = self.v
+        try:
+            said = self.c._speak_reply(line)
+        except Exception as e:
+            print(f"[fortune] the question's voice failed: {type(e).__name__}: {e}", flush=True)
+            said = False
+        pending = v.pop("pending")
+        if not said:
+            v["ask_off"] = True
+            return False
+        print(f"fish> {line}", flush=True)
+        debug.turn_set(reply=line)
+        self.c.llm.remember(pending["tag"], pending["raw"])
+        v["asked"].append({"q": pending["q"], "modo": pending["modo"], "line": line})
+        v["last_s"] = self.c._clock()
+        self.c._push_visit()
+        return True
+
+    def _next(self, clips: list, *, filler: bool = False) -> bool:
+        """The next question after `clips`. In model mode the model says it, with its own
+        reaction, so a `filler` lead (a beat, a bridge) is dropped; a card's name stays."""
         v = self.v
         v["i"] += 1
         v["tries"] = 0
         if v["i"] < len(v["qs"]):
             nxt = v["qs"][v["i"]]
+            line = self._ask_line(nxt, "sigue")
+            if line is not None:
+                if not filler and clips:
+                    self._say(clips)
+                if self._say_line(line):
+                    return True
+                clips = [] if not filler else clips
             clips.append(fortune_bank.prompt_name(nxt, v["deck"]))
             self._say(clips)
             return True
@@ -755,7 +847,7 @@ class FortuneRun:
                    place=v["place"], data=data, heard=[list(h) for h in v["heard"]],
                    clips=list(v["clips"]), reading=v["reading"], house=v["house"],
                    first=v["first"], pistas=v.get("pistas", {}), seeds=v.get("seeds", {}),
-                   seconds=seconds, ticket=v.get("ticket"))
+                   asked=list(v["asked"]), seconds=seconds, ticket=v.get("ticket"))
         debug.turn_set(fortune=f"#{v['n']} reading ({how})", outcome=f"fortune: reading ({how})")
         self._last = {"n": v["n"], "mode": how, "why": v["mode_why"], "data": data}
         self.v = None
@@ -789,7 +881,7 @@ class FortuneRun:
         debug.emit("fortune", n=v["n"], dropped=why, place=v["place"], data=data,
                    heard=[list(h) for h in v["heard"]], clips=list(v["clips"]),
                    house=v["house"], first=v["first"], pistas=v.get("pistas", {}),
-                   seconds=round(time.monotonic() - v["t0"], 1))
+                   asked=list(v["asked"]), seconds=round(time.monotonic() - v["t0"], 1))
         debug.turn_set(fortune=f"#{v['n']} dropped ({why})", outcome=f"dropped ({why})")
         self._last = {"n": v["n"], "mode": "dropped", "why": why, "data": data}
         self._close_cues(v)
@@ -806,6 +898,7 @@ class FortuneRun:
                 print(f"[fortune] {kind} during the reading: the clips finish it", flush=True)
                 self._finish_clips([])
             else:
+                v["said"] = ""                   # the turn failed: the clip, no second wait
                 self.no_answer()
         except Exception as e:                   # the act must never be the problem
             print(f"[fortune] fault while handling {kind}: {type(e).__name__}: {e}", flush=True)

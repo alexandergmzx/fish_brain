@@ -64,7 +64,7 @@ CUE_SAID: dict[str, dict[str, str]] = {
 }
 PLACE_IDS = ("casa", "fiesta", "universidad")   # said as themselves; "otro" by its text
 
-_TAG = re.compile(r"\[\s*(?:ETAPA|PISTAS|FIN|FUTURO|ADIVINACI[ÓO]N)\b[^\]]*\]", re.IGNORECASE)
+_TAG = re.compile(r"\[\s*(?:ETAPA|PISTAS|FIN|FUTURO|ADIVINACI[ÓO]N|PREGUNTA)\b[^\]]*\]", re.IGNORECASE)
 _LINE_LEAD = re.compile(r"^[\s>*_#•·-]+")
 _CASA_LINE = re.compile(r"^casa\s*:\s*(.*)$", re.IGNORECASE)
 # The tag run into the end of the text ("… feria. CASA: Ravenclaw"): only in capitals and

@@ -70,7 +70,7 @@ STALE = ("esta noche", "algo viejo", "no te asustes", "todo va a salir bien", "e
          "los astros", "las estrellas", "el universo", "todo esta escrito", "mucho amor",
          "por ciento", "tu aviso:", "el sombrero")
 OPENING_WORDS = 3               # readings that open with the same words count as one opening
-QUESTION_WORDS = 10             # the rules' limit for one question ("¿…?")
+QUESTION_WORDS = 20             # the rules' limit for one question ("¿…?")
 _QUESTION = re.compile(r"¿([^?]*)\?")
 REPEAT_N = 4                    # words in a phrase that counts as repeated across verdicts
 
@@ -309,7 +309,7 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
     reading is the model's, timed against the act's wait (cfg.fortune.reading_s). `state` (a
     ShowState) carries the draws, the seeds and the last openings across visitors. The
     reading thinks as the act's does (cfg.fortune.thinking) unless `thinking` says otherwise."""
-    from fish_brain import fortune, fortune_run, visit
+    from fish_brain import fortune, fortune_bank, fortune_run, visit
     from fish_brain.show import ShowState
     state = state if state is not None else ShowState(None, seed=f"rehearse-{seed}")
     deck = fortune.DECKS.get(cfg.fortune.deck)
@@ -320,6 +320,37 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
     # asked for is shown and skipped.
     st = {"tries": 0, "reprompts": 0, "asked_back": set()}
     current, more = None, False
+    qs = ["fecha", "sueno", "deseo"] + (["carta"] if deck is not None else [])
+    qs += ["taza"] if cfg.fortune.cup else []
+    prompts = fortune_bank.FORTUNE_PHRASES
+    first_q = visitor.get("name", "") or (visit_rec["first"] if visit_rec and visit_rec.get("house")
+                                          else "")
+    casa_q = visit_rec["house"] if visit_rec else None
+    pistas_q = accepted_cues(visit_rec["cues"] if visit_rec else {})[0]
+    ask = {"on": cfg.fortune.ask, "begun": False}
+
+    def hat_line(asks, modo, said_by, words):
+        """What the hat says for the question `asks`, marked: [H] the model, [H → clip] the
+        model's line refused or failed (the rest of the act is on clips, as in the act), [S]."""
+        clip = fortune_bank.reprompt_name(asks, deck) if modo == "repite" else fortune_bank.prompt_name(asks, deck)
+        if not ask["on"] or not words.strip():
+            return {"mark": "S", "line": prompts[clip]}
+        if said_by not in qs:
+            return {"mark": "S", "line": prompts[clip]}
+        if not ask["begun"]:
+            visit.begin_model(llm, cfg.fortune.ask_rules)
+            llm.thinking = thinking or cfg.fortune.thinking or None
+            ask["begun"] = True
+        f = fortune_run.fortune_of(data, nombre=first_q, lugar=place_of(cfg, visitor), casa=casa_q,
+                                   pistas=pistas_q, hoy=fortune.today_words(now))
+        tag = fortune.ask_tag(asks, modo, fortune_run.ask_dijo(said_by, words, data), f, deck)
+        raw, line = fortune_run.ask_model(llm, tag, asks, deck)
+        if line is None:
+            ask["on"] = not llm.last_error       # as the act: a refusal costs this question only
+            return {"mark": "H → clip", "line": prompts[clip], "refused": raw or llm.last_error}
+        llm.remember(tag, raw)
+        return {"mark": "H", "line": line}
+
     for qid, text in visitor["fortune"] or []:
         if (qid == "carta" and deck is None) or (qid == "taza" and not cfg.fortune.cup):
             answers.append({"q": qid, "you": text, "kind": "not asked (off)", "value": None})
@@ -339,6 +370,19 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
         more = kind in ("none", "ask_back") and fortune_run.reask(kind, qid, st,
                                                                   cfg.fortune.reprompts)
         answers.append({"q": qid, "you": text, "kind": kind, "value": value})
+        if qid == "sueno" and not more and "sueno" not in data:   # as no_answer: never clear
+            told = fortune_run.told_dream(heard)
+            if told:
+                data.update(sueno="otro", sueno_vago=True,
+                            sueno_txt=visit.clean_cue_text(told, fortune_run.DREAM_TEXT_MAX))
+        if kind in ("card", "draw"):
+            answers[-1]["lead"] = "the card's name" + (" and the shuffle" if kind == "draw" else "")
+        elif kind == "no_card":
+            answers[-1]["lead"] = "sin_carta"
+        if more:
+            answers[-1]["hat"] = hat_line(qid, "repite", qid, words)
+        elif qs.index(qid) + 1 < len(qs) if qid in qs else False:
+            answers[-1]["hat"] = hat_line(qs[qs.index(qid) + 1], "sigue", qid, words)
     told = fortune_run.told_dream(heard)
     if told and "sueno" not in data:            # as no_answer does: a dream told, never clear
         data.update(sueno="otro", sueno_vago=True,
@@ -512,6 +556,8 @@ def visitor_markdown(i: int, visitor: dict, rec: dict | None, frec: dict | None,
         for a in frec["answers"]:
             value = "" if a["value"] is None else f" → {a['value']}"
             out.append(f"- **{a['q']}:** {a['you']} ({a['kind']}{value})")
+            if a.get("hat"):
+                out.append(f"  - [{a['hat']['mark']}] {a['hat']['line']}")
         out += ["", "**The tag:**", "", "```", frec["tag"], "```", ""]
         out += [f"**Reading now** ({len(frec['reading'].split())} words):", "",
                 _md_quote(frec["reading"]), ""]
@@ -569,14 +615,23 @@ def _print_visit(i: int, profile: str, rec: dict) -> None:
 
 def _print_fortune(rec: dict) -> None:
     print("  -- fortuna --")
+    print("  [S] the intro clip, and the first question")
     for a in rec["answers"]:
         shown = "" if a["value"] is None else f" {a['value']}"
         print(f"  {a['q']}> {a['you']}  -> {a['kind']}{shown}")
+        if a.get("lead"):
+            print(f"  [S] {a['lead']}")
+        if a.get("hat"):
+            print(f"  [{a['hat']['mark']}] hat> {a['hat']['line']}")
+            if a["hat"].get("refused"):
+                print(f"      refused: {a['hat']['refused']}")
     print(f"  tag> {rec['tag']}")
     flag = ("  !! " + ", ".join(rec["problems"])) if rec["problems"] else ""
     err = f"  !! {rec['error']}" if rec.get("error") else ""
-    print(f"  reading ({len(rec['reading'].split())} words)> "
+    print("  [S] the suspense clip")
+    print(f"  [H] reading ({len(rec['reading'].split())} words)> "
           f"{rec['reading']}{flag}{err}")
+    print("  [S] the closing clip")
     if rec.get("ticket"):
         print("  -- the ticket --")
         for line in rec["ticket"].rstrip("\n").split("\n"):
@@ -613,7 +668,11 @@ def main(argv: list[str] | None = None) -> int:
                          "the commit and the rules (rehearsals/ is ignored by git)")
     ap.add_argument("--repeat", type=int, default=1,
                     help="run the visitors N times over (the collapse check: --only 3 --repeat 20)")
+    ap.add_argument("--prompts", type=Path, metavar="DIR",
+                    help="the words from this folder instead of fish_brain/prompts/ (before and after)")
     args = ap.parse_args(argv)
+    if args.prompts:
+        os.environ["FISH_PROMPTS_DIR"] = str(args.prompts.resolve())
 
     try:
         from dotenv import load_dotenv

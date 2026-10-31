@@ -148,6 +148,7 @@ def test_repeats_finds_a_phrase_shared_by_two_verdicts():
 
 def test_a_fortune_block_runs_the_acts_steps(monkeypatch):
     from datetime import datetime, timezone
+    monkeypatch.setenv("FISH_FORTUNE_ASK", "false")
     monkeypatch.setenv("FISH_PERSONA", "hat")
     monkeypatch.delenv("FISH_FORTUNE_DECK", raising=False)
     monkeypatch.delenv("FISH_FORTUNE_CUP", raising=False)
@@ -187,6 +188,7 @@ def test_a_fortune_block_runs_the_acts_steps(monkeypatch):
 
 
 def test_a_question_back_is_asked_again_as_the_act_does(monkeypatch):
+    monkeypatch.setenv("FISH_FORTUNE_ASK", "false")
     monkeypatch.setenv("FISH_PERSONA", "hat")
     monkeypatch.delenv("FISH_FORTUNE_DECK", raising=False)
     monkeypatch.setenv("FISH_FORTUNE_CUP", "false")
@@ -213,6 +215,20 @@ def test_the_magic_word_is_said_only_at_its_closing():
     assert "el sombrero" in hat_rehearse.STALE
 
 
+def test_the_question_turn_is_marked_as_the_act_would_say_it(monkeypatch):
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+    monkeypatch.delenv("FISH_FORTUNE_DECK", raising=False)
+    monkeypatch.setenv("FISH_FORTUNE_CUP", "false")
+    monkeypatch.setenv("FISH_FORTUNE_ASK", "true")
+    llm = ScriptLLM(["Terco. ¿Qué soñaste?", "Nada de preguntas.", "Lo veo. ¿Te leo una carta?", "La lectura. Tu palabra mágica es Zumbalí."])
+    rec = hat_rehearse.run_fortune(llm, Config(), {"place": "fiesta", "fortune": [
+        ("fecha", "Tauro."), ("sueno", "Soñé que volaba."), ("deseo", "Dinero."), ("carta", "No.")]},
+        None, seed=1)
+    marks = [a.get("hat", {}).get("mark") for a in rec["answers"]]
+    assert marks == ["H", "H → clip", "H", None]
+    assert rec["answers"][1]["hat"]["line"].endswith("deseo?")
+
+
 def test_variety_counts_openings_and_stale_phrases():
     line = hat_rehearse.variety(["Escorpio, tú no perdonas. Esta noche sí.",
                                  "Escorpio, tú no olvidas.", "Suelta la quijada, que la energía…"])
@@ -222,6 +238,7 @@ def test_variety_counts_openings_and_stale_phrases():
 
 def test_the_act_state_carries_the_draws_and_the_openings_across_visitors(monkeypatch):
     from fish_brain.show import ShowState
+    monkeypatch.setenv("FISH_FORTUNE_ASK", "false")
     monkeypatch.setenv("FISH_PERSONA", "hat")
     monkeypatch.delenv("FISH_FORTUNE_DECK", raising=False)
     cfg = Config()

@@ -947,6 +947,56 @@ def _quoted(text: str) -> str:
 def reading_tag(f: Fortune, deck: dict | None) -> str:
     """The one line the model gets for its reading: every datum heard, in its said form,
     never the year, then the act's seeds. Missing keys are absent."""
+    return "[ADIVINACIÓN: " + "; ".join(_tag_parts(f, deck)) + "] Haz la lectura."
+
+
+# The question turn (ADR 0029): what the act must ask, by qid, as the tag says it and as a folded
+# word the line must hold (the parsers still have to hear an answer to it).
+ASK_SAID = {"fecha": "signo", "sueno": "sueño", "deseo": "deseo", "carta": "carta", "taza": "taza"}
+_ASK_TOPIC = {"fecha": r"\b(?:signo|naci(?:ste|do|da|miento|o\b)|cumple|mes\b)", "sueno": r"\b(?:suen|son[aeo]|dorm|anoche|noche|pedazo|pedacito|despert)",
+              "deseo": r"\b(?:dese|pid|pedi|anhel|ansi|quieres\b(?! decir)|quisieras)",
+              "carta": r"\b(?:carta|arcano|baraja)", "taza": r"\b(?:taza|fondo|figura|dibujo|cafe)"}
+_ASK_NEVER = re.compile(r"\w\s*=|\btarot\b|\[|\]")
+_ASK_NO_DECK = re.compile(r"\b(?:cartas?|baraja|arcanos?)\b")
+ASK_WORDS = 40
+
+
+def ask_tag(asks: str, modo: str, dijo: str, f: Fortune, deck: dict | None) -> str:
+    """The line the model gets for one question: what to ask, how ("sigue", or "repite" after a
+    question back or an unclear answer), the visitor's words and what is known so far."""
+    parts = [f"pide={ASK_SAID[asks]}", f"modo={modo}"]
+    if dijo.strip():
+        parts.append(f'dijo="{_quoted(_clean_text(dijo, 200))}"')
+    return "[PREGUNTA: " + "; ".join(parts + _tag_parts(f, deck)) + "]"
+
+
+def ask_result(spoken: str, asks: str, deck: dict | None) -> str | None:
+    """The model's line for a question, or None (the clip is said): its last sentence is a question
+    that holds the topic, and it fits ASK_WORDS (a longer one is cut to its first sentence, when it
+    ends in "." or "!", and its question); no tag or key, never "tarot", no card word at all with
+    no deck (his word, 2026-10-31)."""
+    text = " ".join((spoken or "").split())
+    pieces = [m.strip() for m in re.findall(r"[^.!?…]+[.!?…]+", text)]
+    # A short closing after the question is fine: "¿Qué soñaste? Aunque sea un pedazo."
+    tail = pieces.pop() if (len(pieces) > 1 and not pieces[-1].endswith("?") and pieces[-2].endswith("?")
+                            and len(pieces[-1].split()) <= 8) else ""
+    if not pieces or not pieces[-1].endswith("?"):
+        return None
+    asked = pieces[-2:] if len(pieces) > 1 and pieces[-2].endswith("?") else pieces[-1:]
+    question = " ".join(asked + ([tail] if tail else []))
+    if len(text.split()) > ASK_WORDS:            # long-winded: its opening and its question
+        first = pieces[0] if len(pieces) > len(asked) and pieces[0][-1] in ".!" else ""
+        text = f"{first} {question}".strip()
+        text = text if len(text.split()) <= ASK_WORDS else question
+    folded = _fold(text)
+    if len(text.split()) > ASK_WORDS or _ASK_NEVER.search(folded):
+        return None
+    if deck is None and _ASK_NO_DECK.search(folded):
+        return None
+    return text if re.search(_ASK_TOPIC[asks], _fold(" ".join(asked))) else None
+
+
+def _tag_parts(f: Fortune, deck: dict | None) -> list[str]:
     parts = []
     if f.nombre:
         parts.append(f"nombre={f.nombre}")
@@ -1006,7 +1056,7 @@ def reading_tag(f: Fortune, deck: dict | None) -> str:
     evita = " | ".join(_quoted(e) for e in f.evita if e and e.strip())
     if evita:
         parts.append(f"evita={evita}")
-    return "[ADIVINACIÓN: " + "; ".join(parts) + "] Haz la lectura."
+    return parts
 
 
 def opening(reading: str, words: int = 8) -> str:

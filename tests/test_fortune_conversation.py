@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from fish_brain import show_bank
 from fish_brain import cloud, fortune, fortune_bank, voice_guard
 from fish_brain.config import Config
 from fish_brain.conversation import FishConversation
@@ -98,10 +99,22 @@ def render(cfg, *, prefix="fortune_"):
             (cfg.canned.cache_dir / f"{name}-t.wav").touch()
 
 
+
+def W(qid, i):
+    """What a visitor says for option i of a question."""
+    return show_bank.question(qid)["options"][i]["words"][0]
+
+
+def O(qid, i):
+    """That option's id."""
+    return show_bank.question(qid)["options"][i]["id"]
+
+
 @pytest.fixture
 def make(monkeypatch, tmp_path):
     def build(mode="script", llm=None, *, deck="tarot", cup=True, place="fiesta", rendered=True,
-              clock=None):
+              clock=None, ask=False):
+        monkeypatch.setenv("FISH_FORTUNE_ASK", "true" if ask else "false")
         monkeypatch.setenv("FISH_PERSONA", "hat")
         monkeypatch.setenv("FISH_SHOW", mode)
         monkeypatch.setenv("FISH_FORTUNE_DECK", deck)
@@ -360,6 +373,123 @@ def test_a_dream_never_clear_stays_out_of_the_tag(make, online, monkeypatch):
     assert "sueño=" not in tag and "forma=sueño" not in tag and "carta" not in tag
 
 
+# ---- the question turn: the model reacts and asks (ADR 0029) --------------------------------
+
+class AskLLM(FakeLLM):
+    """Answers a [PREGUNTA: …] with the line for it, a reading otherwise."""
+    LINES = {"sueño": "Un cangrejo terco. ¿Qué soñaste?", "deseo": "Caer es un aviso. ¿Qué deseas?",
+             "carta": "Lo veía venir. ¿Te leo una carta?", "signo": "Te oí. ¿Cuál es tu signo?"}
+
+    def reply(self, text, remember=True):
+        self.calls += 1
+        self.asked.append(text)
+        if text.startswith("[PREGUNTA"):
+            return self.LINES[text.split("pide=")[1].split(";")[0]]
+        return self.text
+
+
+class Spoken(Speaker):
+    def __init__(self):
+        super().__init__()
+        self.lines = []
+
+    def speak(self, text, **kw):
+        self.lines.append(text)
+        return True
+
+
+def asking(make, llm=None, **kw):
+    c = make("auto", llm=llm or AskLLM(), cup=False, ask=True, **kw)
+    c.speaker = Spoken()
+    return c
+
+
+def test_the_model_reacts_and_asks_and_the_clip_is_not_said(make, online):
+    c = asking(make)
+    start(c)
+    assert c.speaker.stages[-1][-1] == "fortune_q_fecha"       # the first: scripted
+    say(c, "Cáncer.")
+    assert c.speaker.lines == ["Un cangrejo terco. ¿Qué soñaste?"]
+    assert "fortune_q_sueno" not in c.speaker.all()
+    assert not any(n.startswith("fortune_beat_") for n in c.speaker.all())
+    tag = c._llm.asked[-1]
+    assert tag.startswith('[PREGUNTA: pide=sueño; modo=sigue; dijo="Cáncer."') and "signo=Cáncer" in tag
+    assert c._llm.extra_rules == c.cfg.fortune.ask_rules and c._llm.remembered[-1][0] == tag
+
+
+def test_a_question_back_goes_to_the_model_to_answer(make, online):
+    c = asking(make)
+    start(c)
+    say(c, "Cáncer.")
+    say(c, "Me caí.")
+    say(c, "¿Y cómo que muerte?")
+    assert 'pide=deseo; modo=repite; dijo="¿Y cómo que muerte?"' in c._llm.asked[-1]
+    assert "fortune_rq_deseo" not in c.speaker.all() and "deseo" not in c.fortune.v["data"]
+
+
+def test_an_unclear_dream_never_reaches_the_models_history(make, online):
+    c = asking(make)
+    start(c)
+    say(c, "Cáncer.")
+    say(c, "mi jefe me acosaba en la oficina")
+    say(c, "pues mi jefe otra vez")
+    said = " ".join(c._llm.asked) + " ".join(u for u, _a in c._llm.remembered)
+    assert "jefe" not in said and "pide=sueño; modo=repite" in said
+
+
+def test_a_refused_line_is_the_clip_for_that_question_only(make, online):
+    llm = AskLLM()
+    llm.LINES = {**AskLLM.LINES, "sueño": "Esto no pregunta nada."}
+    c = asking(make, llm)
+    start(c)
+    say(c, "Cáncer.")
+    assert c.speaker.stages[-1][-1] == "fortune_q_sueno" and c.speaker.lines == []
+    assert c.speaker.stages[-1][0].startswith("fortune_beat_")
+    say(c, "Me caí.")
+    assert c.speaker.lines == ["Caer es un aviso. ¿Qué deseas?"] and not c.fortune.v["ask_off"]
+
+
+def test_a_failed_call_is_the_clip_with_no_error_line(make, online):
+    llm = AskLLM()
+    def boom(text, remember=True):
+        raise RuntimeError("boom")
+    llm.reply = boom
+    c = asking(make, llm)
+    start(c)
+    say(c, "Cáncer.")
+    assert c.speaker.stages[-1][-1] == "fortune_q_sueno" and c.fortune.v["ask_off"]
+    assert not (set(c.speaker.all()) & ERROR_LINES)
+
+
+def test_a_declined_theme_never_sends_the_visitors_words(make, online):
+    c = asking(make)
+    start(c)
+    say(c, "Cáncer.")
+    say(c, "soñé con mi tío que se murió")
+    assert "tío" not in c._llm.asked[-1] and "dijo=" not in c._llm.asked[-1]
+
+
+def test_a_card_keeps_its_name_clip_and_clips_alone_never_call_the_model(make, online):
+    c = asking(make)
+    start(c)
+    say(c, "Cáncer."); say(c, "Me caí."); say(c, "Dinero.")
+    assert c.speaker.lines[-1] == "Lo veía venir. ¿Te leo una carta?"
+    say(c, "la torre")
+    assert "fortune_nombre_tarot_16" in c.speaker.all()
+    d = make("script", llm=NoLLM(), cup=False, ask=True)
+    start(d)
+    say(d, "Cáncer.")
+    assert d.speaker.stages[-1][-1] == "fortune_q_sueno"
+
+
+def test_the_act_records_what_the_model_asked(make, online):
+    c = asking(make)
+    start(c)
+    say(c, "Cáncer.")
+    assert c.fortune.v["asked"] == [{"q": "sueno", "modo": "sigue",
+                                     "line": "Un cangrejo terco. ¿Qué soñaste?"}]
+
+
 # ---- the dream's recording ------------------------------------------------------------------
 
 def test_the_dream_never_moves_the_recording_cap_or_the_speech_routes(make, online, monkeypatch):
@@ -415,7 +545,7 @@ def test_the_fortune_takes_the_utterance_before_the_house_act(make):
 
 def test_after_a_house_act_it_knows_the_house_and_the_name(make):
     c = make()
-    say(c, "hola"); say(c, "la fiesta"); say(c, "un volcán"); say(c, "el mapa")
+    say(c, "hola"); say(c, "la " + W("A1", 0)); say(c, "un " + W("A2", 0)); say(c, "el " + W("A3", 0))
     assert c.visit.house == "Gryffindor" and not c.show.open
     c.visit.first_name = "Leo"
     start(c)
@@ -431,7 +561,7 @@ def test_after_a_house_act_it_knows_the_house_and_the_name(make):
 def test_a_house_given_long_ago_does_not_carry_over(make):
     clock = Clock()
     c = make(clock=clock)
-    say(c, "hola"); say(c, "fiesta"); say(c, "volcán"); say(c, "mapa")
+    say(c, "hola"); say(c, W("A1", 0)); say(c, W("A2", 0)); say(c, W("A3", 0))
     clock.t += c.cfg.fortune.carry_s + 1
     start(c)
     assert c.speaker.stages[-1][0].startswith("fortune_intro_fiesta_")
@@ -444,8 +574,8 @@ def test_it_cannot_start_over_a_live_house_act(make):
     start(c)
     assert not c.fortune.open and c.show.open
     assert c.fortune.view()["last"]["refused"] == "visit open"
-    say(c, "la fiesta")
-    assert c.speaker.stages[-1] == ["show_re_A1_fiesta", "show_q_A2"]
+    say(c, "la " + W("A1", 0))
+    assert c.speaker.stages[-1] == [f"show_re_A1_{O('A1', 0)}", "show_q_A2"]
 
 
 def test_new_visitor_drops_it_silently(make):
@@ -806,7 +936,7 @@ def test_a_record_is_made_for_the_reading_and_the_drop(make, monkeypatch):
 # ---- the visitor's cues (visit.py's lifecycle) -----------------------------------------------
 
 def _house_act(c, clock=None):
-    for text in ("hola", "la fiesta", "un volcán", "el mapa"):
+    for text in ("hola", "la " + W("A1", 0), "un " + W("A2", 0), "el " + W("A3", 0)):
         if clock is not None:
             clock.t += 1
         say(c, text)

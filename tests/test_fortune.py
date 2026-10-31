@@ -627,3 +627,42 @@ def test_what_the_review_found(qid, text, expect):
 def test_what_the_second_review_found(qid, text, expect):
     from fish_brain.fortune_run import parse_answer
     assert parse_answer(qid, text, TAROT, {}) == expect
+
+
+@pytest.mark.parametrize("line,asks,deck,ok", [
+    ("Ese cangrejo no suelta. ¿Qué soñaste anoche?", "sueno", TAROT, True),
+    ("Lo sé. ¿Qué deseas?", "deseo", TAROT, True),
+    ("¿Te leo una carta?", "carta", TAROT, True),
+    ("¿Te leo una carta de tarot?", "carta", TAROT, False),
+    ("Lo sé. ¿Cómo estás?", "deseo", TAROT, False),               # not what it must ask
+    ("Ya veo.", "deseo", TAROT, False),                            # no question
+    ("Mi carta lo sabe. ¿Qué deseas?", "deseo", None, False),      # no deck: no card, at all
+    ("[PREGUNTA: pide=deseo] ¿Qué deseas?", "deseo", TAROT, False),
+    ("palabra " * 41 + "¿Qué deseas?", "deseo", TAROT, False),
+    ("Quieres que te lea una carta, Francisco, ¿o ya sacaste alguna antes?", "carta", TAROT, True),
+    ("Ahora dime, ¿qué soñaste? Aunque sea un pedazo.", "sueno", TAROT, True),
+    ("Caes. " + "palabra " * 40 + ". ¿Qué deseas?", "deseo", TAROT, True),   # cut to both ends
+    ("", "deseo", TAROT, False),
+    ("Eres una persona terca. ¿Cuál es tu deseo?", "sueno", TAROT, False),   # the question's topic only
+    ("Pides poco, vuelas bajo. ¿Cuál es tu signo?", "deseo", TAROT, False),
+    ("Tu sonrisa miente. ¿Quién te espera?", "sueno", TAROT, False),
+    ("¿Qué nación te espera?", "fecha", TAROT, False),
+    ("¿Qué quieres decir con eso?", "deseo", TAROT, False),
+    ("signo=Cáncer. ¿Qué soñaste?", "sueno", TAROT, False),
+    ("Sigues aquí. ¿Qué viste anoche mientras dormías?", "sueno", TAROT, True),
+    ("Volaste. ¿Qué ansías de verdad?", "deseo", TAROT, True),
+])
+def test_the_models_question_is_checked(line, asks, deck, ok):
+    assert (fortune.ask_result(line, asks, deck) is not None) == ok
+
+
+def test_the_question_tag_has_what_is_known_and_never_the_seeds():
+    tag = fortune.ask_tag("deseo", "repite", 'Di "algo"; ya', Fortune(signo="escorpio", nombre="Ana"), TAROT)
+    assert tag.startswith("[PREGUNTA: pide=deseo; modo=repite; dijo=") and "signo=Escorpio" in tag
+    assert "nombre=Ana" in tag and tag.endswith("]") and "visión" not in tag and "Haz la lectura" not in tag
+
+
+def test_a_long_line_keeps_its_opening_and_its_question():
+    long = " ".join(["palabra"] * 45)
+    assert fortune.ask_result(f"Caes. {long}. ¿Qué deseas?", "deseo", TAROT) == "Caes. ¿Qué deseas?"
+    assert fortune.ask_result(f"{long}. Dime, ¿qué deseas?", "deseo", TAROT) == "Dime, ¿qué deseas?"
