@@ -112,6 +112,66 @@ def split_reply(text: str) -> tuple[str, str | None]:
     return spoken.strip(), house
 
 
+# The hat's echo of a name: the capitalised words of the reply's first phrase, before "!", "."
+# or "…" ("Fernando, veo…", "¡Buenas, Ana!", "María José, veo").
+_ECHO_PHRASE = re.compile(r"^[^!.…?]*")
+_WORD = re.compile(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+")
+_NOTE_TAG = re.compile(r"\[[^\]]*\]")
+# Never a name, though a visitor or a reply may open with them: greetings, fillers, courtesy,
+# the season and the signs (this module cannot import fortune.py, which imports it).
+_NOT_NAMES = frozenset("hola holi buenas buenos buen dia tardes noches saludos hey ey oye feliz "
+                       "halloween bueno pues claro mira bien muy mal si no ah oh ay eh vaya ya eso "
+                       "que como cual quien donde cuando porque perfecto excelente gracias listo "
+                       "otra otro un una uno el la los las lo de del con en por para sin a mi tu "
+                       "su yo sombrero bienvenido bienvenida perdon mande nada nadie alguien "
+                       "secreto miedo ok okay salud mucho gusto encantado encantada igualmente "
+                       "orale aqui alla andando tranquilo tranquila profesor profesora maestro "
+                       "maestra senor senora joven amigo amiga fantasma fan adivina adivinalo "
+                       "sorpresa ninguno dime "
+                       "aries tauro geminis cancer leo virgo libra escorpio escorpion sagitario "
+                       "capricornio acuario piscis".split())
+# What may come before a name ("Hola, Ana", "Órale, Pepe", "Mucho gusto, Carla").
+_GREETINGS = frozenset("hola holi buenas buenos buen dia tardes noches saludos hey ey oye feliz "
+                       "halloween bueno pues mira ah oh ay eh orale mucho gusto encantado encantada "
+                       "este ok okay si claro".split())
+_SIGNS = frozenset("aries tauro geminis cancer leo virgo libra escorpio escorpion sagitario "
+                   "capricornio acuario piscis".split())
+_SAYS_NAME = re.compile(r"\b(?:me llamo|soy|mi nombre es|me dicen)\s+([a-zñ]+)")
+
+
+def heard_name(said: str, reply: str) -> str:
+    """The first name a visitor said to the greeting, as the hat echoed it, spelled as the
+    reply spells it, or "". The reply's first phrase opens with it once greetings are skipped
+    ("Fernando, veo…", "¡Albert!", "¡Buenas, Ana!"), and the visitor's words give it as a
+    name: after "me llamo", "soy" or "mi nombre es", or as their first word after any
+    greeting ("Juan. Juan Delgado.", "Hola, Ana."; never "Con amigos."). Never a greeting, a house, a sign or a word the visitor
+    only mentioned ("Vengo de Guadalajara." -> ""): the hat never guesses a name (the ticket
+    prints it)."""
+    words = [_fold(w) for w in _WORD.findall(_NOTE_TAG.sub(" ", said or ""))]
+    # "Me llamo Leo": Leo, sign or not; never "soy de…", "soy un…", "mi nombre es secreto".
+    told = {w for w in _SAYS_NAME.findall(" ".join(words))
+            if w not in _NOT_NAMES or w in _SIGNS}
+    named = set(told)
+    lead = 0                                             # greetings before the name only
+    while lead < len(words) and words[lead] in _GREETINGS:
+        lead += 1
+    if not told and lead < len(words) and words[lead] not in _NOT_NAMES:
+        named.add(words[lead])                           # "Fernando.", "Hola, Ana."; not "Con amigos."
+    if (reply or "").lstrip().startswith("¿"):          # "¿De Guadalajara? …" asks, never names
+        return ""
+    echo = _WORD.findall(_ECHO_PHRASE.match(reply or "").group(0))
+    while echo and _fold(echo[0]) in _NOT_NAMES and _fold(echo[0]) not in told:
+        echo = echo[1:]
+    if not echo or not echo[0][:1].isupper() or _fold(echo[0]) not in named:
+        return ""
+    if house_of(echo[0]) is not None:
+        return ""
+    name = [echo[0]]
+    if len(echo) > 1 and echo[1][:1].isupper() and _fold(echo[1]) in words:   # "María José"
+        name.append(echo[1])
+    return " ".join(name)
+
+
 def clean_cue_text(text, limit: int = CUE_TEXT_MAX) -> str:
     """A free-text cue, safe inside "[PISTAS: k=v; ...]": no brackets, braces, angle
     brackets, control characters, ";" or "="; collapsed; at most `limit` characters (60 for
@@ -259,7 +319,7 @@ class Visit:
         self.n += 1
         self.open, self.said, self.house = True, 0, None
         self._said_at = None
-        self.first_name = first_name or ""
+        self.first_name = first_name or (self.first_name if keep_cues else "")
         self.started_at = self.last_s = now
 
     def _prune_locked(self) -> None:
@@ -292,6 +352,8 @@ class Visit:
                 self._cues = {**relit, **self._cues}
             else:
                 self._prune_locked()
+        if not carry:
+            self.first_name = ""          # someone else: the last visitor's name is not theirs
 
     def end(self) -> None:
         self.open = False

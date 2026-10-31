@@ -546,6 +546,25 @@ def test_a_rebuilt_model_keeps_the_visitors_cues(hat):
     assert fresh.replies == ["[ETAPA 1/4] [PISTAS: color=negro] Ana"]
 
 
+def test_the_name_said_to_the_greeting_is_the_visits_when_the_hat_echoes_it(hat):
+    convo, viz, llm, spoken = hat(["hola", "Fernando.", "una duda"],
+                                  ["¡Hola! Dime tu nombre.", "Fernando, veo una mente.", "Ya."])
+    convo.turn()
+    assert convo.visit.first_name == ""                 # "¡Hola!" is never a name
+    convo.turn()
+    assert convo.visit.first_name == "Fernando"
+    convo.turn()
+    assert convo.visit.first_name == "Fernando"
+
+
+def test_a_name_the_hat_did_not_echo_is_never_guessed(hat):
+    convo, viz, llm, spoken = hat(["hola", "Cumplen.", "Fernando."],
+                                  ["¡Hola!", "Fernando, veo.", "Fernando, claro."])
+    for _ in range(3):
+        convo.turn()
+    assert convo.visit.first_name == ""                 # a mismatch, then too late (stage 3)
+
+
 def test_idle_starts_a_new_visitor(hat):
     clock = Clock()
     convo, viz, llm, spoken = hat(["hola", "Ana", "otra"], ["1", "2", "3"], clock=clock)

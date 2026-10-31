@@ -877,7 +877,7 @@ class FishConversation:
             raise cloud.CloudUnavailable(llm.last_error)
         spoken, house = split_reply(raw)
         return {"stage": stage, "tagged": tagged, "raw": raw, "snapshot": snapshot,
-                "spoken": spoken, "house": house, "ok": not llm.last_error}
+                "spoken": spoken, "house": house, "ok": not llm.last_error, "user": user}
 
     def _visit_commit(self, t: dict, delivered: bool) -> None:
         """The reply was spoken (or drafted): only now does it enter the model's history and
@@ -886,6 +886,13 @@ class FishConversation:
             return
         self.llm.remember(t["tagged"], t["raw"])
         self.visit.delivered(t["house"], t["snapshot"], self._clock())
+        if not self.visit.first_name and t["stage"] <= 2 and t.get("user"):
+            # The name said to the greeting, as the hat echoed it: the fortune uses it too
+            # (only a typed name did before, 2026-10-31).
+            from .visit import heard_name
+            self.visit.first_name = heard_name(t["user"], t["spoken"])
+            if self.visit.first_name:
+                print(f"[visit] name heard: {self.visit.first_name}", flush=True)
         print(f"[visit] etapa {t['stage']}/{self.visit.stages}"
               + (f" casa={t['house']}" if t["house"] else "")
               + (" fin" if self.visit.done else ""), flush=True)

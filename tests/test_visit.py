@@ -427,3 +427,52 @@ def test_no_bank_no_future_and_an_echoed_tag_is_never_spoken():
     assert "[FUTURO" not in v.prepare("x")[0]
     assert visit.say_hour(13 * 60 + 5) == "la 1 y 5" and visit.say_hour(15 * 60) == "las 3 en punto"
     assert split_reply("[FUTURO: lugar=x] ¡Ravenclaw!\nCASA: Ravenclaw") == ("¡Ravenclaw!", "Ravenclaw")
+
+
+@pytest.mark.parametrize("said,reply,name", [
+    ("Fernando.", "Fernando, veo una mente que se guarda.", "Fernando"),
+    ("Hola, soy Albert.", "¡Albert! Veo una ceja.", "Albert"),
+    ("Iván.", "Iván… veo un fuego.", "Iván"),
+    ("Ivan.", "Iván, veo.", "Iván"),
+    ("María José.", "María José, veo.", "María José"),
+    ("María.", "María José, veo.", "María"),
+    ("Escorpio.", "Escorpio, veo.", ""),
+    ("Hola.", "¡Hola! Dime tu nombre.", ""),
+    ("Ravenclaw.", "¡Ravenclaw! Claro.", ""),
+    ("Cumplen.", "Fernando, veo.", ""),
+    ("Carlos.", "Mira, Carlos, veo.", "Carlos"),
+    ("Buenas.", "¡Buenas! Dime tu nombre, criatura.", ""),
+    ("¡Feliz Halloween! Soy Ana.", "¡Feliz Halloween, Ana! Veo.", "Ana"),
+    ("Nada, solo vine a ver.", "Nada, dices. Eso dicen todos.", ""),
+    ("Vengo de Guadalajara.", "Guadalajara, tierra de valientes.", ""),
+    ("Tengo miedo.", "Miedo. Eso lo huelo.", ""),
+    ("Con amigos.", "Amigos, ya veo.", ""),
+    ("Me llamo Leo.", "Leo, veo una melena.", "Leo"),
+    ("Juan. Juan Delgado.", "Juan, veo.", "Juan"),
+    ("Mucho gusto, soy Carla.", "¡Mucho gusto, Carla! Veo una cabeza.", "Carla"),
+    ("Soy de Guadalajara.", "¿De Guadalajara? Tierra de valientes.", ""),
+    ("Muy bien, gracias.", "Muy bien, me alegra. ¿Y tu nombre?", ""),
+    ("Soy un fantasma.", "Un fantasma, ¿eh? Te veo.", ""),
+    ("Mi nombre es secreto.", "Secreto, ¿eh?", ""),
+    ("Encantada.", "Encantada, dices.", ""),
+    ("Dime qué casa me toca.", "¿Qué casa te toca? Primero tu nombre.", ""),
+])
+def test_the_name_heard_is_the_one_the_hat_echoed(said, reply, name):
+    from fish_brain.visit import heard_name
+    assert heard_name(said, reply) == name
+
+
+def test_another_act_for_someone_else_forgets_the_name_the_same_visitor_keeps_it():
+    from fish_brain.visit import Visit
+    v = Visit()
+    v.start("", 0.0)
+    v.first_name = "Fernando"                 # heard at the greeting
+    v.next_act(carry=True, now=1.0)
+    assert v.first_name == "Fernando"
+    v.next_act(carry=False, now=2.0)          # the fortune's visitor is someone else
+    assert v.first_name == ""
+    v.first_name = "Ana"
+    v.start("", 3.0, keep_cues=True)          # the same visitor, a rebuilt model
+    assert v.first_name == "Ana"
+    v.start("", 4.0)                          # a new visitor
+    assert v.first_name == ""
