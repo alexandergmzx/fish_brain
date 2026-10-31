@@ -75,8 +75,8 @@ and eight more packages.
 
 ## Consequences
 
-- Built on mocks and `socket.socketpair()`; paired with the laptop and printing from it, not
-  paired on the board. The code page is measured: `ESC t 19` / cp858 prints the Spanish letters,
+- Built on mocks and `socket.socketpair()`; paired with the laptop and printing from it; paired on the board too
+  (read 2026-10-31), no paper made from it. The code page is measured: `ESC t 19` / cp858 prints the Spanish letters,
   16 is not cp1252 on this firmware; a text-only sample of 1117 bytes printed in 1.6 s with a
   0.9 s connect ([desk results](../results/2026-10-28-mp210-on-the-desk.md)). The columns, the
   band height, the pacing and the tail wait on a picture are still estimates.

@@ -136,6 +136,7 @@ you get the laptop set-up: local speech-to-text, `loq`, the `groq` LLM profile, 
 | `FISH_PRINTER_CHANNEL` | `1` | The printer's RFCOMM channel (`sdptool records <MAC>`, "Serial Port") |
 | `FISH_FORTUNE_TICKET` | `true` | `false`: no ticket at the end of a fortune; the last one is still kept for Reprint. Also the "🎫 Print the ticket" switch on the Visit tab until a restart |
 | `FISH_AUDIO_ROUTES` | empty | Speaker routes (ADR 0016), in order: PipeWire sink-name patterns and `phone` (board: `alsa_output.usb-*,bluez_output.*,phone`). Each phrase goes to the first one that is there; a failed one cools for `FISH_AUDIO_RETRY_S` (30). `FISH_AUDIO_DELAY_MS` (`pattern=ms,...`): a route's sound delay, the motors follow it |
+| `FISH_BLUETOOTH` | empty (off) | Bluetooth speakers from the page ([ADR 0029](docs/adr/0029-bluetooth-speakers-from-the-page.md)): `on` adds a block in Settings to find, pair and choose a speaker or headphones, and the chosen one goes ahead of `FISH_AUDIO_ROUTES` while it is there; `mock` is a stand-in room with no radio. Needs `dbus-fast` (the `unoq` extra). `FISH_BLUETOOTH_STATE` (default `~/.local/state/fish_brain/bt.json`): the choice and each speaker's mouth delay |
 | `FISH_MIC_BACKEND` | `sounddevice` | `pw-record` (board): record through a PipeWire subprocess that can always be ended; no audio within `FISH_MIC_OPEN_TIMEOUT_S` (3) is a microphone error, never a hang |
 | `FISH_VOICE_QUIT` | `true` | Saying "salir" ends the program |
 | `FISH_WELCOME_ONCE` | `false` | Greet once per boot instead of at every start |
