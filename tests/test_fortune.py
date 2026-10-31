@@ -267,14 +267,14 @@ def test_the_tag_exact_string():
                 deseo="venganza", deseo_txt="contra mi ex", carta=13, carta_de="sombrero",
                 carta_reves=True, taza="estrella", luna="llena", palabra="Zumbalí",
                 hoy="jueves 29 de octubre", gancho="una llave que ya no sabes qué abre",
-                forma="abre con una orden corta", evita=("Ana, bajo tu signo", 'Escorpio "de agua"'))
+                rito="sal en el umbral", forma="aviso", evita=("Ana, bajo tu signo", 'Escorpio "de agua"'))
     assert reading_tag(f, TAROT) == (
         '[ADIVINACIÓN: nombre=Ana; lugar=fiesta; hoy=jueves 29 de octubre; signo=Escorpio; '
         'elemento=agua; número=6; '
         'sueño=dientes ("se me caían los dientes en la boda de mi prima"); '
-        'deseo=venganza ("contra mi ex"); carta=La Muerte (de cabeza; la saqué yo); '
+        'deseo=venganza ("contra mi ex"); carta=La Muerte (de cabeza; la sacó el sombrero); '
         'taza=estrella; luna=llena; palabra=Zumbalí; casa=Ravenclaw; '
-        "visión=una llave que ya no sabes qué abre; forma=abre con una orden corta; "
+        "visión=una llave que ya no sabes qué abre; rito=sal en el umbral; forma=aviso; "
         "evita=Ana, bajo tu signo | Escorpio 'de agua'] Haz la lectura.")
 
 
@@ -291,7 +291,7 @@ def test_the_tag_leaves_out_what_is_missing_and_never_the_year():
 
 
 def test_the_tag_says_who_drew_the_card_and_a_no():
-    assert "carta=El Diablo (tú la sacaste);" in reading_tag(
+    assert "carta=El Diablo (la sacó con su mano);" in reading_tag(
         Fortune(carta=15, carta_de="visitante", palabra="x"), TAROT)
     assert "carta=El Diablo;" in reading_tag(Fortune(carta=15, palabra="x"), TAROT)
     assert "carta=ninguna (no quiso tarot)" in reading_tag(Fortune(sin_carta=True), TAROT)
@@ -453,6 +453,10 @@ def test_the_seeds_deal_before_repeat_and_fit_the_data():
     state = ShowState(None, seed="seeds")
     ganchos = [deal_seeds(state, {"deseo": "amor"}, has={"signo"})["gancho"] for _ in GANCHOS]
     assert sorted(ganchos) == sorted(GANCHOS)
+    from fish_brain.fortune_bank import RITOS
+    fresh = ShowState(None, seed="ritos")
+    ritos = [deal_seeds(fresh, {"deseo": "amor"}, has=set())["rito"] for _ in RITOS]
+    assert sorted(ritos) == sorted(RITOS)                        # dealt before repeat
     for _ in range(12):
         seeds = deal_seeds(state, {}, has=set())
         assert seeds["tema"] in fortune.WISH_IDS

@@ -168,7 +168,7 @@ def test_the_openai_profiles_are_as_they_were():
     for name, vision in (("groq", False), ("luna", True)):
         cfg = LLMConfig(profile=name)
         assert (cfg.provider, cfg.vision, cfg.thinking) == ("openai", vision, None)
-        assert (cfg.max_completion_tokens, cfg.timeout_s) == (400, 8.0)
+        assert (cfg.max_completion_tokens, cfg.timeout_s) == (400, 15.0)
 
 
 def test_an_unknown_thinking_mode_is_refused(monkeypatch):
@@ -423,7 +423,7 @@ def test_the_client_gets_the_key_the_host_and_the_short_timeouts_explicitly(monk
     kw = seen["client"]
     assert kw["api_key"] == "sk-ant-test-0000" and kw["base_url"] == "https://api.anthropic.com"
     assert kw["max_retries"] == 0                       # the SDK would honour any Retry-After
-    assert (kw["timeout"].timeout, kw["timeout"].connect) == (8.0, 3.0)
+    assert (kw["timeout"].timeout, kw["timeout"].connect) == (15.0, 3.0)
     assert set(kw) == {"api_key", "base_url", "timeout", "max_retries"}
 
 

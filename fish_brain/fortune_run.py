@@ -18,7 +18,7 @@ an act). Every datum is optional: the act always reaches the closing and never s
 line. The reading comes from the clips or, when the model can be trusted
 (show_run.model_trusted), from the model: its job starts first, the suspense line covers it,
 and a reading that is not clean within `reading_s` of the end of that line gives way to the
-clips. The dream is the one open question; its recording, like every other, is capped by
+clips; one that is still running `suspense_more_s` after it gets one more suspense line. The dream is the one open question; its recording, like every other, is capped by
 `FISH_PTT_MAX_S` alone (ADR 0020). Everything here runs on the turn loop's thread; the page's taps arrive as `FortuneInput` items through the inbox.
 """
 from __future__ import annotations
@@ -125,12 +125,14 @@ def hat_draw(state, deck: dict, data: dict, *, reversible: bool) -> int:
 
 def deal_seeds(state, data: dict, *, has: set) -> dict:
     """The model's seeds for one reading, dealt before repeat from `state`: a tema when no wish
-    was heard, a gancho, a forma that fits the data `has` ("signo", "sueno", "carta")."""
+    was heard, a gancho, a rito, a forma that fits the data `has` ("signo", "sueno", "carta")."""
     seeds: dict = {}
     if not data.get("deseo"):
         seeds["tema"] = state.pick("tema", list(fortune.WISH_IDS))
     i = int(state.pick("gancho", [f"{i:02d}" for i in range(len(fortune_bank.GANCHOS))]))
     seeds["gancho"] = fortune_bank.GANCHOS[i]
+    i = int(state.pick("rito", [f"{i:02d}" for i in range(len(fortune_bank.RITOS))]))
+    seeds["rito"] = fortune_bank.RITOS[i]
     have = has | {"deseo"}
     fit = [f"{i}" for i, (need, _t) in enumerate(fortune_bank.FORMAS) if need is None or need in have]
     seeds["forma"] = fortune_bank.FORMAS[int(state.pick("forma", fit))][1]
@@ -151,7 +153,8 @@ def fortune_of(data: dict, *, nombre: str = "", lugar: str = "",
                            carta_de=d.get("carta_de", ""), carta_reves=bool(d.get("carta_reves")),
                            sin_carta=bool(d.get("sin_carta")), taza=d.get("taza"),
                            luna=d.get("luna"), palabra=d.get("palabra", ""), hoy=hoy,
-                           gancho=sd.get("gancho", ""), forma=sd.get("forma", ""),
+                           gancho=sd.get("gancho", ""), rito=sd.get("rito", ""),
+                           forma=sd.get("forma", ""),
                            evita=tuple(evita))
 
 
@@ -559,16 +562,21 @@ class FortuneRun:
         if job is None:
             self._model_failed("not asked")
             return False
-        deadline = self.c._clock() + self.cfg.reading_s
+        start = self.c._clock()
+        deadline, more = start + self.cfg.reading_s, start + self.cfg.suspense_more_s
         while not job.done.is_set():
             now = self.c._clock()
+            if more is not None and now >= more and now < deadline:
+                more = None                      # once: a slow reading gets one more line
+                self._say([self._pick("suspense_mas")])
+                continue
             if now >= deadline:
                 job.abandon()
                 self.c._stale["llm"] = job       # the next turn waits for it, never asks twice
                 debug.turn_adopt(mark)
                 self._model_failed(f"timeout after {self.cfg.reading_s:g} s")
                 return False
-            self.c._wait_on(job.done, min(deadline - now, 0.25))
+            self.c._wait_on(job.done, min((more or deadline) - now, deadline - now, 0.25))
         debug.turn_adopt(mark)                   # the worker's model record, to this turn
         if job.exc is not None or llm.last_error:
             _drop_wav(job.result)

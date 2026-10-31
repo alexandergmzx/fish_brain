@@ -98,7 +98,7 @@ def test_the_counts_are_the_plans():
     kinds = {"q": 5, "rq": 5, "re_fecha": 12, "re_sueno": 21, "re_deseo": 6, "re_carta_tarot": 22,
              "re_taza": 11, "nombre_tarot": 22, "reves": 1, "num": 9, "luna": 8, "intro": 12,
              "vision": 6, "bridge": 2, "suspense": 2, "magic": 12, "cierre": 8, "beat": 12,
-             "barajo": 3, "sin_carta": 2}
+             "barajo": 3, "sin_carta": 2, "suspense_mas": 2}
     got = {k: 0 for k in kinds}
     for name in P:
         rest = name[len("fortune_"):]
@@ -109,7 +109,7 @@ def test_the_counts_are_the_plans():
         else:
             raise AssertionError(name)
     assert got == kinds
-    assert sum(kinds.values()) == len(P) == 181
+    assert sum(kinds.values()) == len(P) == 183
 
 
 def test_magic_words_one_per_clip_in_order():
@@ -136,7 +136,14 @@ def test_the_beats_are_short_and_say_nothing_about_the_answer():
         assert len(P[name].split()) <= 9, name
     for name in fb.pool_names("barajo") + fb.pool_names("sin_carta"):
         assert name in P
-    assert "Óyela barajar" in P["fortune_barajo_1"]
+    assert "baraja sola" in P["fortune_barajo_1"]
+    # The model mode's own clips speak in the oracle's voice (ADR 0027): no cheek left
+    model_only = [P[n] for slot in ("beat", "barajo", "suspense", "suspense_mas")
+                  for n in fb.pool_names(slot)]
+    for text in model_only:
+        for cheek in ("Uy", "Ja.", "chismeando", "en tu contra", "se pone bueno"):
+            assert cheek not in text, text
+    assert len(fb.pool_names("suspense_mas")) == 2
 
 
 def test_the_ask_for_a_card_is_his_words():
@@ -154,14 +161,26 @@ def test_the_seeds_are_data_not_clips():
     assert sorted(fb.REVERSED_BAG).count("cabeza") == 1 and len(fb.REVERSED_BAG) == 3
 
 
-def test_the_rules_are_the_roasts():
+def test_the_rules_are_the_oracles():
     r = fb.FORTUNE_RULES
     assert "FORMATO" in r and "REGLAS FIJAS" in r and "setenta y cinco palabras" in r
-    assert "roast" in r and "UNA SOLA HISTORIA SOBRE SU DESEO" in r
+    # ADR 0027: the old sorcerer's oracle over the roast's bones (ADR 0026)
+    assert "voz de oráculo" in r and "UNA SOLA PROFECÍA SOBRE SU DESEO" in r
+    assert "roast" not in r and "búrlate" not in r and "Sin burla" in r
+    assert "lo leíste en su cabeza" in r and "dos lecturas" in r
+    assert "Cuídate" in r or "cuídate" in r
+    assert "ay de ti" in r and "el de rito=" in r and "mal de ojo" in r
+    assert r.count("rito=") >= 4                      # the format line, the rule, two+ examples
+    assert len(set(fb.RITOS)) == len(fb.RITOS) >= 16 and any("mal de ojo" in x for x in fb.RITOS)
+    assert "nunca un porcentaje" in r and "Ningún porcentaje" in r
+    for stale in ("Los astros", "el universo", "todo está escrito", "mucho amor"):
+        assert stale in r, stale                      # named as stale, so the model avoids them
+    assert "forma=aviso" in r and "aviso (abres con una advertencia)" in r
+    assert "forma=orden" not in r
     for key in ("deseo=", "tema=", "visión=", "forma=", "evita=", "hoy="):
         assert key in r, key
     for stale in ("Esta noche, más de una vez", "Algo viejo se va", "No te asustes"):
-        assert stale in r, stale                      # named as stale, so the model avoids them
+        assert stale in r, stale
     assert "dale un sentido bueno" not in r and "Fallo vuelto futuro" not in r
     assert r.count("<ejemplo>") == 3 and "no copies sus frases" in r
     for place in ("fiesta", "casa", "universidad"):
@@ -173,7 +192,7 @@ def test_the_rules_are_the_roasts():
         assert ban not in r, ban
     assert "trago" in r and "ofrenda" in r and "no des por hecho que estudia" in r
     assert "La Muerte" in r and "El Diablo" in r and "tu palabra mágica es" in r
-    assert "Nunca repitas los corchetes" in r and "pícale a los dos" in r
+    assert "Nunca repitas los corchetes" in r and "alcanza a los dos" in r
     assert "enfermedades" not in r and "religión" not in r          # ADR 0025
     assert "Público familiar" not in r and "niños" not in r
 

@@ -719,6 +719,7 @@ class Fortune:
     palabra: str = ""
     hoy: str = ""                   # "jueves 29 de octubre", or "" when the clock is not sane
     gancho: str = ""                # one high-probability specific (fortune_bank.GANCHOS), as visión=
+    rito: str = ""                  # a small rite with its time (fortune_bank.RITOS), as rito=
     forma: str = ""                 # how the reading opens (fortune_bank.FORMAS)
     evita: tuple[str, ...] = ()     # the openings of the last readings
     pistas: dict = field(default_factory=dict)   # the operator's lit cues (visit.pending())
@@ -779,9 +780,9 @@ def reading_tag(f: Fortune, deck: dict | None) -> str:
         if said:
             how = ["de cabeza"] if f.carta_reves else []
             if f.carta_de == "sombrero":
-                how.append("la saqué yo")
+                how.append("la sacó el sombrero")
             elif f.carta_de == "visitante":
-                how.append("tú la sacaste")
+                how.append("la sacó con su mano")
             parts.append(f"carta={said} ({'; '.join(how)})" if how else f"carta={said}")
     elif f.sin_carta:
         parts.append("carta=ninguna (no quiso tarot)")
@@ -798,6 +799,8 @@ def reading_tag(f: Fortune, deck: dict | None) -> str:
         parts.append(f"pistas={pistas}")
     if f.gancho:
         parts.append(f"visión={f.gancho}")     # "gancho" was said aloud as a word (2026-10-29)
+    if f.rito:
+        parts.append(f"rito={f.rito}")
     if f.forma:
         parts.append(f"forma={f.forma}")
     evita = " | ".join(_quoted(e) for e in f.evita if e and e.strip())

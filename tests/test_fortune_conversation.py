@@ -429,7 +429,7 @@ def test_the_model_reading_is_said_live_remembered_then_the_closing(make, online
     tag = llm.asked[0]
     assert tag.startswith("[ADIVINACIÓN: ") and "nombre=Ana" in tag and "lugar=fiesta" in tag
     assert "signo=Escorpio" in tag and 'sueño=dientes ("' in tag and "casa=Ravenclaw" in tag
-    assert "carta=La Muerte (tú la sacaste)" in tag and "luna=llena" in tag and "palabra=" in tag
+    assert "carta=La Muerte (la sacó con su mano)" in tag and "luna=llena" in tag and "palabra=" in tag
     assert 'deseo=venganza ("venganza contra mi ex")' in tag and "tema=" not in tag
     assert "visión=" in tag and "forma=" in tag and "hoy=" in tag and "evita=" not in tag
     assert c.speaker.other == [("speak", llm.text)]
@@ -584,6 +584,31 @@ def test_a_model_failure_falls_back_to_the_clips_and_marks_the_show(make, online
     assert end[-2].startswith("fortune_magic_") and end[-1].startswith("fortune_cierre_")
     assert not c.fortune.open and c.fortune.view()["last"]["mode"] == "clips"
     assert c.show.mode_now() == ("script", "model failed")
+
+
+def test_a_slow_reading_gets_one_more_suspense_line_and_is_still_said(make, online):
+    llm = FakeLLM(delay=0.5)
+    c = make("auto", llm=llm)
+    c.cfg.fortune.reading_s, c.cfg.fortune.suspense_more_s = 3.0, 0.1
+    start(c)
+    answer_all(c)
+    more = [s for s in c.speaker.stages if any(n.startswith("fortune_suspense_mas_") for n in s)]
+    assert len(more) == 1 and len(more[0]) == 1                   # once, on its own
+    assert c.fortune.view()["last"]["mode"] == "llm" and llm.remembered
+
+
+def test_a_quick_reading_never_hears_the_second_suspense_line(make, online):
+    c = make("auto", llm=FakeLLM())
+    start(c)
+    answer_all(c)
+    assert not any(n.startswith("fortune_suspense_mas_") for s in c.speaker.stages for n in s)
+    assert c.fortune.view()["last"]["mode"] == "llm"
+
+
+def test_the_waits_are_his_fifteen_seconds():
+    from fish_brain.config import FortuneConfig, LLMConfig
+    assert FortuneConfig().reading_s == 15.0 and FortuneConfig().suspense_more_s == 7.0
+    assert LLMConfig(profile="claude").timeout_s == 15.0
 
 
 def test_echo_and_offline_read_from_the_clips(make, online, monkeypatch):
@@ -801,7 +826,7 @@ def test_in_model_mode_the_hats_draw_is_its_name_and_may_come_reversed(make, onl
         assert drawn[1].startswith("fortune_nombre_tarot_")
         reversed_ = drawn[2:3] == [fortune_bank.REVERSED_NAME]
         seen.append(reversed_)
-        assert ("de cabeza" in llm.asked[-1]) == reversed_ and "la saqué yo" in llm.asked[-1]
+        assert ("de cabeza" in llm.asked[-1]) == reversed_ and "la sacó el sombrero" in llm.asked[-1]
     assert seen.count(True) == 2                                  # one draw in three
 
 

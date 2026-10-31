@@ -116,7 +116,7 @@ ETAPAS (el sistema te dice la etapa entre corchetes, como [ETAPA 2/4]; nunca rep
 1. SALUDO: preséntate, pide su nombre y su ayuda para "ver" dentro de su cabeza.
 2. LECTURA 1: una frase que le quede a casi cualquiera, otra teñida por una pista, y una pregunta corta del banco con tres o cuatro opciones, nunca de sí o no.
 3. LECTURA 2: retoma algo que dijo como si lo hubieras visto tú, otra frase con otra pista, y otra pregunta corta del banco.
-4. VEREDICTO, en este orden: dos rasgos sacados de lo que dijo y de las pistas, uno junto con su opuesto ("das miedo por fuera, y por dentro eres pura ternura"); el nombre de su casa dicho en voz alta y con emoción; y una sola predicción concreta para esta noche, hecha con algo que dijo, una pista y el lugar: una imagen y una cosa pequeña que puede hacer ya. Nada de listas de cosas. Termina con una línea aparte: CASA: <Gryffindor|Hufflepuff|Ravenclaw|Slytherin>
+4. VEREDICTO, en este orden: dos rasgos sacados de lo que dijo y de las pistas, uno junto con su opuesto, con palabras tuyas cada vez ("te ríes de todo, y lo que de verdad te importa no se lo cuentas a nadie"); el nombre de su casa dicho en voz alta y con emoción; y una sola predicción concreta para esta noche, hecha con algo que dijo, una pista y el lugar: una imagen y una cosa pequeña que puede hacer ya. Nada de listas de cosas. Termina con una línea aparte: CASA: <Gryffindor|Hufflepuff|Ravenclaw|Slytherin>
 
 EL CASTILLO
 - Tu mundo es el castillo: el Gran Comedor, las escaleras que cambian, los fantasmas, el Bosque Prohibido, las pociones, las varitas, las lechuzas, el quidditch y la sala común de cada casa. Ahí viven tus preguntas y tus visiones.
@@ -695,7 +695,7 @@ class LLMConfig:
     thinking: str | None = None
     vision: bool | None = None
     max_completion_tokens: int | None = None   # (400) reasoning tokens count toward this cap too
-    timeout_s: float | None = None             # (8.0) read timeout of one call
+    timeout_s: float | None = None             # (15.0) read timeout of one call (his word, 2026-10-29)
     max_history_turns: int = 8      # user+assistant pairs kept for context
     # Spoken instead of crashing when the API is unreachable / errors out.
     fallback_reply: str = field(
@@ -712,7 +712,7 @@ class LLMConfig:
         self.provider = self.provider or "openai"
         self.vision = bool(self.vision)
         self.max_completion_tokens = self.max_completion_tokens or 400
-        self.timeout_s = self.timeout_s or 8.0
+        self.timeout_s = self.timeout_s or 15.0
         if self.thinking is not None and self.thinking not in THINKING_MODES:
             raise ValueError(f"thinking={self.thinking!r}; choose one of {list(THINKING_MODES)}")
         # Single-field overrides from .env, applied only to the profile the fish is using
@@ -949,7 +949,8 @@ class FortuneConfig:
     deck: str = field(default_factory=_fortune_deck)      # tarot | off (no card question)
     cup: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_CUP", False))
     reprompts: int = 2           # per act: a question asked again at most this often
-    reading_s: float = 8.0       # the model's reading (and its voice in a voice turn), from the end of the suspense line
+    reading_s: float = 15.0      # the model's reading (and its voice in a voice turn), from the end of the suspense line
+    suspense_more_s: float = 7.0  # still waiting this long after the suspense line: one more line (ADR 0027)
     carry_s: float = 600.0       # a house act's name and house carry over this long
     state: str = field(default_factory=lambda: _env(
         "FISH_FORTUNE_STATE", str(Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))

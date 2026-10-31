@@ -155,3 +155,6 @@ the card is a question: a card named from his deck, or on a yes one the hat draw
 model mode an answer gets a short beat and the model reads the meaning once, from a tag with the
 act's seeds; the reading is a roast and does not think
 ([0026](0026-the-reading-roasts.md)).
+
+The reading's wait (`reading_s`) is 15 s since 2026-10-29, with one more suspense line at 7 s,
+and the reading speaks as an oracle ([0027](0027-the-oracles-voice.md)).

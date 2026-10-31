@@ -87,3 +87,9 @@ mode with the meaning read once.
   with a guess. Not measured: a real act's reading with its voice, on the board, with his voice.
 - Supersedes ADR 0019's decisions 5 (the card only from his deck) and 7 (the animal), and the
   animal part of ADR 0022's decision 4.
+
+## Amendment, 2026-10-29 (ADR 0027)
+
+The register is the old sorcerer's oracle, no longer a roast: the structure of decision 6 stands
+(one story about the wish, the sting, the task), said gravely. The model mode's beats, shuffles
+and suspense lines are re-worded to match ([0027](0027-the-oracles-voice.md)).

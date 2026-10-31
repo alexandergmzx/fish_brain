@@ -88,7 +88,7 @@ def test_the_fortune_is_the_hats_only(monkeypatch):
     assert FortuneConfig().rules == FORTUNE_RULES and PERSONAS["hat"]["fortune"]["rules"] == FORTUNE_RULES
     assert set(FORTUNE_PHRASES) <= set(CannedConfig().phrases)      # with or without the show
     assert FortuneConfig().deck == "tarot" and FortuneConfig().cup is False
-    assert FortuneConfig().reprompts == 2 and FortuneConfig().reading_s == 8.0
+    assert FortuneConfig().reprompts == 2 and FortuneConfig().reading_s == 15.0
     assert FortuneConfig().state.endswith("fish_brain/fortune.json")
     monkeypatch.setenv("FISH_FORTUNE_DECK", "off")
     monkeypatch.setenv("FISH_FORTUNE_CUP", "true")
