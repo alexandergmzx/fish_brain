@@ -147,9 +147,19 @@ def test_the_beats_are_short_and_say_nothing_about_the_answer():
 
 
 def test_the_ask_for_a_card_is_his_words():
-    assert P["fortune_q_carta_tarot"] == "¿Quieres que te lea una carta de tarot?"
+    assert P["fortune_q_carta_tarot"] == "¿Quieres que te lea una carta?"
     assert "baraja" in P["fortune_rq_carta_tarot"]
-    assert all(w in P["fortune_q_deseo"] for w in ("amor", "dinero", "salud", "venganza", "Muerte"))
+    assert all(w in P["fortune_q_deseo"] for w in ("amor", "dinero", "salud", "venganza", "deseo"))
+    assert "tarot" not in P["fortune_q_carta_tarot"]   # his word, 2026-10-31: just "carta"
+
+
+def test_the_wish_is_asked_by_the_hat_never_of_la_muerte():
+    # His word, 2026-10-31: "this is a hat, not la muerte". La Muerte stays a card and the season.
+    wish = [n for n in P if n.startswith(("fortune_q_deseo", "fortune_rq_deseo", "fortune_re_deseo"))]
+    assert len(wish) == 8 and not any("muerte" in P[n].lower() or "flaca" in P[n].lower() for n in wish)
+    assert "Muerte" not in fb.FORTUNE_RULES.split("deseo= es")[1].split("\n")[0]
+    assert "La carta lo sabía" not in " ".join(fb.POOLS["beat"])     # no card before the card
+    assert "silencio" not in fb.POOLS["bridge"][0]                    # said after words, too
 
 
 def test_the_seeds_are_data_not_clips():

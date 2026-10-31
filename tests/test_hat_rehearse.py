@@ -175,7 +175,7 @@ def test_a_fortune_block_runs_the_acts_steps(monkeypatch):
     assert "casa=Hufflepuff" in tag and "luna=" in tag and "palabra=" in tag
     assert kinds[1] == ("sueno", "theme") and 'sueño=volar ("Soñé que flotaba.")' in tag
     assert kinds[4] == ("deseo", "wish") and 'deseo=amor ("Que regrese mi ex.")' in tag
-    assert kinds[5] == ("carta", "draw") and "la sacó el sombrero" in tag
+    assert kinds[5] == ("carta", "draw") and "la saqué yo" in tag
     assert "hoy=martes 27 de octubre" in tag
     assert "pistas=lleva: capa negra; visión=" in tag and "; forma=" in tag
     assert tag.endswith("] Haz la lectura.")
@@ -184,6 +184,33 @@ def test_a_fortune_block_runs_the_acts_steps(monkeypatch):
     assert rec["used"] == ["lleva"]
     assert "L A   A D I V I N A C I Ó N" in rec["ticket"] and "p a r a   A l b e r t" in rec["ticket"]
     assert "Pediste ................... amor" in rec["ticket"]
+
+
+def test_a_question_back_is_asked_again_as_the_act_does(monkeypatch):
+    monkeypatch.setenv("FISH_PERSONA", "hat")
+    monkeypatch.delenv("FISH_FORTUNE_DECK", raising=False)
+    monkeypatch.setenv("FISH_FORTUNE_CUP", "false")
+    cfg = Config()
+    llm = ScriptLLM(["Lo leí en tu cabeza. Tu palabra mágica es Zumbalí."])
+    visitor = {"place": "fiesta", "name": "Ana", "fortune": [
+        ("fecha", "mmm"), ("fecha", "Tauro."), ("sueno", "emm"), ("sueno", "Soñé que volaba."),
+        ("deseo", "¿Y cómo que muerte?"), ("deseo", "Dinero."), ("carta", "¿Qué?"),
+        ("carta", "emm"), ("carta", "Sí.")]}
+    rec = hat_rehearse.run_fortune(llm, cfg, visitor, {"house": None, "first": "Fernando", "cues": {}},
+                                   seed=1)
+    kinds = [(a["q"], a["kind"]) for a in rec["answers"]]
+    assert kinds[4:] == [("deseo", "ask_back"), ("deseo", "wish"), ("carta", "ask_back"),
+                         ("carta", "none"), ("carta", "not asked again")]
+    assert 'deseo=dinero ("Dinero.")' in rec["tag"] and "carta" not in rec["tag"]
+    assert rec["tag"].startswith("[ADIVINACIÓN: nombre=Ana;")      # typed first, as the act
+
+
+def test_the_magic_word_is_said_only_at_its_closing():
+    assert hat_rehearse.magic_word_problems("Algo. Tu palabra mágica es Zumbalí.", "Zumbalí") == []
+    assert hat_rehearse.magic_word_problems("Zumbalí, ven acá. Tu palabra mágica es Zumbalí.",
+                                            "Zumbalí")
+    assert hat_rehearse.magic_word_problems("Tenebrumba, ven acá.", "Tenebrumba")
+    assert "el sombrero" in hat_rehearse.STALE
 
 
 def test_variety_counts_openings_and_stale_phrases():

@@ -1,7 +1,7 @@
 """The fortune act's tables and parsers (docs/adr/0019, 0026): pure, no state, no clips.
 
 The hat asks an adult visitor the sign (or the day and month of birth), a recent dream, what
-they ask of La Muerte, whether they want a tarot card (named from a deck, or drawn by the hat)
+they wish for, whether they want a card (named from a deck, or drawn by the hat)
 and the shape in the cup, and everything heard is parsed here into ids the bank
 (fortune_bank.py) has a line for and the model gets as a tag:
 
@@ -9,6 +9,7 @@ and the shape in the cup, and everything heard is parsed here into ids the bank
     dream_theme(text) -> a theme id     parse_card(text, deck) -> 0..21
     parse_shape(text) -> a shape id     parse_wish(text) -> a wish id or "otro"
     parse_yes_no(text) -> "yes" | "no"   said_reversed(text)   today_words() -> "jueves 29 de octubre"
+    split_ask_back(text, echo) -> (asked back, the rest)   deciding_part(text, answers)
     moon_tonight() -> a phase id        reading_tag(f, deck) -> "[ADIVINACIÓN: …; pistas=…] Haz la lectura."
     clean_reading(reply) -> the model's reading, or None when it breaks the register
 
@@ -406,7 +407,7 @@ DREAM_THEMES: tuple[Theme, ...] = (
         "se me olvidan", "no me acuerdo de nada", "no sueno mucho", "no suelo sonar")),
     # Said with a cheeky deflection, never read: sexual content, violence, a pregnancy,
     # religion. A transcript no other theme hears also lands here, after the reprompt.
-    Theme("otro", "Otro sueño (el sombrero se lo guarda)", (
+    Theme("otro", "Otro sueño (me lo guardo)", (
         "sexo", "sexual", "sexuales", "cogiendo", "cogia", "cogimos", "me acostaba con",
         "me acoste con", "relaciones", "hacer el amor", "haciendo el amor", "porno", "orgia",
         "pistola", "me disparaban", "disparos", "balazos", "me mataban", "me mataron", "mataba",
@@ -523,13 +524,20 @@ def card_by_n(deck: dict, n: int) -> Card:
 def parse_card(text: str, deck: dict) -> int | None:
     """The card a transcript names, by name (any alias, the longest first), by sound (one
     card alone at least 0.88 close), else by number when the deck has them and exactly one
-    number 0..21 is said. Two different cards, or none: None."""
+    number 0..21 is said. Two different cards, or none: None. With a yes, "uno" is a count
+    ("Sí, dame uno."), never card 1."""
     ws = [w for w in tokens(text) if w not in _CARRIERS]
     if not ws:
         return None
+    joined = " ".join(tokens(text))
+    # "Sí, dame uno." is a draw, not El Mago; "Sí, me salió el uno." is El Mago.
+    yes = (parse_yes_no(text) == "yes" and not _DRAWN.search(joined)
+           and not re.search(r"\b(?:el|la|numero|carta) uno\b", joined))
     found: set[int] = set()
     for c in deck["cards"]:
         for alias in sorted(c.aliases, key=len, reverse=True):
+            if yes and alias == "uno":
+                continue
             parts = alias.split()
             n = len(parts)
             if any(ws[i:i + n] == parts for i in range(len(ws) - n + 1)):
@@ -539,11 +547,14 @@ def parse_card(text: str, deck: dict) -> int | None:
         return found.pop()
     if found:
         return None
-    keys = [phon_key(w) for w in ws]
+    # By sound, never a yes or a no: "claro" is not El Carro, "sí, ¿no?" not "cinco".
+    keys = [phon_key(w) for w in ws if w not in _YES and w not in _NO]
     scores: list[tuple[float, int]] = []
     for c in deck["cards"]:
         best = 0.0
         for alias in c.aliases:
+            if alias in _NUMBER_WORDS:           # by number only: "¿en serio?" is not "cero"
+                continue
             target = "".join(phon_key(w) for w in alias.split() if w not in _CARRIERS)
             if len(target) < 3:
                 continue
@@ -558,7 +569,8 @@ def parse_card(text: str, deck: dict) -> int | None:
     if scores and scores[0][0] >= CARD_RATIO and (len(scores) < 2 or scores[1][0] < CARD_RATIO):
         return scores[0][1]
     if deck.get("numbers"):
-        nums = {v for _i, v in numbers_in(ws) if 0 <= v < len(deck["cards"])}
+        nums = {v for i, v in numbers_in(ws) if 0 <= v < len(deck["cards"])
+                and not (yes and ws[i] == "uno")}
         if len(nums) == 1:
             return nums.pop()
     return None
@@ -595,7 +607,7 @@ def parse_shape(text: str) -> str | None:
     return _best_theme(ws, tuple(scored)) if scored else None
 
 
-# ---- the wish (what the visitor asks of La Muerte) ------------------------------------------
+# ---- the wish (what the visitor asks of the hat) ---------------------------------------------
 WISHES: tuple[Theme, ...] = (
     Theme("amor", "Amor", (
         "amor", "amores", "el amor", "pareja", "novi*", "enamor*", "corazon", "mi crush", "crush",
@@ -617,14 +629,27 @@ WISH_IDS = tuple(t.id for t in WISHES)
 WISH_TEXT_MAX = 80       # characters of the visitor's own words that reach the model
 
 
+# "¿Tienes algún deseo?" is also a yes-or-no question: words that only say yes, no or none.
+_NO_WISH = frozenset("tengo uno una un alguno alguna algun algunos algunas ninguno ninguna ningun "
+                     "nada deseo deseos gracias pues la lo verdad creo que sea todo eso hay varios "
+                     "muchos mucho eh em emm mm mmm hmm mjm mhm ah este perdon mande ay oye "
+                     "por supuesto como".split())
+
+
 def parse_wish(text: str) -> str | None:
     """The wish: one of WISHES by its words (venganza weighs 2: "venganza contra mi ex" is
-    venganza), "otro" for any other answer with words, None for nothing at all. The run keeps
-    the visitor's words either way."""
+    venganza), "otro" for any other answer with words, None for nothing at all or for an
+    answer that only says yes, no or none ("Sí.", "No, gracias.", "Nada.": asked again). The
+    run keeps the visitor's words either way."""
     ws = tokens(text)
     if not ws:
         return None
-    return _best_theme(ws, WISHES) or "otro"
+    found = _best_theme(ws, WISHES)
+    if found:
+        return found
+    if all(w in _YES or w in _NO or w in _NO_WISH for w in ws):
+        return None
+    return "otro"
 
 
 # ---- the card's yes or no ------------------------------------------------------------------
@@ -635,17 +660,25 @@ _YES_PHRASES = ("por favor", "a ver", "me late", "de una")
 _NO = frozenset("no nel nop nope paso nunca jamas tampoco".split())
 _NO_PHRASES = ("mejor no", "no gracias", "ni madres", "no creo", "no quiero", "no me gusta",
                "ahorita no", "otro dia")
+# Any card will do (his word, 2026-10-29: give them a random card): the hat draws.
+_ANY_CARD = re.compile(r"\b(?:cualquiera|la que sea|la que (?:tu )?quieras|la que salga|"
+                       r"no importa cual|tu escoge|escoge tu|sorprendeme)\b")
+
+
+def any_card(text: str) -> bool:
+    """"Cualquiera", "la que sea", "la que tú quieras": a yes, and the hat draws."""
+    return bool(_ANY_CARD.search(" ".join(tokens(text))))
 
 
 def parse_yes_no(text: str) -> str | None:
-    """"yes", "no" or None for an answer to "¿Quieres que te lea una carta de tarot?". A no
-    wins when both are heard ("sí, no, mejor no"); "¿por qué no?" is a yes."""
+    """"yes", "no" or None for an answer to "¿Quieres que te lea una carta?". A no wins when
+    both are heard ("sí, no, mejor no"); "¿por qué no?" and any card ("cualquiera") are a yes."""
     ws = tokens(text)
     if not ws:
         return None
     joined = " ".join(ws)
     yes = any(w in _YES for w in ws) or any(re.search(rf"\b{p}\b", joined) for p in _YES_PHRASES)
-    if re.search(r"\bpor que no\b", joined):
+    if re.search(r"\bpor que no\b", joined) or _ANY_CARD.search(joined):
         return "yes"
     no = any(w in _NO for w in ws) or any(re.search(rf"\b{p}\b", joined) for p in _NO_PHRASES)
     if no:
@@ -653,12 +686,173 @@ def parse_yes_no(text: str) -> str | None:
     return "yes" if yes else None
 
 
+_REVERSED_WORDS = frozenset("cabeza reves invertida invertido volteada volteado patas arriba".split())
 _REVERSED = re.compile(r"\b(?:de cabeza|al reves|invertid[ao]|volteada|volteado|patas arriba)\b")
 
 
 def said_reversed(text: str) -> bool:
     """The visitor's card came out upside down ("la torre de cabeza", "invertida")."""
     return bool(_REVERSED.search(" ".join(tokens(text))))
+
+
+# ---- a question back, and the part of a long answer that decides ------------------------------
+# A piece of a transcript: a "¿…?" question, or a run up to its sentence end.
+_PIECE = re.compile(r"¿[^?¿]*\?*|[^¿.!?…]+[.!?…]*")
+_RAW_WORD = re.compile(r"[0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+")
+# Words that open a question about the question, as transcribed: the interrogatives keep their
+# accent ("¿Cómo?", "¿Y cómo que muerte?", "¿Qué carta?"); without it "¿Que regrese mi ex?" is
+# a wish said unsure and "¿Como que me caía?" a dream.
+_ASK_OPEN = ("qué", "cómo", "cuál", "cuáles", "quién", "a qué", "de qué", "para qué", "con qué",
+             "por qué", "mande", "perdón", "perdon", "disculpa", "disculpe")
+# A piece of nothing but these asks back, accent or not: "¿Como?", "Mande.", "Perdón."
+_ASK_ALONE = frozenset("como que cual quien mande perdon disculpa disculpe eh ah mm mmm".split())
+_ASK_NO_MARK = frozenset("mande perdon disculpa disculpe".split())    # asks even without "?"
+# Said outright at the start of a piece: the visitor did not catch the question. What follows
+# in the same piece is still an answer ("No te escuché bien, pero quiero dinero.").
+_ASK_SAID = re.compile(r"^(?:mas fuerte )?(?:no )?(?:no (?:te )?(?:entendi|entiendo|oi|oigo|escuche|escucho)|"
+                       r"(?:me )?(?:lo |la )?repit\w*|(?:puedes |podrias |me puedes )?repetir\w*|"
+                       r"como dijiste|que dijiste|mas fuerte)(?: bien| nada| la pregunta)?(?: pero)?\b")
+_ASK_AGAIN = re.compile(r"^(?:otra vez|de nuevo)\b")   # only with nothing else said
+_AGAIN_ONLY = frozenset("otra vez de nuevo por favor porfa plis perdon".split())
+_COURTESY = frozenset("perdon perdona perdoname disculpa disculpe disculpame mande ay oiga oye "
+                       "espera esperame".split())
+_POLITE = frozenset("por favor porfa porfavor plis lo siento".split())   # left beside a question back
+_LEADS = frozenset("y pero o sea este oye eh ah mm mmm pues a ver ay oiga".split()) | _COURTESY
+_TAG_QUESTION = frozenset("no verdad si ok va eh cierto".split())   # "…, ¿no?" asks nothing
+_FILLERS = frozenset("eh em emm ah mm mmm hmm mjm este pues oye o sea y pero".split()) | _COURTESY | _POLITE
+_ARTICLES = frozenset("el la los las un una unos unas mi mis tu tus".split())
+# The question's own words: "¿Qué carta?", "¿Una carta?", "¿Mi signo?" ask about it.
+ECHO: dict[str, tuple[str, ...]] = {
+    "fecha": ("signo", "fecha", "cumpleanos"), "sueno": ("sueno", "suenos"),
+    "deseo": ("deseo", "deseos"), "carta": ("carta", "cartas", "tarot", "baraja"),
+    "taza": ("taza", "cafe")}
+LONG_ANSWER_WORDS = 12   # a longer answer of two sentences or more is read by its parts
+# A card the visitor says they drew themselves ("me salió", "saqué", "me tocó", "tengo").
+_DRAWN = re.compile(r"\b(?:sali\w*|saque|toco|cayo|escogi|elegi|agarre)\b|"
+                    r"\b(?:tengo|traigo) (?:ya |aqui )?(?:a )?(?:el|la|los|las)\b")
+# A card left out: "cualquiera menos la Muerte", "sí, pero que no sea el Diablo".
+_EXCLUDED = re.compile(r"\b(?:menos|excepto|salvo|mientras no|nomas que no|que no (?:me )?(?:sea|salga|toque)|"
+                       r"no sea|no me (?:vayas a )?(?:saques|sacar|salga|toque)|ojala no|"
+                       r"pero no (?:el|la|los|las)|(?:me da|tengo|me dan) miedo|de que (?:me )?salga|"
+                       r"si (?:me )?sale (?:el|la|los|las))\b.*$")
+
+
+def _pieces(text: str) -> list[str]:
+    return [p for p in (m.group(0).strip() for m in _PIECE.finditer(strip_notes(text))) if p]
+
+
+def _is_tag_question(piece: str) -> bool:
+    ws = tokens(piece)
+    return bool(ws) and all(w in _TAG_QUESTION for w in ws) and (
+        piece.startswith("¿") or piece.endswith("?"))
+
+
+def _asks_back(piece: str, echo: tuple[str, ...]) -> tuple[bool, str]:
+    """(this piece asks about the question, what is left of it as an answer)."""
+    question = piece.startswith("¿") or piece.endswith("?")
+    raw = _RAW_WORD.findall(piece)
+    folded = [_fold(w) for w in raw]
+    if folded and all(w in _ASK_ALONE for w in folded) and (
+            question or folded[0] in _ASK_NO_MARK):
+        return True, ""                                  # "¿Como?", "¿Eh?", "Mande."
+    i = 0
+    while i < len(folded) and folded[i] in _LEADS:
+        i += 1
+    raw, folded = raw[i:], folded[i:]
+    if not folded:
+        return False, piece
+    joined = " ".join(folded)
+    said = _ASK_SAID.match(joined)
+    if said:
+        return True, " ".join(raw[len(said.group(0).split()):])
+    if _ASK_AGAIN.match(joined) and set(folded) <= _AGAIN_ONLY:   # "Otra vez, por favor."
+        return True, ""
+    if not question or all(w in _TAG_QUESTION for w in folded):
+        return False, piece
+    if joined.startswith("por que no"):                   # "¿Por qué no?" is a yes
+        return False, piece
+    lower = " ".join(w.lower() for w in raw)
+    if lower.startswith("qué tal ") and len(folded) > 2:  # "¿Qué tal viajar por el mundo?"
+        return False, piece
+    if any(lower == o or lower.startswith(o + " ") for o in _ASK_OPEN):
+        return True, ""
+    rest = [w for w in folded if w not in _ARTICLES]
+    if rest and rest[0] in echo:                           # "¿Una carta?", "¿Mi signo?"
+        return True, ""
+    return False, piece
+
+
+def split_ask_back(text: str, echo: tuple[str, ...] = ()) -> tuple[bool, str]:
+    """(asked back, the rest): the pieces of an answer that ask about the question instead of
+    answering it ("¿Cómo?", "¿Y cómo que muerte?", "¿Qué carta?", "Perdón, ¿qué dijiste?",
+    "¿Me lo repites?", "No te entendí"), and the text left once they are out ("¿Cómo?
+    Dinero." -> (True, "Dinero.")). It reads the punctuated transcript: a piece asks back
+    inside ¿…? or before a closing "?", when it opens (after "y", "pero", "perdón", "este")
+    with an accented interrogative or the question's own noun (`echo`, ECHO[qid]); a tag
+    question ("¿no?"), "¿Por qué no?", "¿La Torre?" and "¿Que regrese mi ex?" never do. "No te
+    entendí" and "repítelo" ask back unasked, and the rest of their piece is still an answer;
+    "otra vez" only alone ("Otra vez soñé con mi ex" is a dream)."""
+    pieces = _pieces(text)
+    asked, kept = False, []
+    for p in pieces:
+        asks, rest = _asks_back(p, echo)
+        asked = asked or asks
+        if rest:
+            kept.append(rest)
+    if not asked:
+        return False, strip_notes(text)
+    return True, " ".join(kept)
+
+
+def has_answer(text: str) -> bool:
+    """Something left to parse besides fillers and courtesy ("eh", "este", "perdón")."""
+    return any(w not in _FILLERS for w in tokens(text))
+
+
+def without_excluded(text: str) -> str:
+    """The answer without the card it leaves out, piece by piece ("Cualquiera menos la
+    Muerte." -> "cualquiera"), and without a closing tag question ("Sí, ¿no?" is a yes), as
+    folded words for the card's parsers."""
+    out = []
+    pieces = _pieces(text)
+    for p in pieces:
+        if len(pieces) > 1 and _is_tag_question(p):
+            continue
+        kept = _EXCLUDED.sub("", " ".join(tokens(p))).strip()
+        if kept:
+            out.append(kept)
+    return " ".join(out)
+
+
+def deciding_part(text: str, names_card) -> str:
+    """The part of a card answer that decides it. A short one (under two sentences or
+    LONG_ANSWER_WORDS words) is all of it. In a long one: the first sentence that names a card
+    (`names_card(sentence)`) the visitor says they drew, or that is little more than the card
+    ("me salió la Torre… no me gusta nada", "La Muerte. No, no me da miedo…" are the card),
+    and what follows it; else the latest sentence that opens with a yes or a no
+    ("No, mira, me voy a salir del rol… antes de decir la muerte… Sí, saco una carta." is its
+    yes, never the card it complains about), skipping a closing "¿no?"; else all of it."""
+    pieces = _pieces(text)
+    if len(pieces) < 2 or len(tokens(text)) <= LONG_ANSWER_WORDS:
+        return strip_notes(text)
+    for i, p in enumerate(pieces):
+        ws = tokens(p)
+        just_the_card = len([w for w in ws if w not in _CARRIERS and w not in _REVERSED_WORDS]) <= 2
+        # "La Muerte.", "La Luna, de cabeza."; not "Me encanta la Luna, es mi favorita."
+        if names_card(p) and (just_the_card or _DRAWN.search(" ".join(ws))):
+            return " ".join(pieces[i:])
+    for i in range(len(pieces) - 1, -1, -1):
+        if _is_tag_question(pieces[i]):
+            continue
+        ws = [w for w in tokens(pieces[i]) if w not in _LEADS]
+        joined = " ".join(ws)
+        opens_no = bool(ws) and ws[0] in _NO and (ws[0] in ("no", "nel", "nop", "nope", "paso")
+                                                  or len(ws) <= 4)   # "Nunca me han leído…" tells
+        if ws and (ws[0] in _YES or opens_no or _ANY_CARD.match(joined)
+                   or joined.startswith("por que no")
+                   or any(joined.startswith(ph) for ph in _YES_PHRASES + _NO_PHRASES)):
+            return " ".join(q for q in pieces[i:] if not _is_tag_question(q))
+    return strip_notes(text)
 
 
 # ---- the moon -------------------------------------------------------------------------------
@@ -741,6 +935,11 @@ def today_words(now: datetime | None = None) -> str:
     return f"{WEEKDAYS[now.weekday()]} {now.day} de {MONTHS[now.month - 1]}"
 
 
+# A cue said otherwise in the reading than in the visit: the colour is the clothes' ("una
+# sonrisa que llega rosa", 2026-10-31).
+_PISTA_LABEL = {"color": "color de su ropa"}
+
+
 def _quoted(text: str) -> str:
     return text.replace('"', "'").strip()
 
@@ -780,12 +979,12 @@ def reading_tag(f: Fortune, deck: dict | None) -> str:
         if said:
             how = ["de cabeza"] if f.carta_reves else []
             if f.carta_de == "sombrero":
-                how.append("la sacó el sombrero")
+                how.append("la saqué yo")
             elif f.carta_de == "visitante":
                 how.append("la sacó con su mano")
             parts.append(f"carta={said} ({'; '.join(how)})" if how else f"carta={said}")
-    elif f.sin_carta:
-        parts.append("carta=ninguna (no quiso tarot)")
+    # A card declined, or no deck: no carta= at all, so there is nothing to mention
+    # ("Tu carta no salió", 2026-10-31).
     if f.taza:
         parts.append(f"taza={f.taza}")
     if f.luna in MOON_SAID:
@@ -794,7 +993,8 @@ def reading_tag(f: Fortune, deck: dict | None) -> str:
         parts.append(f"palabra={f.palabra}")
     if f.casa:
         parts.append(f"casa={f.casa}")
-    pistas = ", ".join(f"{label}: {said}" for label, said in cue_pairs(f.pistas or {}))
+    pistas = ", ".join(f"{_PISTA_LABEL.get(label, label)}: {said}"
+                       for label, said in cue_pairs(f.pistas or {}))
     if pistas:
         parts.append(f"pistas={pistas}")
     if f.gancho:

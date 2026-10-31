@@ -268,6 +268,98 @@ def test_a_dream_told_but_unclear_is_otro_and_the_words_are_kept(make, monkeypat
     assert c.fortune.v["data"]["sueno_txt"] == "no te lo puedo contar"
 
 
+# ---- a question back (2026-10-31: "¿Y cómo que muerte?", "¿Cómo? Dinero.") ------------------
+
+def to_the_wish(c):
+    start(c)
+    say(c, "el 23 de octubre")
+    say(c, "soñé que volaba")
+    assert c.speaker.stages[-1][-1] == "fortune_q_deseo"
+
+
+def test_a_question_back_hears_the_question_again_and_is_never_the_wish(make):
+    c = make()
+    to_the_wish(c)
+    say(c, "¿Y cómo que muerte?")
+    assert c.speaker.stages[-1] == ["fortune_rq_deseo"]
+    assert "deseo" not in c.fortune.v["data"] and c.fortune.view()["asked_back"]
+    say(c, "Dinero.")
+    assert c.fortune.v["data"]["deseo"] == "dinero"
+    assert c.speaker.stages[-1][-1] == "fortune_q_carta_tarot"
+
+
+def test_a_question_with_its_answer_keeps_the_answer_alone(make, online):
+    llm = FakeLLM()
+    c = make("auto", llm=llm, cup=False)
+    to_the_wish(c)
+    say(c, "¿Cómo? Dinero.")
+    assert c.fortune.v["data"]["deseo"] == "dinero" and c.fortune.v["data"]["deseo_txt"] == "Dinero."
+    say(c, "No.")
+    assert 'deseo=dinero ("Dinero.")' in llm.asked[-1] and "Cómo" not in llm.asked[-1]
+
+
+def test_questions_back_are_outside_the_budget_once_a_question(make):
+    c = make()
+    start(c)
+    say(c, "mmm")                                    # unclear: the first re-ask of the budget
+    say(c, "Escorpio.")
+    say(c, "emm")                                    # unclear: the second, the budget is spent
+    say(c, "soñé que volaba")
+    say(c, "¿Cómo?")                                 # a question back: asked again all the same
+    assert c.speaker.stages[-1] == ["fortune_rq_deseo"]
+    say(c, "¿Qué?")                                  # a second one at the same question: go on
+    st = c.speaker.stages[-1]
+    assert st[0].startswith("fortune_bridge_") and st[-1] == "fortune_q_carta_tarot"
+    assert "deseo" not in c.fortune.v["data"]        # an unheard wish: the model gets a tema
+    say(c, "¿Mande?")                                # the card's own question back
+    assert c.speaker.stages[-1] == ["fortune_rq_carta_tarot"]
+
+
+def test_after_a_question_back_an_unclear_answer_does_not_hear_the_same_reprompt(make):
+    c = make()
+    to_the_wish(c)
+    say(c, "¿Cómo?")
+    say(c, "emm")
+    st = c.speaker.stages[-1]
+    assert st[0].startswith("fortune_bridge_") and st[-1] == "fortune_q_carta_tarot"
+    assert c.speaker.all().count("fortune_rq_deseo") == 1
+
+
+def test_a_bare_no_to_the_wish_is_asked_again_then_a_tema(make, online):
+    llm = FakeLLM()
+    c = make("auto", llm=llm, cup=False)
+    to_the_wish(c)
+    say(c, "No.")
+    assert c.speaker.stages[-1] == ["fortune_rq_deseo"] and "deseo" not in c.fortune.v["data"]
+    say(c, "Nada, gracias.")
+    say(c, "No.")
+    assert "deseo=" not in llm.asked[-1] and "tema=" in llm.asked[-1]
+
+
+def test_a_protest_at_the_card_that_ends_in_a_yes_is_the_hats_draw(make):
+    c = make(cup=False)
+    to_the_card(c)
+    say(c, "No, mira, me voy a salir un poquito del rol. Este, se supone que antes de decir la "
+           "muerte, o sea, tenías que haber dicho que si me sacabas una carta del tarot. "
+           "Entonces, aquí continuamos, pero solo para que lo sepas, ¿ok? Sí, saco una carta de tarot.")
+    assert c.fortune.view()["last"]["data"]["carta"].endswith("(la sacó el sombrero)")
+
+
+def test_a_dream_never_clear_stays_out_of_the_tag(make, online, monkeypatch):
+    llm = FakeLLM()
+    c = make("auto", llm=llm, cup=False)
+    monkeypatch.setattr(fortune, "dream_theme", lambda text: None)
+    start(c)
+    say(c, "Capricornio.")
+    say(c, "¿Cómo?")                                 # a question back is not the dream
+    say(c, "Me tiene que trabajar mucho.")           # unclear after it: no second re-ask
+    assert c.fortune.v["data"]["sueno_txt"] == "Me tiene que trabajar mucho."
+    say(c, "Amor.")
+    say(c, "No.")
+    tag = llm.asked[-1]
+    assert "sueño=" not in tag and "forma=sueño" not in tag and "carta" not in tag
+
+
 # ---- the dream's recording ------------------------------------------------------------------
 
 def test_the_dream_never_moves_the_recording_cap_or_the_speech_routes(make, online, monkeypatch):
@@ -807,7 +899,7 @@ def test_a_no_to_the_card_is_no_card_and_no_second_ask(make):
 def test_an_unclear_answer_to_the_card_is_asked_again_then_no_card(make):
     c = make(cup=False)
     to_the_card(c)
-    say(c, "La que sea.")
+    say(c, "La de la esquina.")
     assert c.speaker.stages[-1] == ["fortune_rq_carta_tarot"] and c.fortune.open
     say(c, "emm")
     assert c.speaker.stages[-1][0].startswith("fortune_bridge_")
@@ -826,7 +918,7 @@ def test_in_model_mode_the_hats_draw_is_its_name_and_may_come_reversed(make, onl
         assert drawn[1].startswith("fortune_nombre_tarot_")
         reversed_ = drawn[2:3] == [fortune_bank.REVERSED_NAME]
         seen.append(reversed_)
-        assert ("de cabeza" in llm.asked[-1]) == reversed_ and "la sacó el sombrero" in llm.asked[-1]
+        assert ("de cabeza" in llm.asked[-1]) == reversed_ and "la saqué yo" in llm.asked[-1]
     assert seen.count(True) == 2                                  # one draw in three
 
 

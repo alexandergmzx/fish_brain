@@ -68,7 +68,7 @@ STALE = ("esta noche", "algo viejo", "no te asustes", "todo va a salir bien", "e
          "nueva etapa", "abundancia", "transformacion", "tu camino", "el universo", "salio derech",
          "gancho", "tu vision", "la verdad que pica", "tu verdad incomoda", "tu tarea",
          "los astros", "las estrellas", "el universo", "todo esta escrito", "mucho amor",
-         "por ciento", "tu aviso:")
+         "por ciento", "tu aviso:", "el sombrero")
 OPENING_WORDS = 3               # readings that open with the same words count as one opening
 QUESTION_WORDS = 10             # the rules' limit for one question ("¿…?")
 _QUESTION = re.compile(r"¿([^?]*)\?")
@@ -281,11 +281,13 @@ def run_visit(llm, cfg, visitor: dict, *, clock=None) -> dict:
             turn["problems"].append("the house is not said aloud")
         llm.remember(tagged, raw)
         v.delivered(house, snap)
+        if not v.first_name and stage <= 2:      # as the loop: the name the hat echoed
+            v.first_name = visit.heard_name(value, spoken)
     verdict = v.done
     said = [t["hat"] for t in turns if "sent" in t]
     used, unused = coverage(cues, said)
     return {"turns": turns, "house": v.house, "done": verdict, "skipped": skipped,
-            "first": first, "refused": refused, "cues": cues, "used": used, "unused": unused,
+            "first": v.first_name, "refused": refused, "cues": cues, "used": used, "unused": unused,
             "verdict": next((t["hat"] for t in reversed(turns)
                              if "sent" in t and t["stage"] == v.stages and t["hat"]), ""),
             "problems": [] if v.house else ["no house at the verdict" if verdict
@@ -312,38 +314,44 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
     state = state if state is not None else ShowState(None, seed=f"rehearse-{seed}")
     deck = fortune.DECKS.get(cfg.fortune.deck)
     data: dict = {}
-    answers = []
-    reprompts = 0
+    answers, heard = [], []
+    # As the act: fortune_run.reask decides whether a question is asked again (an unclear
+    # answer within the budget, a question back outside it); a line the act would not have
+    # asked for is shown and skipped.
+    st = {"tries": 0, "reprompts": 0, "asked_back": set()}
+    current, more = None, False
     for qid, text in visitor["fortune"] or []:
         if (qid == "carta" and deck is None) or (qid == "taza" and not cfg.fortune.cup):
             answers.append({"q": qid, "you": text, "kind": "not asked (off)", "value": None})
             continue
-        before = [a for a in answers if a["q"] == qid]
-        # As the act: a question is asked again only after "none", once, within the budget.
-        if before and (before[-1]["kind"] != "none" or len(before) > 1
-                       or reprompts >= cfg.fortune.reprompts):
+        if qid == current and not more:
             answers.append({"q": qid, "you": text, "kind": "not asked again", "value": None})
             continue
-        reprompts += bool(before)
+        if qid != current:
+            current, st["tries"] = qid, 0
+        heard.append((qid, text))
         words = fortune.strip_notes(text)
         kind, value = fortune_run.parse_answer(qid, words, deck, data)
         if kind == "draw":                       # the model reads it: a reversed draw may come
             value = fortune_run.hat_draw(state, deck, data, reversible=True)
             if data.get("carta_reves"):
                 value = f"{value} reversed"
+        more = kind in ("none", "ask_back") and fortune_run.reask(kind, qid, st,
+                                                                  cfg.fortune.reprompts)
         answers.append({"q": qid, "you": text, "kind": kind, "value": value})
-    told = [a["you"] for a in answers if a["q"] == "sueno" and a["you"].strip()
-            and not a["kind"].startswith("not asked")]
+    told = fortune_run.told_dream(heard)
     if told and "sueno" not in data:            # as no_answer does: a dream told, never clear
-        data.update(sueno="otro", sueno_txt=visit.clean_cue_text(
-            fortune.strip_notes(told[-1]), fortune_run.DREAM_TEXT_MAX))
+        data.update(sueno="otro", sueno_vago=True,
+                    sueno_txt=visit.clean_cue_text(told, fortune_run.DREAM_TEXT_MAX))
     data["luna"] = fortune.moon_tonight(now)
     data["palabra"] = random.Random(seed).choice(fortune.MAGIC_WORDS)
     house = visit_rec["house"] if visit_rec else None
-    nombre = (visit_rec["first"] if visit_rec else "") or visitor.get("name", "")
+    # As the act: the typed name first, else the visit's (a badge, or the name it heard) when
+    # its verdict carries over (a house).
+    nombre = visitor.get("name", "") or (visit_rec["first"] if visit_rec and visit_rec.get("house")
+                                         else "")
     cues = visit_rec["cues"] if visit_rec else {}
-    has = {k for k in ("signo", "sueno", "carta") if data.get(k) is not None}
-    seeds = fortune_run.deal_seeds(state, data, has=has)
+    seeds = fortune_run.deal_seeds(state, data, has=fortune_run.reading_has(data))
     recent = list(state.data.get("recent", []))[-fortune_run.FortuneRun.RECENT:]
     f = fortune_run.fortune_of(data, nombre=nombre, lugar=place_of(cfg, visitor), casa=house,
                                pistas=accepted_cues(cues)[0],   # as the act: refused ones never lit
@@ -355,7 +363,8 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
     error = llm.last_error
     spoken, _house = visit.split_reply(raw or "")
     text = fortune_run.reading_result(raw)
-    problems = [] if error else fortune.reading_problems(spoken)
+    problems = [] if error else fortune.reading_problems(spoken) + magic_word_problems(
+        spoken, data["palabra"])
     if text and not error:                       # as the act: a said reading is remembered
         state.data["recent"] = (recent + [fortune.opening(text)])[-fortune_run.FortuneRun.RECENT:]
     used, unused = coverage(cues, [spoken])
@@ -364,6 +373,18 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
     return {"answers": answers, "tag": tag, "reading": spoken, "said": text, "s": seconds,
             "error": error, "usage": getattr(llm, "last_usage", None), "problems": problems,
             "used": used, "unused": unused, "ticket": paper}
+
+
+def magic_word_problems(spoken: str, word: str) -> list[str]:
+    """The magic word said anywhere but its closing "tu palabra mágica es X" (as the
+    visitor's name, 3 of 18 on 2026-10-31), or more than once."""
+    said, w = _fold(spoken or ""), re.escape(_fold(word or ""))
+    if not w:
+        return []
+    n = len(re.findall(rf"\b{w}\b", said))
+    if n > 1 or (n == 1 and not re.search(rf"palabra magica es {w}\b", said)):
+        return ["the magic word used outside its closing"]
+    return []
 
 
 def ticket_preview(cfg, data: dict, deck, *, nombre: str, place: str, reading: str | None,

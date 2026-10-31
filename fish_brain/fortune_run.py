@@ -14,7 +14,8 @@ day, the openings of the last readings), dealt before repeat from the act's stat
 
 Every answer comes by voice and is parsed by fortune.py; anything unclear gets the question
 once more, narrower, then a bridge line and the next question (at most `reprompts` re-asks
-an act). Every datum is optional: the act always reaches the closing and never says an error
+an act); a question back ("¿Cómo?") gets it once more too, once a question and outside that
+budget (`reask`). Every datum is optional: the act always reaches the closing and never says an error
 line. The reading comes from the clips or, when the model can be trusted
 (show_run.model_trusted), from the model: its job starts first, the suspense line covers it,
 and a reading that is not clean within `reading_s` of the end of that line gives way to the
@@ -57,13 +58,40 @@ def _not_sure(text: str) -> bool:
 
 # ---- the act's pure steps (shared with tools/hat_rehearse.py) ---------------------------------
 def parse_answer(qid: str, words: str, deck: dict | None, data: dict) -> tuple[str, object]:
-    """One answer (notes stripped) into `data`: (what was found, its id), ("not_sure", None)
-    or ("none", None). At the card: ("card", n) for a card named (drawn by the visitor),
-    ("draw", None) for a yes (the run draws), ("no_card", None) for a no. "No sé" is the
-    bridge, except at the dream: "no me acuerdo" is a theme of its own (`nada`, a line that
-    needs no content), so its parser decides."""
-    if qid != "sueno" and _not_sure(words):
-        return "not_sure", None
+    """One answer (notes stripped) into `data`: (what was found, its id), ("not_sure", None),
+    ("ask_back", None) or ("none", None). At the card: ("card", n) for a card named (drawn by
+    the visitor), ("draw", None) for a yes or any card (the run draws), ("no_card", None) for
+    a no.
+
+    A question back ("¿Cómo?", "¿Y cómo que muerte?") is taken out first and never stored:
+    "¿Cómo? Dinero." is "Dinero.", and nothing left is "ask_back", unless the question holds
+    the answer itself ("¿Mi signo es Escorpio?", "¿Qué significa la Torre?"). "No sé" is the
+    bridge, but a sign or one of the four wishes said with it wins ("Pues no sé, ¿amor?"); at
+    the dream "no me acuerdo" is a theme of its own (`nada`), so its parser decides. A long
+    card answer is decided by its card when the visitor says they drew it, else by its latest
+    sentence that opens with a yes or a no (fortune.deciding_part): a protest that names La
+    Muerte and ends "Sí, saco una carta" is the hat's draw (2026-10-31); a card left out
+    ("cualquiera menos la Muerte") is never the visitor's."""
+    asked, rest = fortune.split_ask_back(words, fortune.ECHO.get(qid, ()))
+    if not asked:
+        return _parse(qid, words, deck, data)
+    if fortune.has_answer(rest):
+        found: dict = {}
+        kind, value = _parse(qid, rest, deck, found)
+        if kind not in ("none", "not_sure") and not (kind == "wish" and value == "otro"):
+            data.update(found)
+            return kind, value
+    # A question that holds the answer all the same: "¿Mi signo es Escorpio?", "¿Qué tal
+    # dinero? Eso quiero.", "¿Qué significa la Torre? Me salió esa."
+    if _answers(qid, words, deck):
+        return _parse(qid, words, deck, data)
+    if fortune.has_answer(rest):
+        return _parse(qid, rest, deck, data)
+    return "ask_back", None
+
+
+def _parse(qid: str, words: str, deck: dict | None, data: dict) -> tuple[str, object]:
+    """parse_answer once a question back is out of the way."""
     if qid == "fecha":
         birth = fortune.parse_birth(words)
         if birth is not None:
@@ -75,7 +103,7 @@ def parse_answer(qid: str, words: str, deck: dict | None, data: dict) -> tuple[s
         if sid is not None:
             data["signo"] = sid
             return "sign", sid
-        return "none", None
+        return ("not_sure", None) if _not_sure(words) else ("none", None)
     if qid == "sueno":
         theme = fortune.dream_theme(words)
         if theme is None:
@@ -84,22 +112,33 @@ def parse_answer(qid: str, words: str, deck: dict | None, data: dict) -> tuple[s
         return "theme", theme
     if qid == "deseo":
         wish = fortune.parse_wish(words)
+        if wish not in fortune.WISH_BY_ID and _not_sure(words):
+            return "not_sure", None
         if wish is None:
             return "none", None
         data.update(deseo=wish, deseo_txt=clean_cue_text(words, fortune.WISH_TEXT_MAX))
         return "wish", wish
     if qid == "carta":
-        n = fortune.parse_card(words, deck)
+        words = fortune.deciding_part(
+            words, lambda s: fortune.parse_card(fortune.without_excluded(s), deck) is not None)
+        cards = fortune.without_excluded(words)     # "cualquiera menos la Muerte": no card named
+        n = fortune.parse_card(cards, deck)
         if n is not None:
             data.update(carta=n, carta_de="visitante", carta_reves=fortune.said_reversed(words))
             return "card", n
-        yes_no = fortune.parse_yes_no(words)
+        if fortune.any_card(cards):              # "cualquiera" (a not-sure word elsewhere)
+            return "draw", None
+        if _not_sure(cards):
+            return "not_sure", None
+        yes_no = fortune.parse_yes_no(cards)
         if yes_no == "yes":
             return "draw", None
         if yes_no == "no":
             data["sin_carta"] = True
             return "no_card", None
         return "none", None
+    if _not_sure(words):
+        return "not_sure", None
     if qid == "taza":
         shape = fortune.parse_shape(words)
         if shape is None:
@@ -107,6 +146,61 @@ def parse_answer(qid: str, words: str, deck: dict | None, data: dict) -> tuple[s
         data["taza"] = shape
         return "shape", shape
     return "none", None
+
+
+def _answers(qid: str, text: str, deck: dict | None = None) -> bool:
+    """A question back that holds an answer all the same: a sign or a date, a dream theme,
+    one of the four wishes, a cup shape, a card named ("¿Qué significa la Torre?": the one the
+    visitor drew)."""
+    if qid == "carta":
+        return deck is not None and fortune.parse_card(fortune.without_excluded(text), deck) is not None
+    if qid == "fecha":
+        return fortune.parse_birth(text) is not None or fortune.parse_sign(text) is not None
+    if qid == "sueno":
+        return fortune.dream_theme(text) not in (None, "nada")
+    if qid == "deseo":
+        return fortune.parse_wish(text) in fortune.WISH_BY_ID
+    if qid == "taza":
+        return fortune.parse_shape(text) is not None
+    return False
+
+
+def reask(kind: str, qid: str, st: dict, budget: int) -> bool:
+    """Whether this answer gets its question again, booked in `st` (the act's "tries",
+    "reprompts" and "asked_back"): an unclear answer once per question, within the act's
+    budget of re-asks; a question back once per question, outside it (his word, 2026-10-31).
+    A question back spends the question's try, so an unclear answer after it goes on instead
+    of hearing the same reprompt twice in a row. Shared with tools/hat_rehearse.py."""
+    if kind == "ask_back":
+        if qid in st["asked_back"]:
+            return False
+        st["asked_back"].add(qid)
+        st["tries"] = 1
+        return True
+    if kind == "none" and st["tries"] == 0 and st["reprompts"] < budget:
+        st["tries"] = 1
+        st["reprompts"] += 1
+        return True
+    return False
+
+
+def told_dream(heard: list) -> str:
+    """The last dream the visitor told that never came clear, without its questions back
+    ("" when there is none): the "otro" a dream gets after its re-ask."""
+    for q, t in reversed(heard):
+        if q != "sueno":
+            continue
+        _asked, rest = fortune.split_ask_back(fortune.strip_notes(t), fortune.ECHO["sueno"])
+        if fortune.has_answer(rest):
+            return rest
+    return ""
+
+
+def reading_has(data: dict) -> set:
+    """What the reading can open with ("signo", "sueno", "carta"): a dream told but never
+    clear is not one, and is not in the tag either."""
+    has = {k for k in ("signo", "sueno", "carta") if data.get(k) is not None}
+    return has - {"sueno"} if data.get("sueno_vago") else has
 
 
 def hat_draw(state, deck: dict, data: dict, *, reversible: bool) -> int:
@@ -147,7 +241,8 @@ def fortune_of(data: dict, *, nombre: str = "", lugar: str = "",
     d, sd = data, seeds or {}
     return fortune.Fortune(nombre=nombre, lugar=lugar, casa=casa, pistas=dict(pistas or {}),
                            fecha=d.get("fecha"), signo=d.get("signo"), numero=d.get("numero"),
-                           sueno=d.get("sueno"), sueno_txt=d.get("sueno_txt", ""),
+                           sueno=None if d.get("sueno_vago") else d.get("sueno"),
+                           sueno_txt=d.get("sueno_txt", ""),
                            deseo=d.get("deseo"), deseo_txt=d.get("deseo_txt", ""),
                            tema=sd.get("tema"), carta=d.get("carta"),
                            carta_de=d.get("carta_de", ""), carta_reves=bool(d.get("carta_reves")),
@@ -271,6 +366,7 @@ class FortuneRun:
             heard = [fortune.strip_notes(t) for q, t in v["heard"] if q == qid] if asking else []
             out.update(n=v["n"], stage=v["stage"], q=min(v["i"] + 1, len(v["qs"])),
                        of=len(v["qs"]), qid=qid, tries=v["tries"],
+                       asked_back=qid in v["asked_back"],
                        question=fortune_bank.question_text(qid, v["deck"]) if asking else "",
                        heard=heard[-1] if heard else "", data=self._said_data(v),
                        first=v["first"], house=v["house"], why=v["why"])
@@ -370,7 +466,8 @@ class FortuneRun:
             # The house act's visitor: its cues lit again; anyone else: a new visitor's prune.
             visit.next_act(carry=house is not None, now=now)
         n = self._next_n()
-        self.v = {"n": n, "qs": qs, "i": 0, "tries": 0, "reprompts": 0, "data": {}, "heard": [],
+        self.v = {"n": n, "qs": qs, "i": 0, "tries": 0, "reprompts": 0, "asked_back": set(),
+                  "data": {}, "heard": [],
                   "why": why, "deck": deck, "place": place, "first": first, "house": house,
                   "stage": "ask", "mode": None, "mode_why": "", "clips": [], "reading": None,
                   "held": [], "seeds": {},
@@ -406,8 +503,8 @@ class FortuneRun:
         print(f"[fortune] #{v['n']} {qid} heard={text!r} -> {kind} {shown}", flush=True)
         if kind == "not_sure":
             return self._next([self._pick("bridge")])
-        if kind == "none":
-            return self.no_answer()
+        if kind in ("none", "ask_back"):
+            return self.no_answer(kind)
         if kind == "no_card":
             return self._next([self._pick("sin_carta")])
         if kind == "wish" and value == "otro":   # a wish outside the four: no clip by name
@@ -432,22 +529,22 @@ class FortuneRun:
             v["held"] += reaction
         return self._next(clips)
 
-    def no_answer(self) -> bool:
-        """Nothing usable for the open question: once more, narrower; then the bridge line
-        and the next question. A dream that was told but never came clear is "otro"."""
+    def no_answer(self, kind: str = "none") -> bool:
+        """Nothing usable for the open question (`kind` "none"), or a question back
+        ("ask_back"): the question once more, narrower, as `reask` decides; else the bridge
+        line and the next question. A dream that was told but never came clear is "otro",
+        kept out of the reading's tag."""
         v = self.v
         if v is None or v["stage"] != "ask":
             return False
         qid = v["qs"][v["i"]]
-        if v["tries"] == 0 and v["reprompts"] < self.cfg.reprompts:
-            v["tries"] += 1
-            v["reprompts"] += 1
+        if reask(kind, qid, v, self.cfg.reprompts):
             return self._say([fortune_bank.reprompt_name(qid, v["deck"])]) or True
         if qid == "sueno" and "sueno" not in v["data"]:
-            told = [fortune.strip_notes(t) for q, t in v["heard"] if q == qid]
-            told = [t for t in told if t.strip()]
+            told = told_dream(v["heard"])
             if told:
-                v["data"].update(sueno="otro", sueno_txt=clean_cue_text(told[-1], DREAM_TEXT_MAX))
+                v["data"].update(sueno="otro", sueno_vago=True,
+                                 sueno_txt=clean_cue_text(told, DREAM_TEXT_MAX))
         return self._next([self._pick("bridge")])
 
     def _next(self, clips: list) -> bool:
@@ -471,8 +568,7 @@ class FortuneRun:
         v = self.v
         v["pistas"] = self._pistas()     # the record keeps what the reading was given
         d = v["data"]
-        has = {k for k in ("signo", "sueno", "carta") if d.get(k) is not None}
-        v["seeds"] = deal_seeds(self.state, d, has=has)
+        v["seeds"] = deal_seeds(self.state, d, has=reading_has(d))
         return fortune_of(d, nombre=v["first"], lugar=place_word(self.c.cfg.place),
                           casa=v["house"], pistas=v["pistas"], seeds=v["seeds"],
                           hoy=fortune.today_words(), evita=self._recent())
