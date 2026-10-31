@@ -217,7 +217,8 @@ def run(st: dict, hub, root: str = "/", snd="ask", cards=None) -> list[dict]:
             usb_sink = any((c["id"] or "x") in sink.get("name", "") or
                            (c["name"] and c["name"].split()[0] in sink.get("description", ""))
                            for c in usb_play)
-            row("Speaker", "Default sink", "pass" if (usb_sink or not board) else "warn",
+            bt_sink = sink.get("name", "").startswith("bluez_output.")   # a connected speaker outranks USB
+            row("Speaker", "Default sink", "pass" if (usb_sink or bt_sink or not board) else "warn",
                 sink.get("description") or sink.get("name") or "none",
                 "the USB speaker is not the default output: `wpctl status`, `wpctl set-default <id>`")
             vol = sink.get("volume")

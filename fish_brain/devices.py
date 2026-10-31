@@ -79,6 +79,8 @@ class Facts:
     audio_routes: list = field(default_factory=list)   # FISH_AUDIO_ROUTES
     audio_route: str = "default"             # the route of the last phrase played
     audio_next: str = "default"              # the route the next phrase takes
+    bt_route: str = ""                       # the Bluetooth speaker he chose (bt.py), its route
+    bt_name: str = ""
     sinks: list = field(default_factory=list)          # PipeWire sink names
     cooling: list = field(default_factory=list)        # routes resting after a failure
     playback_cards: int | None = None        # ALSA cards that play (None = not read)
@@ -236,6 +238,17 @@ def _speaker(f: Facts) -> dict:
         return _rec("speaker", present=present, marked=marked, dead=dead, level="bad",
                     state="none", reason="no speaker route left",
                     fix="plug in a speaker or tap 'Use this phone as a speaker'")
+    # `present` stays the USB speaker's truth, and a lost Bluetooth speaker is not `dead`: the
+    # page offers the USB mark on those, and USB is what still works.
+    if f.bt_route and nxt == f.bt_route:
+        if dead:
+            return _rec("speaker", present=present, marked=marked, level="warn",
+                        state=f"Bluetooth · {f.bt_name}", reason="the last reply was not heard",
+                        fix="is it on and near?")
+        return _rec("speaker", present=present, marked=marked, state=f"Bluetooth · {f.bt_name}")
+    if f.bt_route and not marked:
+        return _rec("speaker", present=present, in_use=phone, level="warn", state=where,
+                    reason=f"{f.bt_name} is lost", fix="turn it on; the hat keeps trying")
     fallback = bool(f.audio_routes) and nxt != f.audio_routes[0]
     if marked or fallback:
         why = ("USB marked failed" if marked else

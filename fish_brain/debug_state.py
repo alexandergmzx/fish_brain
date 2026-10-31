@@ -222,6 +222,16 @@ def _printer(hub) -> dict:
     return out
 
 
+def _bluetooth(hub) -> dict:
+    """The speakers from the page (bt.py): a locked copy, the radio is never waited on."""
+    from . import bt
+    cfg = hub.cfg.bluetooth
+    m = bt.manager()
+    if m is None:
+        return {"setting": cfg.kind(), "problem": cfg.problem(), "present": False}
+    return m.snapshot()
+
+
 def _backends(hub) -> dict:
     cfg, convo = hub.cfg, hub.convo
     out = {"stt": cfg.stt.backend, "tts": cfg.tts.backend, "llm_profile": cfg.llm.profile,
@@ -495,7 +505,10 @@ def _facts(hub, st: dict, cards=None):
     covered = echo or (show is not None and cfg.show.mode in ("auto", "script"))
     offline_ok = covered and cfg.stt.backend not in STT_PROFILES and cfg.tts.backend != "openai"
     rec = st.get("rec") if isinstance(st.get("rec"), dict) else {}
+    chosen = _dict(st.get("bluetooth")).get("chosen") or {}
     return devices.Facts(
+        bt_route=chosen.get("route", ""),
+        bt_name=chosen.get("name", ""),
         usb_role=sysinfo.get("usb_role", ""),
         usb_products=[u.get("product", "") for u in sysinfo.get("usb") or ()],
         marks=frozenset(hw.marks().failed),
@@ -581,6 +594,7 @@ def build(hub) -> dict:
         snd = None
     timing["sound"] = round((time.perf_counter() - t0) * 1000, 1)
     sec("printer", lambda: _printer(hub))
+    sec("bluetooth", lambda: _bluetooth(hub))
     sec("devices", lambda: _devices(hub, st, cards))
     if isinstance(st["devices"], list):
         from . import devices
@@ -602,6 +616,10 @@ def hints(st: dict, hub) -> list[dict]:
     def add(level, panel, text, fix=""):
         out.append({"level": level, "panel": panel, "text": text, "fix": fix})
 
+    lost = ((st.get("bluetooth") or {}).get("chosen") or {})
+    if lost.get("lost"):                     # on every tab: at a party nothing else can be heard
+        add("warn", "setup", f"{lost.get('name')} is lost: the hat is not speaking there.",
+            "turn it on; the hat keeps trying. Settings → Bluetooth speaker")
     remote = st.get("remote") or {}
     other = remote.get("other_keys") or {}
     if other and remote.get("present"):

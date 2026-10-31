@@ -253,6 +253,8 @@ cmd_install() {
         || die "the installed packages do not import (see the error above)"
     "$PY" -c 'import evdev, msgpack' 2>/dev/null \
         || warn "evdev/msgpack not importable: the remote button and the bridge transport are off"
+    "$PY" -c 'import dbus_fast' 2>/dev/null \
+        || warn "dbus_fast not importable: Bluetooth speakers from the page are off"
 
     step "3/7 Settings (.env)"
     if [[ ! -f "$REPO/.env" ]]; then
