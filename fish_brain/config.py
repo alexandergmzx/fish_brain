@@ -481,6 +481,15 @@ class ConductorConfig:
     sync_offset_ms: float = 0.0
 
 
+# The sox effects after a render, by name (FISH_TTS_ROOM). "stone": the small stone room of the
+# hat's pick of 2026-10-31 (docs/results/2026-10-30-jorge-stone-room-samples.md): a high-pass at
+# 80 Hz, +3 dB at 140 Hz, a short reverb, normalized to -1 dBFS.
+TTS_ROOMS: dict[str, list[str]] = {
+    "stone": ["highpass", "80", "equalizer", "140", "1q", "+3",
+              "reverb", "25", "60", "25", "100", "5", "-3", "gain", "-n", "-1"],
+}
+
+
 @dataclass
 class TTSConfig:
     backend: str = field(default_factory=lambda: _env("FISH_TTS_BACKEND", "loq"))  # loq | openai
@@ -517,11 +526,17 @@ class TTSConfig:
     # The rate written in the WAV header is the PCM rate times this: 0.88 plays the same
     # samples lower and slower (the hat's old voice, 2026-10-28), with no resampling.
     openai_rate_factor: float = field(default_factory=lambda: _env_float("FISH_TTS_RATE_FACTOR", 1.0))
-    # Pitch (semitones) and tempo set apart by rubberband after any backend, formants kept;
-    # 0 and 1.0 = untouched. The hat's pick of 2026-10-28: -2 at 0.72 (ADR 0023).
+    # Pitch (semitones) and tempo set apart after any backend; 0 and 1.0 = untouched.
     pitch_st: float = field(default_factory=lambda: _env_float("FISH_TTS_PITCH_ST", 0.0))
     tempo: float = field(default_factory=lambda: _env_float("FISH_TTS_TEMPO", 1.0))
     rubberband_bin: str = field(default_factory=lambda: _env("FISH_RUBBERBAND_BIN", "rubberband"))
+    # "keep" the formants when the pitch moves (a lower voice, through rubberband), or "shift"
+    # them with it (an older, bigger one, through sox's `pitch`: the hat's pick of 2026-10-31,
+    # Jorge at -2 in the stone room).
+    formants: str = field(default_factory=lambda: _env("FISH_TTS_FORMANTS", "keep"))
+    # A room through sox after the shaping (TTS_ROOMS); empty = dry.
+    room: str = field(default_factory=lambda: _env("FISH_TTS_ROOM", ""))
+    sox_bin: str = field(default_factory=lambda: _env("FISH_SOX_BIN", "sox"))
 
     def __post_init__(self) -> None:
         if not 0.5 <= self.openai_rate_factor <= 1.5:
@@ -530,6 +545,10 @@ class TTSConfig:
             raise ValueError(f"FISH_TTS_PITCH_ST={self.pitch_st}; choose -12 to 12")
         if not 0.5 <= self.tempo <= 1.5:
             raise ValueError(f"FISH_TTS_TEMPO={self.tempo}; choose 0.5 to 1.5")
+        if self.formants not in ("keep", "shift"):
+            raise ValueError(f"FISH_TTS_FORMANTS={self.formants!r}; choose keep or shift")
+        if self.room and self.room not in TTS_ROOMS:
+            raise ValueError(f"FISH_TTS_ROOM={self.room!r}; choose one of {', '.join(TTS_ROOMS)} or empty")
 
 
 # Cloud speech-to-text services (OpenAI-compatible transcription endpoints).
