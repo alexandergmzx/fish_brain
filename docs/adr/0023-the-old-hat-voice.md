@@ -1,6 +1,6 @@
 # 0023 — The old hat's voice: OpenAI ash, lower and slower, instead of Loquendo
 
-**Status:** proposed · **Date:** 2026-10-28
+**Status:** replaced by [0028](0028-jorge-in-a-stone-room.md) (2026-10-31) · **Date:** 2026-10-28
 
 ## Context
 

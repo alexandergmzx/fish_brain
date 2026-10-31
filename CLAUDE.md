@@ -34,7 +34,7 @@ data when warranted.
 | Laptop fish (Billy Bass #1, Uno R4) | Working since June 2026 |
 | `braintip`: software for the UNO Q | Runs on the board as `fish-brain.service` with linger since 2026-10-11: boots alone, welcome, real turns from the remote and from the page on a phone (`stt=openai llm=luna tts=loq`), about 4 s from release to voice on the home Wi-Fi (`rec=3.3s stt=0.6s tts=0.8s`, 2026-10-12). Not yet on the hotspot. Since 2026-10-11: no display, the phone page as the interface, HTTPS, the reading (ADR 0006, 0007 proposed). In echo mode (a unit drop-in) while the remote is being tuned |
 | Board: hub, USB speaker, the 2.4 GHz remote | Working on a power bank. The remote (XING WEI, Nordic) is trigger and microphone (`FISH_PTT_DEVICE=name:XING WEI`, `FISH_PTT_KEY=KEY_ENTER`, `FISH_MIC_SOURCE=…XING_WEI…`); the RedOctane is out, it draws more current than the board gives (2026-10-12) |
-| Board: the voice | **OpenAI `gpt-4o-mini-tts` ash, the old-hat instruction, 2 semitones lower at 0.72 tempo through `rubberband`** (`FISH_TTS_PITCH_ST=-2`, `FISH_TTS_TEMPO=0.72`, formants kept; ADR 0023, proposed; his picks 2026-10-28 from samples, `docs/results/2026-10-28-openai-voice-samples.md`: 1.4 to 2.8 s a line on the board, the reshape 0.84 s for an 8 s line). The 307 canned phrases render once and stay cached (17 min 38 s, 67 min of audio, `docs/results/2026-10-28-openai-voice-on-the-board.md`; the earlier 0.88 set backed up too). Not measured: a live turn's `tts=`. Ends 2027-01-06 (a Realtime backend before then). Loquendo, the voice until then: about 0.75 s per short sentence with the daemon warm. Since 2026-10-26 a start-up probe guards the licence (ADR 0013): `wlan0` scans with its own MAC, a bad probe restarts the voice on a fresh wineserver, else no live render. The 80 clean clips are backed up (`docs/results/2026-10-25-canned-backup.md`) |
+| Board: the voice | **Loquendo Jorge, 2 semitones lower with the formants moved too, in a stone room, one sox pass after the render** (`FISH_TTS_BACKEND=loq`, `FISH_TTS_PITCH_ST=-2`, `FISH_TTS_FORMANTS=shift`, `FISH_TTS_ROOM=stone`; ADR 0028, proposed; his pick 2026-10-31 from samples, `docs/results/2026-10-30-jorge-stone-room-samples.md`). On the board 2026-10-31: 0.53 s for a short line to 3.94 s for a 22 s reading, faster than ash on every line (`docs/results/2026-10-31-voice-bench-on-the-board.md`); 349 canned phrases in 7 min 6 s, licence probe clean (`docs/results/2026-10-31-jorge-sox-on-the-board.md`). Ash at 0.72 (ADR 0023) is backed up in `~/fish_brain_canned/openai-ash-p-2-t072/`. Not measured: a live turn's `tts=` |
 | Board: MCU firmware | Big_mouth `braintip` (`unoq/BigMouthQ`) flashed 2026-10-11, no drivers attached: protocol transcript 122 of 122, pulses within 1 ms, 9,999 of 9,999 lines in a soak. LED matrix mirrors the nine L298 signals. PWM measured good on D3, D5, D6 |
 | Board: bring-up script | `tools/unoq_bringup.sh`: all tests passed 2026-10-11 |
 | Board: speech-to-text | **`gpt-transcribe` first while online, Canary offline** (ADR 0020, proposed; his word 2026-10-27: `gpt-transcribe` "for now, connected to the network", after Canary wrote "Herria por mi novela" for "ir por mi novia"): `FISH_STT_BACKEND=canary`, `FISH_STT_ONLINE=openai` (4 s read limit, estimate; a failed service rests 60 s), `FISH_STT_LONG=groq` the second chance over 6 s, `small` on the window when offline. On his 2026-10-13 takes (`docs/results/2026-10-13-unoq-stt-his-takes.md`, RedOctane): `gpt-transcribe` 0.62 s and 4.5 %, Groq turbo 0.40 s and 13.0 %, Canary 2.28 s and 21.4 %. The routes are read at every recording (the old copy sent the fortune's dream to the local model, 2026-10-27). Not measured on the board yet: the online route in a real turn, the fall-back with data cut, the cold first call (6.8 to 8.0 s on 2026-10-13; `/debug/cloud` warms it). `/debug` → Switches → `stt_online` flips it without a restart |
@@ -99,7 +99,7 @@ together.
 | Speech-to-text | `local` faster-whisper (optionally on an encoder window that follows the clip), `canary` (every recording first to the services in `FISH_STT_ONLINE` while online, each with a 4 s limit and a 60 s rest after a failure; then NVIDIA Canary through sherpa-onnx for recordings up to 6 s; longer ones go to the services in `FISH_STT_LONG` while online, else to the local model; the lists are read at every recording), or the recording uploaded to `openai` / `groq`; the model loads in the background at start-up | [`stt.py`](fish_brain/stt.py) |
 | LLM | Profiles `groq` (GPT-OSS-20B), `luna` (GPT-6 Luna), `claude` (Haiku 5.5) and `claude-sonnet` (Sonnet 5.5); each has a provider, and `make_conversation` picks the class; bounded history; fallback line on error. `reading.read_badge` turns a badge photo into a name with the first profile of `FISH_READING_PROFILE` that has a key and answers (empty = `claude`, then the LLM profile; `luna` and `claude` take images, `groq` does not) | [`llm.py`](fish_brain/llm.py), [`claude.py`](fish_brain/claude.py), [`ab.py`](fish_brain/ab.py) |
 | Cloud plumbing | One client per service, short timeouts, a background "is the internet there" flag, two error types | [`cloud.py`](fish_brain/cloud.py) |
-| Text-to-speech | `loq` (Loquendo "Jorge") or `openai`; always a WAV file, never played here | [`tts.py`](fish_brain/tts.py) |
+| Text-to-speech | `loq` (Loquendo "Jorge") or `openai`; then the shaping: rubberband with the formants kept, or one sox pass with `pitch`, `tempo` and a room (`FISH_TTS_FORMANTS`, `FISH_TTS_ROOM`, ADR 0028); always a WAV file, never played here | [`tts.py`](fish_brain/tts.py) |
 | Canned phrases | welcome, goodbye, no_signal, no_mic, reading_wait, reading_fail, and the fillers and apologies of a waiting turn (`filler_first_*`, `filler_more_*`, `timeout_stt_*`); for the hat persona the show's `show_*` and the fortune's `fortune_*` lines too; cached by text and voice; an older rendering is used when a new one can't be made | [`canned.py`](fish_brain/canned.py) |
 | Mouth | WAV → openness (0..1) → timed pulses through measured curves | [`envelope.py`](fish_brain/envelope.py) |
 | Gestures | Head out on words, home on sentence ends; tail flaps | [`gestures.py`](fish_brain/gestures.py) |
@@ -162,8 +162,8 @@ Changed only by a record in [`docs/adr/`](docs/adr/). Do not reopen without new 
 | `master` | Untouched. On `braintip` the laptop must still run with no environment set | 2026-10-10 |
 
 Not decided: which service would replace OpenAI's speech-to-text; trimming an offline recording over 6 s so it fits the 12 s budget (ADR 0020, his call); whether the LightDM session
-stays installed with no display (to be measured). Decided 2026-10-28: the board's voice is
-OpenAI ash, 2 semitones lower at 0.72 tempo (`FISH_TTS_BACKEND=openai`, ADR 0023), replacing Loquendo. Decided 2026-10-11: tamer welcome and goodbye for the fair.
+stays installed with no display (to be measured). Decided 2026-10-31: the board's voice is
+Loquendo Jorge, 2 semitones lower with the formants, in a stone room, one sox pass in fish_brain (ADR 0028, replacing 0023's ash). Decided 2026-10-11: tamer welcome and goodbye for the fair.
 Since 2026-10-27 the audience is adults (parties, spooky places, his parents' house, the
 university); the house act's lines keep the kid register until his pass.
 
@@ -271,6 +271,12 @@ without `evdev` or `msgpack`.
 
 - No number is quoted without a dated file in [`docs/results/`](docs/results/) with the
   command and commit. Unmeasured values are marked "(estimate)" or "not measured".
+- **Nothing measured lives only in `/tmp` or a scratchpad** (his word, 2026-10-31: the realtime
+  voice script of 2026-10-28 was lost that way). The results file is written as the numbers
+  come in, before they are quoted in the chat. The script that made them goes in
+  [`tools/`](tools/) (or, when it is a one-off, inline in the results file). Samples he judges
+  are copied outside the scratchpad, to `~/fish_brain_canned/samples-<date>/`, and the results
+  file names the folder. Board-side scratch files are copied back the same way.
 - Calibration values belong to one fish body. Never invent them.
 - **Say which level was actually run.** A dry run does not prove motion.
 
@@ -423,6 +429,11 @@ Machine and tool facts only, each dated.
   stayed in device mode and `lsusb` was empty; with a newer one it worked at once. Check
   `/sys/class/typec/port0/data_role`.
 - **Loquendo runs under Hangover Wine**: 8 s one-shot, 0.75 s with the daemon warm.
+- **Loquendo's own `\timbre` other than 50 deletes the pauses between sentences** (the line 20 %
+  shorter, every word still there), and `\reverb` persists across prompts until set again
+  (2026-10-30, [`docs/results/2026-10-30-jorge-stone-room-samples.md`](docs/results/2026-10-30-jorge-stone-room-samples.md)).
+- **sox dithers its 16-bit output**: two renders of a line differ at 77 dB below the signal, never
+  byte for byte (2026-10-31).
 - **Loquendo checks its licence against the adapter list the prefix's wineserver saw at its
   start** (2026-10-25). NetworkManager scans with a random MAC on `wlan0` (`ath10k_snoc` is not
   exempt), so a fish started before Wi-Fi connected spoke only "la licencia que posee no es
