@@ -53,8 +53,8 @@ The switches still reset at a restart (only the network pin is a file).
   kept as an alias of `status` for phones that remembered it.
 - The badge photo and the look tick leave the page ([0007](0007-the-reading.md), superseded on
   the page); the typed name stays as "Tell the hat".
-- The place and the fortune's switches reset at a restart like the mode; only the network pin
-  and the hardware marks are files.
+- The place and the fortune's switches reset at a restart like the mode; only the network pin,
+  the hardware marks and, since [0031](0031-bluetooth-speakers-from-the-page.md), the chosen speaker are files.
 
 ## Amendment, 2026-10-27: the place and the fortune on the Visit tab
 

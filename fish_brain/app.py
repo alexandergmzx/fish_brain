@@ -314,6 +314,13 @@ def main(argv: list[str] | None = None) -> int:
         from .printer import make_printer
         printer = make_printer(cfg.printer)
 
+    # Bluetooth speakers from the page (bt.py): nothing at all unless FISH_BLUETOOTH is set. Before
+    # the conversation, whose player reads the chosen route.
+    bt_speakers = None
+    if conversing and viz is not None:
+        from .bt import make_bt
+        bt_speakers = make_bt(cfg.bluetooth, cfg.printer.mac if cfg.printer.kind() == "rfcomm" else "")
+
     try:
         # Warm the loq daemon so the first phrase isn't slow (does nothing for other backends),
         # with the licence probe. After the page: a slow or recovering voice must not leave
@@ -393,6 +400,9 @@ def main(argv: list[str] | None = None) -> int:
                         from .debug_actions import DebugActions
                         hub.attach(link=link, convo=convo,
                                    actions=DebugActions(cfg, link, convo, viz, hub))
+                        if bt_speakers is not None:
+                            from .bt import busy_reason
+                            bt_speakers.busy = busy_reason(printer, convo, viz)
                     except Exception as e:
                         print(f"[viz] debug view without actions: {type(e).__name__}",
                               file=sys.stderr)
@@ -429,6 +439,12 @@ def main(argv: list[str] | None = None) -> int:
                 printer.close()
             except Exception as e:
                 print(f"[printer] close: {type(e).__name__}: {e}", file=sys.stderr)
+        if bt_speakers is not None:
+            from .bt import close as bt_close
+            try:
+                bt_close()
+            except Exception as e:
+                print(f"[bt] close: {type(e).__name__}: {e}", file=sys.stderr)
         if viz is not None:
             viz.stop()
         if hub is not None:

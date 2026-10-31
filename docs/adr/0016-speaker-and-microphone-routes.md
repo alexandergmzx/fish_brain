@@ -37,4 +37,4 @@ phone rows show the same decision (`audio.next`, `mic.recorder`).
 ## Consequences
 
 The laptop is unchanged (no routes, sounddevice). The phone route depends on the page staying
-open with its sound unlocked. Bluetooth works once a speaker is paired (his step).
+open with its sound unlocked. Bluetooth works once a speaker is paired (his step; since [0031](0031-bluetooth-speakers-from-the-page.md) a press on the page).

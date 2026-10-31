@@ -170,6 +170,24 @@
                     <h3>Hardware <small>tap a part when it fails; tap again when it works</small></h3>
                     <div class="picks hw" role="group" aria-label="Hardware"><button type="button" class="pick" data-hw="speaker">USB speaker</button><button type="button" class="pick" data-hw="mic">USB microphone</button><button type="button" class="pick" data-hw="remote">Remote button</button><button type="button" class="pick" data-hw="motors">Motors</button><button type="button" class="pick" data-hw="internet">Internet</button></div>
                     <small id="hwNote" class="note" hidden></small>
+                    <div id="btBlock" hidden>
+                        <h3>Bluetooth speaker <small id="btNow"></small></h3>
+                        <div id="btProblem" class="note" hidden></div>
+                        <h4 id="btMineHead" hidden>My speakers</h4>
+                        <div id="btMine" class="bt-rows"></div>
+                        <div class="picks"><button type="button" class="pick" id="btFind">Find speakers</button><button type="button" class="pick" id="btStop" hidden>Stop</button><button type="button" class="pick" id="btCancel" hidden>Cancel</button></div>
+                        <div id="btHelp" class="note"></div>
+                        <div id="btAsk" class="bt-ask" hidden>
+                            <div id="btAskText"></div>
+                            <div id="btPinRow" class="picks" hidden><input type="text" id="btPin" maxlength="16" autocomplete="off" aria-label="PIN"><button type="button" class="pick" id="btPinOk">Pair</button></div>
+                            <div id="btYesNo" class="picks" hidden><button type="button" class="pick" id="btYes">Yes</button><button type="button" class="pick" id="btNo">No</button></div>
+                        </div>
+                        <div id="btResult" class="note" role="status"></div>
+                        <h4 id="btNearHead" hidden>Nearby</h4>
+                        <div id="btNear" class="bt-rows"></div>
+                        <button type="button" class="pick" id="btAllBtn" hidden></button>
+                        <div id="btAll" class="bt-rows" hidden></div>
+                    </div>
                     <h3>Volume <small id="volNow"></small></h3>
                     <input type="range" id="volSlider" min="0" max="100" step="5" value="50" aria-label="Volume">
                     <h3>Network</h3>
@@ -177,7 +195,7 @@
                     <h3>Phone speaker <small id="spkState">off</small></h3>
                     <button type="button" class="pick" id="spkBtn">🔊 Use this phone as a speaker</button>
                     <span id="setupMsg" class="note"></span>
-                    <p class="note">The running hat only: a restart brings back what .env and the unit say.</p>
+                    <p class="note">The running hat only: a restart brings back what .env and the unit say. Bluetooth speakers, hardware marks and the network pin stay.</p>
                 </div>
                 <div class="panel" id="p-visit" hidden>
                     <h3>Visit <small id="visitState">no visitor</small></h3>

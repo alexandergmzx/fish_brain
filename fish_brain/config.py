@@ -959,6 +959,22 @@ class PrinterConfig:
 
 
 @dataclass
+class BluetoothConfig:
+    """Bluetooth speakers from the page (bt.py, ADR 0031): empty = none (the laptop), `mock` = a
+    stand-in room with no radio, `on` = BlueZ. Its timers are constants in bt.py, not settings."""
+    setting: str = field(default_factory=lambda: _env("FISH_BLUETOOTH", ""))
+    state_path: str = field(default_factory=lambda: _env("FISH_BLUETOOTH_STATE", ""))
+
+    def kind(self) -> str:
+        """off | mock | on | bad. A bad value turns Bluetooth off, never the fish."""
+        s = self.setting.strip().lower()
+        return "off" if not s else s if s in ("mock", "on") else "bad"
+
+    def problem(self) -> str:
+        return f"FISH_BLUETOOTH={self.setting.strip()!r} is neither on nor mock" if self.kind() == "bad" else ""
+
+
+@dataclass
 class Config:
     serial: SerialConfig = field(default_factory=SerialConfig)
     mouth: MouthConfig = field(default_factory=MouthConfig)
@@ -981,6 +997,7 @@ class Config:
     fortune: FortuneConfig = field(default_factory=FortuneConfig)
     place: PlaceConfig = field(default_factory=PlaceConfig)
     printer: PrinterConfig = field(default_factory=PrinterConfig)
+    bluetooth: BluetoothConfig = field(default_factory=BluetoothConfig)
 
 
 def load() -> Config:

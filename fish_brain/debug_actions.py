@@ -589,9 +589,11 @@ class DebugActions:
                 return {"ok": False, "error": "speaking"}
             try:
                 convo.player.play(files[-1])
-                convo.player.wait()
+                heard = convo.player.wait()
             finally:
                 lock.release()
+            if heard is False:                   # the sink went away, or the phrase stalled
+                return {"ok": False, "error": "not heard"}
             return {"ok": True, "player": type(convo.player).__name__}
 
         status, out = self._offer(run, 20.0)
@@ -959,7 +961,22 @@ class DebugActions:
             return self.net(body.get("pin"))
         if path == "/debug/hw":
             return self.hardware(body.get("part"), body.get("failed"))
+        if path == "/debug/bluetooth":
+            return self.bluetooth(body)
         return 404, {"ok": False, "error": "no such action"}
+
+    def bluetooth(self, body: dict) -> tuple[int, dict]:
+        """Find, pair and choose a speaker (bt.py). Answers at once; the worker does the work and
+        the result arrives in the view. No sound: the page's Test is a separate press."""
+        from . import bt
+        m = bt.manager()
+        if m is None:
+            return 503, {"ok": False, "error": "bluetooth off"}
+        status, out = m.do(body)
+        if body.get("do") != "view":             # never the PIN
+            self.hub.emit("action", what=f"bluetooth {body.get('do')}",
+                          result="ok" if out.get("ok") else out.get("error", ""))
+        return status, out
 
     def volume(self, value) -> tuple[int, dict]:
         """The live speaker's volume, 0..100 (no sound is made). The routed speaker's sink,

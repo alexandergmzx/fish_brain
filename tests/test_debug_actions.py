@@ -597,3 +597,8 @@ def test_the_show_switch_goes_off_and_back_without_an_error(rig, monkeypatch):
     status, out = rig.act.set("show", "off")          # the page's Model and Echo buttons send this
     assert status == 200 and out == {"ok": True, "value": "off"} and rig.convo.show is None
     assert "model's visit only" in _values(rig)["show"]["note"]
+
+
+def test_bluetooth_off_is_503(rig):
+    status, out = rig.act.post("/debug/bluetooth", {"do": "view"})
+    assert status == 503 and out["error"] == "bluetooth off"

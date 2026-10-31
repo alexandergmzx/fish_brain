@@ -43,6 +43,7 @@ class PwPlayer(Player):
         self.node, self.stall_s, self.exe = node, stall_s, exe
         self._proc: subprocess.Popen | None = None
         self._dur = 0.0
+        self._stopped = False
         self.started_at: float | None = None
 
     def play(self, wav_path) -> None:
@@ -65,13 +66,15 @@ class PwPlayer(Player):
             return True
         limit = self._dur + self.stall_s if timeout is None else timeout
         try:
-            self._proc.wait(timeout=max(0.1, limit))
-            return True
+            rc = self._proc.wait(timeout=max(0.1, limit))
+            # A sink pulled in the middle ends pw-play with an error: the phrase was not heard.
+            return rc == 0 or self._stopped or self._dur <= 0.3
         except subprocess.TimeoutExpired:
             self.stop()
             return False
 
     def stop(self) -> None:
+        self._stopped = True
         p = self._proc
         if p is not None and p.poll() is None:
             p.terminate()
@@ -157,8 +160,18 @@ class RoutedPlayer(Player):
         self.node = ""                  # its sink's node name ("" for phone / none)
         self.started_at: float | None = None
         self.delay_s = 0.0
+        from . import bt
+        bt.on_ready(lambda r: self._cool.pop(r, None))   # a speaker back is tried at once
+
+    def _routes(self) -> list:
+        from . import bt
+        return bt.with_chosen(self.cfg.routes)
 
     def _delay(self, route: str) -> float:
+        from . import bt
+        own = bt.delay_for(route)                # a chosen speaker's own delay, by its address
+        if own is not None:
+            return own / 1000.0
         for pat, ms in self._delays:
             if fnmatch.fnmatch(route, pat):
                 return ms / 1000.0
@@ -170,7 +183,7 @@ class RoutedPlayer(Player):
         speaker skipped, `phone` only with an armed page)."""
         from . import devices, hw
         pages = getattr(self.viz, "speaker_pages", lambda: 0)() if self.viz is not None else 0
-        for route, node in devices.speaker_routes(self.cfg.routes, hw.failed("speaker"),
+        for route, node in devices.speaker_routes(self._routes(), hw.failed("speaker"),
                                                   self.cache.sinks(), pages, self._cool,
                                                   self._clock()):
             if route == "phone":
@@ -228,8 +241,10 @@ class RoutedPlayer(Player):
         nxt = next(iter(self._candidates()), None)
         if not route:                           # nothing played yet: the route the next takes
             route, node = (nxt[0], nxt[1]) if nxt else ("none", "")
-        live = next((s for s in sinks if s["name"] == node), None)
-        return {"routes": list(self.cfg.routes), "route": route, "node": node,
+        # The next route's sink first: the slider acts on a speaker chosen a moment ago.
+        target = (nxt[1] if nxt else "") or node
+        live = next((s for s in sinks if s["name"] == target), None)
+        return {"routes": self._routes(), "route": route, "node": node,
                 "next": nxt[0] if nxt else "none",
                 "sink_id": live["id"] if live else None,
                 "cooling": sorted(r for r, t in self._cool.items() if t > self._clock()),
