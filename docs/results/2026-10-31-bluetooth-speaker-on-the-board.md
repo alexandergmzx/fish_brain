@@ -44,3 +44,16 @@ device reports; only the label is wrong and the row still works the same.
 
 Pairing, connecting, a sink's real name, any sound, latency, idle clipping, a pulled sink, reconnect,
 headphones, a speaker held by a phone, the seat with LightDM stopped, coexistence on the hotspot.
+
+## Switched on, 2026-10-31 18:06 UTC
+
+Commit `5907f64`; `rsync -ani --checksum` listed no file differing from the board. `FISH_BLUETOOTH=on`
+appended to the board's `.env`, then `systemctl --user restart fish-brain`.
+
+| Check | Reading |
+|---|---|
+| `POST /debug/bluetooth {"do":"view"}`, about 2 s after the restart | 409 `not ready`: `viz.py:1029`, the fish still starting |
+| The same, 25 s later | 200: `setting=on`, `alive=true`, `powered=true`, `phase=idle`, no speakers |
+| Hardware marks kept over the restart | mic, speaker (his, from the page at 18:04) |
+
+No pairing and no Bluetooth sound yet.
