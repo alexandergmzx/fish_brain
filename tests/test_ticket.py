@@ -158,7 +158,7 @@ def test_end_at_the_second_question_prints_what_there_is():
     blocks = tk.layout(t)
     assert not any(isinstance(b, tk.Art) for b in blocks)
     lines = text_of(blocks)
-    assert tk.CREDIT not in lines and not any("·" in s for s in lines)
+    assert not any("·" in s for s in lines)
     assert [s.split(" ")[0] for s in lines if " .." in s] == ["Luna", "Palabra"]
 
 
@@ -231,13 +231,13 @@ def pbm(path, width, rows, data, comment=b"# Death, 1909 plate, test pattern\n")
     return path
 
 
-def test_a_plate_prints_as_a_centred_picture_with_its_credit(tmp_path):
+def test_a_plate_prints_as_a_centred_picture_with_no_credit_or_folio(tmp_path):
     tk.read_pbm.cache_clear()
     pbm(tmp_path / "tarot" / "13.pbm", 16, 3, b"\xff\xff\x80\x01\xff\xff")
     blocks = tk.layout(made(act()), art_root=tmp_path)
     art = [b for b in blocks if isinstance(b, tk.Art)]
     assert art == [tk.Art(2, 3, b"\xff\xff\x80\x01\xff\xff")]
-    assert tk.CREDIT in text_of(blocks)
+    assert not any("Pamela" in s or "Folio" in s for s in text_of(blocks))
     parts = tk.encode(blocks)
     band = [p for p in parts if p.startswith(b"\x1d\x76\x30\x00\x30\x00\x03\x00")]
     assert band == [bytes.fromhex("1d 76 30 00 30 00 03 00") + tk.pad(art[0].data, 2, 3)]
@@ -265,7 +265,7 @@ def test_a_bad_plate_is_no_picture_never_an_error(tmp_path, raw):
     (tmp_path / "tarot" / "13.pbm").write_bytes(raw)
     assert tk.card_art("tarot", 13, tmp_path) is None
     blocks = tk.layout(made(act()), art_root=tmp_path)
-    assert not any(isinstance(b, tk.Art) for b in blocks) and tk.CREDIT not in text_of(blocks)
+    assert not any(isinstance(b, tk.Art) for b in blocks)
     assert "XIII · LA MUERTE" in text_of(blocks)
 
 
@@ -308,7 +308,6 @@ Luna ..................... llena
 Pediste ................... amor
 Palabra mágica ......... Zumbalí
 . . . . . . . . . . . . . . . .
-           Folio 0000
      28 de octubre de 2026
          en una fiesta
 """

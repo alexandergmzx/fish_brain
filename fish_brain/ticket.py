@@ -10,8 +10,9 @@ turn loop's thread; the printer's worker (printer.py) lays it out and sends the 
 The content reuses what the act already has (PLAN Decision 16): the name, the card's plate
 with its numeral, name and meaning, the reading (the model's text, or the texts of the
 number, moon and magic word clips), leader lines for the number, the moon, the wish and the
-magic word, and a footer in Font B: the folio, the date when the clock is sane, the place, the
-plate's credit. The dream, the cup, the house and the mode stay off the paper.
+magic word, and a footer in Font B: the date when the clock is sane and the place. No folio and
+no plate credit, to save paper (his word, 2026-10-29: the credit belongs on the page). The dream,
+the cup, the house and the mode stay off the paper.
 
 Text: printer fonts only, Font A (12x24 dots, 32 columns) for what the visitor reads and Font
 B (9x17, 42 columns) for the footer; every text passes `printable` (no control byte reaches
@@ -91,11 +92,9 @@ LABEL_NUMBER = "Número de la suerte"
 LABEL_MOON = "Luna"
 LABEL_WISH = "Pediste"
 LABEL_MAGIC = "Palabra mágica"
-FOLIO = "Folio"
-CREDIT = "Carta: Pamela Colman Smith, 1909"
 SAMPLE_NAME = "Prueba"
-LABELS = (TITLE, SUBTITLE, FOR, LABEL_NUMBER, LABEL_MOON, LABEL_WISH, LABEL_MAGIC, FOLIO,
-          CREDIT, SAMPLE_NAME)
+LABELS = (TITLE, SUBTITLE, FOR, LABEL_NUMBER, LABEL_MOON, LABEL_WISH, LABEL_MAGIC,
+          SAMPLE_NAME)
 
 
 # ---- text -------------------------------------------------------------------------------------
@@ -398,11 +397,8 @@ def layout(t: Ticket, *, codec: str = CODEC, art_root: Path | str | None = None)
     if leaders:
         out.append(Rule())
     foot = dict(font="b", align="c")
-    out += _lines(f"{FOLIO} {t.n:04d}", codec, **foot)
     out += _lines(t.day, codec, **foot)
     out += _lines(t.place, codec, **foot)
-    if plate is not None:
-        out += _lines(CREDIT, codec, **foot)
     out.append(Feed(TEAR_FEED))
     return out
 

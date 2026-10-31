@@ -89,3 +89,8 @@ and eight more packages.
   audio sink would join `FISH_AUDIO_ROUTES`' `bluez_output.*` (check `wpctl status`).
 - Whether the ticket is late against the closing line, and whether the act's time changes, is
   measured on the board (`docs/results/<date>-mp210-on-the-board.md`, not written yet).
+
+## Amendment, 2026-10-29
+
+The footer loses the folio and the plate's credit, to save paper (his word): the date and the
+place stay. The credit for the plates (Pamela Colman Smith, 1909) belongs on the page instead.
