@@ -3,6 +3,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 TOOLS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
 sys.path.insert(0, TOOLS)
 
@@ -292,3 +294,27 @@ def test_the_then_lines_and_the_typed_name_reach_the_markdown():
     assert "**Visitor:** Hola, soy Albert." in md and "**Hat now**: Albert, veo." in md
     assert "*Hat then:* ¡Albert! ¿Mapa o libro?" in md and "> Veo borregos." in md
     assert "- **fecha:** Tres de marzo. (sign → piscis)" in md and "```\n  L A\n```" in md
+
+
+# ---- the calaverita's meter and rhyme ----------------------------------------------------------
+@pytest.mark.parametrize("line", [
+    "Estudiaba el buen Rodrigo", "cada puerta antes de entrar,", "y a un negocio con su amigo",
+    "le dio todo sin dudar.", "Llegó la Flaca por él", "con su guadaña y su pluma;",
+    "él leyó todo el papel", "y exigió que lo resuma.", "La Flaca se fue sin nada:",
+    "contando lo que le sobra."])
+def test_the_scanner_counts_his_example_at_eight(line):
+    assert hat_rehearse.syllables(line) == 8
+
+
+def test_the_rhyme_key_hears_mexico():
+    assert hat_rehearse.rhyme_key("con su pluma") == hat_rehearse.rhyme_key("que lo resuma.")
+    assert hat_rehearse.rhyme_key("sin dudar") == hat_rehearse.rhyme_key("antes de entrar,")
+    assert hat_rehearse.rhyme_key("la cuenta") == hat_rehearse.rhyme_key("la venta")
+    assert hat_rehearse.rhyme_key("la casa") == hat_rehearse.rhyme_key("la taza")
+    assert hat_rehearse.rhyme_key("la vaca") != hat_rehearse.rhyme_key("la vida")
+
+
+def test_the_metrics_of_a_good_verse():
+    from fish_brain import calaverita as cal
+    m = hat_rehearse.verse_metrics(cal.FALLBACK["S"][0])
+    assert m["lines"] == 12 and m["stanzas"] == 3 and m["rhymed"] == 3 and m["near8"] == 12
