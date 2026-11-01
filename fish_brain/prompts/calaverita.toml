@@ -64,12 +64,6 @@ Estas parejas no riman de verdad, con la misma terminación desde la última voc
 Devuelve las tres estrofas completas. Deja igual lo que ya rima y cambia lo menos posible para que estas parejas rimen, sin perder el chiste, en versos de ocho sílabas y con palabras que existan.
 """
 
-# A word here refuses the model's verse, and the house's fallback is said: paper can't be unsaid.
-# Whole words, with or without accents. This act only (ADR 0025 stands for the others).
-nunca = ["pendejo", "pendeja", "cabrón", "cabrona", "chingar", "chingada", "chingón", "verga",
-         "culo", "mierda", "puta", "puto", "pinche", "sexo", "ex", "tequila", "cerveza",
-         "borracho", "borracha", "peda"]
-
 [pools]
 lead = [
     "Antes de que te vayas, te debo unos versos.",

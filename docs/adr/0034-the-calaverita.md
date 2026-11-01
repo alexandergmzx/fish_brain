@@ -40,6 +40,10 @@ answers: a button, voice and ticket, three stanzas.
 12. **It runs under a scripted house** (`FISH_SHOW=script`): it asks the show's trust check, never its mode. Each version has its client even when the visit is on the same profile.
 13. **Left to the operator:** a scripted house has no name, so a typed name goes with that visit's house and answers for 600 s; New visitor ends that. A word said just after a consulta's reading may still get its closing line.
 
+## Amendment, 2026-11-01
+
+His word: the banned-word refusals "shouldn't exist". The `nunca` list is gone from the code and the file: no word refuses a verse. The family rule stays as an instruction to the model, in `rules`.
+
 ## Alternatives
 
 - **Automatic after the verdict:** a longer visit for someone who may be leaving; his choice was the button.

@@ -12,7 +12,6 @@ from .visit import _fold, begin_model, cue_pairs
 
 _WORDS = texts.calaverita()
 RULES: str = _WORDS["rules"].strip()
-NUNCA = tuple(_WORDS["nunca"])
 HOUSE_KEYS = ("G", "H", "R", "S")
 
 STANZAS, STANZA_LINES = 3, 4
@@ -45,9 +44,9 @@ def stanzas_of(raw: str) -> list[list[str]]:
     return [verses[i:i + STANZA_LINES] for i in range(0, len(verses), STANZA_LINES)]
 
 
-def verse_problems(stanzas: list[list[str]], nunca=NUNCA) -> list[str]:
-    """Why a verse would be refused ([] = it would be said and printed). Its shape and the family
-    word list; the rhyme is `compose`'s to judge, and the meter is never a reason."""
+def verse_problems(stanzas: list[list[str]]) -> list[str]:
+    """Why a verse would be refused ([] = it would be said and printed). Its shape only, no word
+    list (ADR 0034, amended); the rhyme is `compose`'s to judge, and the meter is never a reason."""
     verses = [v for s in stanzas for v in s]
     if not verses:
         return ["empty"]
@@ -62,10 +61,6 @@ def verse_problems(stanzas: list[list[str]], nunca=NUNCA) -> list[str]:
         out.append(f"{words} words")
     if any(_TAG.search(v) for v in verses):
         out.append("a tag")
-    said = set(re.findall(r"[^\W\d_]+", _fold(" ".join(verses))))
-    hits = sorted(w for w in nunca if _fold(w) in said)
-    if hits:
-        out.append("nunca: " + ", ".join(hits))
     return out
 
 
@@ -225,10 +220,10 @@ def compose(clients, rules: str, tag: str, *, thinking: str | None = None, passe
             "versions": versions, "error": None if versions else error, "raw": raw}
 
 
-def clean_verse(raw: str, nunca=NUNCA) -> tuple[tuple[str, ...], ...] | None:
+def clean_verse(raw: str) -> tuple[tuple[str, ...], ...] | None:
     """The model's reply fit to be said and printed, as stanzas; None when it is not."""
     stanzas = stanzas_of(raw)
-    if verse_problems(stanzas, nunca):
+    if verse_problems(stanzas):
         return None
     return tuple(tuple(s) for s in stanzas)
 

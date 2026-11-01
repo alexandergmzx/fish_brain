@@ -48,16 +48,14 @@ def test_markdown_a_title_and_a_house_line_are_taken_off():
     ("\n".join(VERSE.splitlines()[:5]), "lines"),
     (VERSE.replace("le dio todo sin dudar.", "x " * 40), "long"),
     (VERSE.replace("sin nada", "[ETAPA 2]"), "a tag"),
-    (VERSE.replace("sin nada", "sin su ex,"), "nunca: ex"),
-    (VERSE.replace("sin nada", "sin Cabrón"), "nunca: cabrón"),
 ])
 def test_a_bad_verse_is_refused_and_says_why(raw, why):
     assert cal.clean_verse(raw) is None
     assert why in "; ".join(cal.verse_problems(cal.stanzas_of(raw)))
 
 
-def test_a_word_inside_another_is_not_a_hit():
-    assert cal.clean_verse(VERSE.replace("sin nada", "su examen")) is not None
+def test_no_word_refuses_a_verse():
+    assert cal.clean_verse(VERSE.replace("sin nada", "sin su ex, cabrón")) is not None
 
 
 def test_the_voice_pauses_at_each_verse_without_doubling_a_mark():
@@ -173,7 +171,7 @@ def test_every_fallback_is_a_verse_with_no_name_and_rendered_clips_have_names():
 def test_a_broken_words_file_names_itself():
     good = texts.parse_lines(texts.DIR / "calaverita.toml")
     assert texts.check_calaverita(good)
-    for broken, what in (({**good, "rules": ""}, "rules"), ({**good, "nunca": []}, "nunca"),
+    for broken, what in (({**good, "rules": ""}, "rules"),
                          ({**good, "pools": {}}, "pools.lead"),
                          ({**good, "fallback": {"G": ["x"]}}, "fallback.H")):
         with pytest.raises(ValueError, match=what):
