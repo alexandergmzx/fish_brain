@@ -175,6 +175,10 @@ words = ["corona", "coronas", "la corona", "coronita"]
 reaction = "¡La corona! Esta noche, la reina o el rey de la calle eres tú."
 
 [pools]
+# Asked once after the greeting, unless a name was typed. The clips cannot say the name: it goes to the page, the fortune and the verse.
+nombre = ["Antes de empezar, dime: ¿cómo te llamas?"]
+nombre_ok = ["Mucho gusto. Ya lo apunté en mi forro.", "Ya no se me olvida. Empecemos.", "Ya quedó apuntado. Vamos a ver esa cabeza."]
+nombre_sin = ["No te oí bien, pero no importa. Empecemos.", "Está bien, tu nombre lo adivino después. Empecemos."]
 greet = [
     "¡Feliz Halloween! Acércate, que este sombrero viejo quiere asomarse a tu cabeza.",
     "Ah, una cabeza nueva. Ayúdame a ver qué guardas ahí adentro, además de dulces.",
@@ -311,14 +315,14 @@ season = [
     "Gato negro y luna llena: esta noche viene buena.",
 ]
 farewell = [
-    "Anda, ve y disfruta la noche. Este sombrero se queda pensando en ti.",
-    "Ándale, que la calle está llena de calabazas encendidas. ¡A pedir calaverita!",
-    "Que te vaya bonito, y que tu bolsa se llene de dulces.",
-    "Ya está. Que pase la siguiente cabeza valiente.",
-    "Fue un gusto leerte. Que tengas una temporada llena de dulces y risas.",
-    "Ve y presume tu casa. Yo me quedo aquí, con las velitas.",
-    "Gracias por prestarme tu cabeza un ratito. ¡Feliz Halloween!",
-    "Ahora, a pedir dulces. Y no olvides dar las gracias en cada puerta.",
-    "Con tu bolsa y calabaza, ve tocando cada casa.",
-    "Órale, a disfrutar la noche. Guárdame un chocolate, aunque yo no tenga con qué comerlo.",
+    "Ya tienes casa. Este sombrero se queda pensando en ti.",
+    "Ya quedó: tu casa está escrita en mis costuras.",
+    "Ya está decidido, y no me equivoco. Presume tu casa cuando quieras.",
+    "Fue un gusto leerte. Aquí sigo, por si quieres saber más.",
+    "Tu cabeza me cayó bien. Y todavía me queda mucho por decirte, si quieres oírlo.",
+    "Ya sabes tu casa. Lo demás, si te atreves, también te lo puedo contar.",
+    "Gracias por prestarme tu cabeza. ¡Feliz Halloween!",
+    "Ya está. Mis costuras siguen despiertas, por si traes otra pregunta.",
+    "Tu casa ya es tuya. Yo me quedo aquí, con las velitas, y con ganas de seguir platicando.",
+    "Listo. Guárdame un chocolate, aunque yo no tenga con qué comerlo.",
 ]

@@ -98,7 +98,7 @@ def _phrases() -> dict[str, str]:
 
 def _check_tables() -> None:
     """Every slot show_run picks must have a line: a None would reach the speaker."""
-    slots = ["greet", "nose", "bridge", "suspense", "tie", "season", "farewell"]
+    slots = ["nombre", "nombre_ok", "nombre_sin", "greet", "nose", "bridge", "suspense", "tie", "season", "farewell"]
     slots += [f"{k}_{h}" for k in ("pref", "reason", "house", "future") for h in HOUSES]
     missing = [s for s in slots if not POOLS.get(s)]
     if missing:

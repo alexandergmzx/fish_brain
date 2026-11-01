@@ -206,3 +206,10 @@ def test_an_article_run_into_the_word_still_matches():
 
 def test_canarys_spelling_of_slytherin_is_a_veto():
     assert houses_in("No quiero esliterín.") == (None, {"S"})
+
+
+def test_no_farewell_sends_the_visitor_away():
+    # His word, 2026-11-01: they may stay for another act.
+    for line in show_bank.POOLS["farewell"]:
+        for gone in ("siguiente", "ve y", "anda,", "ándale", "a pedir", "te vaya"):
+            assert gone not in line.lower(), line

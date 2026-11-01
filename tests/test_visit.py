@@ -518,3 +518,12 @@ def test_since_verdict_is_fixed_from_the_house_and_needs_one():
     v.touch(150.0)                              # a later line moves last_s, not this
     assert v.since_verdict() == 30.0
     assert v.since_verdict(now=720.0) == 600.0
+
+
+@pytest.mark.parametrize("said, name", [
+    ("Ana.", "Ana"), ("Me llamo Fernando.", "Fernando"), ("Hola, soy Valeria.", "Valeria"),
+    ("Mi nombre es Carlos.", "Carlos"), ("Juan. Juan Delgado.", "Juan"), ("Óscar", "Óscar"),
+    ("", ""), ("No te voy a decir.", ""), ("¿Cómo?", ""), ("Con amigos.", ""), ("Soy de Guadalajara.", ""),
+])
+def test_a_name_from_the_scripted_question(said, name):
+    assert visit.spoken_name(said) == name

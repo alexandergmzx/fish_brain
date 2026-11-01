@@ -83,3 +83,7 @@ typed on the page no longer goes to the model under script: it joins the open vi
 starts one, and it reaches the fortune and the ticket. The first SDK import runs inside the turn's
 wait, since a scripted house no longer builds the client first. On the board since 2026-11-01:
 `docs/results/2026-11-01-the-house-rollback-checked.md`.
+
+## Amendment, 2026-11-01
+
+His word: the name was not asked, and "que pase la siguiente" dismissed a visitor who may want another act. `ShowConfig.ask_name`: one "¿cómo te llamas?" after the greeting, unless a name was typed, parsed by `visit.spoken_name`; the clips cannot say it, the other acts and the paper use it. The ten farewells no longer send the visitor away. The rest stays the fair's lines.

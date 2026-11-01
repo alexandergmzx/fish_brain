@@ -72,6 +72,7 @@ def make(monkeypatch, tmp_path):
         monkeypatch.setenv("FISH_PERSONA", "hat")
         monkeypatch.setenv("FISH_SHOW", mode)
         cfg = Config()
+        cfg.show.ask_name = False
         cfg.canned.cache_dir = tmp_path / "canned"
         cfg.show.state = str(tmp_path / "show.json")
         cfg.show.seed = "test"

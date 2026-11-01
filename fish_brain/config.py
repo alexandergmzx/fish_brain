@@ -850,6 +850,7 @@ class ShowConfig:
     now: offline, a key missing, the voice tainted, or a model failure in the last `back_s`.
     With the show on, no error line is ever said to a visitor."""
     mode: str = field(default_factory=_show_mode)
+    ask_name: bool = True                 # "¿cómo te llamas?" after the greeting
     state: str = field(default_factory=lambda: _env(
         "FISH_SHOW_STATE", str(Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
                                / "fish_brain" / "show.json")))

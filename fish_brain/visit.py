@@ -139,6 +139,15 @@ _SIGNS = frozenset("aries tauro geminis cancer leo virgo libra escorpio escorpio
 _SAYS_NAME = re.compile(r"\b(?:me llamo|soy|mi nombre es|me dicen)\s+([a-zñ]+)")
 
 
+def spoken_name(said: str) -> str:
+    """The first name in an answer to "¿cómo te llamas?", by heard_name's own rules, or ""."""
+    for word in _WORD.findall(_NOTE_TAG.sub(" ", said or "")):
+        name = heard_name(said, word[:1].upper() + word[1:] + ".")
+        if name and _fold(name) not in ("soy", "me", "mi", "yo"):
+            return name
+    return ""
+
+
 def heard_name(said: str, reply: str) -> str:
     """The first name a visitor said to the greeting, as the hat echoed it, spelled as the
     reply spells it, or "". The reply's first phrase opens with it once greetings are skipped

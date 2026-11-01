@@ -104,6 +104,10 @@ class ShowRun:
         if v is not None:
             asking = v["i"] < len(v["qs"])     # past the last question: the verdict is on
             qid = v["qs"][v["i"]] if asking else None
+            if v.get("naming"):                # the name comes first: no options to tap
+                out.update(n=v["n"], set=v["set"], qid="nombre", q=0, of=len(v["qs"]), why=v["why"],
+                           options=[], heard=[])
+                return out
             out.update(n=v["n"], set=v["set"], qid=qid, q=min(v["i"] + 1, len(v["qs"])),
                        of=len(v["qs"]), why=v["why"],
                        options=[{"id": o["id"], "label": show_bank.label(o["id"])}
@@ -143,7 +147,8 @@ class ShowRun:
             visit.start(first, self.c._clock(), keep_cues=keep_cues)
             self.c._push_visit()
         clips = list(lead or []) + ([self._pick("greet")] if greet else [])
-        clips.append(show_bank.prompt_name(qs[at]))
+        self.v["naming"] = bool(greet and at == 0 and not first and self.cfg.ask_name)
+        clips.append(self._pick("nombre") if self.v["naming"] else show_bank.prompt_name(qs[at]))
         print(f"[show] visit #{n} set {set_id} questions {','.join(qs)} why={why}", flush=True)
         debug.turn_set(trigger="show", show=f"#{n} {set_id} start ({why})")
         self._say(clips)
@@ -173,6 +178,8 @@ class ShowRun:
         v = self.v
         if v is None:
             return False
+        if v.get("naming"):
+            return self._named(text)
         qid = v["qs"][v["i"]]
         q = show_bank.question(qid)
         if self.c.visit is not None:
@@ -196,9 +203,25 @@ class ShowRun:
             return self._next([self._pick("nose")])
         return self.no_answer()
 
+    def _named(self, text: str) -> bool:
+        """The answer to "¿cómo te llamas?", asked once. Whatever it was, the first question is next."""
+        from .visit import spoken_name
+        v, visit = self.v, self.c.visit
+        v["naming"] = False
+        pref, vetoes = show.houses_in(text)
+        v["vetoes"] |= vetoes
+        v["pref"] = pref or v["pref"]
+        name = spoken_name(text)
+        print(f"[show] #{v['n']} nombre heard={text!r} -> {name or 'none'}", flush=True)
+        debug.turn_set(show=f"#{v['n']} nombre {name or 'none'}")
+        if name and visit is not None and not visit.first_name:
+            visit.first_name = name
+        self._say([self._pick("nombre_ok" if name else "nombre_sin"), show_bank.prompt_name(v["qs"][v["i"]])])
+        return True
+
     def operator_answer(self, option: str) -> bool:
         v = self.v
-        if v is None:
+        if v is None or v.get("naming"):
             return False
         qid = v["qs"][v["i"]]
         if option not in [o["id"] for o in show_bank.question(qid)["options"]]:
@@ -214,6 +237,8 @@ class ShowRun:
         v = self.v
         if v is None:
             return False
+        if v.get("naming"):
+            return self._named("")
         qid = v["qs"][v["i"]]
         if v["tries"] == 0 and v["reprompts"] < self.cfg.reprompts:
             v["tries"] += 1
