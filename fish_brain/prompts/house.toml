@@ -13,310 +13,312 @@
 # question start with different sounds), reaction (said when it is heard).
 
 [questions.A1]
-prompt = "Te dejaron, y sin aviso. La primera semana, ¿qué buscas: una mesa llena, o una libreta?"
-reprompt = "¿Mesa, o libreta?"
+prompt = "Imagina dos puertas adornadas con calabazas: detrás de una hay fiesta, detrás de la otra, un acertijo. ¿Fiesta... o acertijo?"
+reprompt = "Dime nomás: ¿fiesta... o acertijo?"
 
 [[questions.A1.options]]
-id = "mesa"
-words = ["mesa", "mesas", "mesa llena", "sobremesa"]
-reaction = "Contarás tu desgracia once veces, y a la doce la mesa se pondrá del lado de tu ex."
+id = "fiesta"
+words = ["fiesta", "fiestas", "fiestota", "pachanga", "la fiesta"]
+reaction = "¡Fiesta! Ya sabía: contigo nadie se queda fuera."
 
 [[questions.A1.options]]
-id = "libreta"
-words = ["libreta", "libretas", "cuaderno", "cuadernos"]
-reaction = "En la libreta, sus defectos y los tuyos en dos columnas. La tuya saldrá más larga."
+id = "acertijo"
+words = ["acertijo", "acertijos", "el acertijo", "adivinanza", "adivinanzas"]
+reaction = "Un acertijo. Esa cabecita no descansa hasta encontrar la respuesta."
 
 [questions.A2]
-prompt = "Toda fiesta tiene dos refugios para quien no sabe platicar. ¿Dónde te encuentro: en el micrófono, o en la cocina?"
-reprompt = "¿Micrófono, o cocina?"
+prompt = "Ahora rápido, sin pensarlo mucho: ¿eres más volcán... o más jardín?"
+reprompt = "¿Volcán... o jardín?"
 
 [[questions.A2.options]]
-id = "microfono"
-label = "Micrófono"
-words = ["microfono", "microfonos", "micro", "micros"]
-reaction = "Nadie te dio el micrófono, y nadie se atreverá a quitártelo antes de la tercera canción."
+id = "volcan"
+label = "Volcán"
+words = ["volcan", "volcanes", "el volcan", "volcancito"]
+reaction = "¡Volcán! Hay fuego ahí adentro, como en una calabaza encendida."
 
 [[questions.A2.options]]
-id = "cocina"
-words = ["cocina", "cocinas", "cocineta", "cocinetas"]
-reaction = "Te escondes en la cocina a lavar lo que nadie te pidió. Sales de ahí sabiendo todos los divorcios de la casa."
+id = "jardin"
+label = "Jardín"
+words = ["jardin", "jardines", "el jardin", "jardincito"]
+reaction = "Jardín. Lo tuyo crece despacito, como el cempasúchil, pero crece fuerte."
 
 [questions.A3]
-prompt = "En casa ajena hay una puerta con llave. ¿Qué le das: un empujón, una mirada, un aviso al dueño o un precio?"
-reprompt = "¿Empujón, mirada, aviso o precio?"
+prompt = "Última pregunta. Si viajaras a una isla bajo la luna, ¿qué te llevarías: un mapa, un libro, un amigo o un trofeo?"
+reprompt = "¿Mapa, libro, amigo o trofeo?"
 
 [[questions.A3.options]]
-id = "empujon"
-label = "Empujón"
-words = ["empujon", "empujones", "empujar", "golpe", "golpes"]
-reaction = "Un empujón. Detrás había un perro de tres cabezas, y ahora tiene tu zapato."
+id = "mapa"
+words = ["mapa", "mapas", "el mapa", "un mapa"]
+reaction = "Un mapa: tú no esperas a que llegue la aventura, la vas a buscar."
 
 [[questions.A3.options]]
-id = "mirada"
-words = ["mirada", "miradas", "mirar", "ojo", "ojos"]
-reaction = "Llevas años mirando por cerraduras ajenas. A la tuya nadie se asoma."
+id = "libro"
+words = ["libro", "libros", "el libro", "un libro"]
+reaction = "Un libro. Hasta en una isla, tu cabeza quiere aprender algo nuevo."
 
 [[questions.A3.options]]
-id = "aviso"
-words = ["aviso", "avisos", "avisar", "avisarle", "dueno"]
-reaction = "Avisas. Cuidas la puerta de quien te debe dinero desde hace tres años, y encima le guardas las llaves."
+id = "amigo"
+words = ["amigo", "amiga", "amigos", "amigas", "mejor amigo", "mejor amiga"]
+reaction = "Un amigo. Con buena compañía, hasta una isla desierta se vuelve alegre."
 
 [[questions.A3.options]]
-id = "precio"
-words = ["precio", "precios", "cobrar", "tarifa"]
-reaction = "Aún no sabes qué hay adentro, y ya le pusiste precio. Lo vas a vender dos veces."
+id = "trofeo"
+words = ["trofeo", "trofeos", "copa", "medalla"]
+reaction = "¡Un trofeo! Ni en una isla dejas de pensar en ganar."
 
 [questions.B1]
-prompt = "Te cae un dinero que no esperabas, y no es mucho. ¿Qué armas con él: una taquiza, o un presupuesto?"
-reprompt = "¿Taquiza, o presupuesto?"
+prompt = "Alguien escondió todas las calabazas de la cuadra. ¿Qué haces: armas un equipo... o investigas tú el misterio?"
+reprompt = "¿Equipo... o misterio?"
 
 [[questions.B1.options]]
-id = "taquiza"
-words = ["taquiza", "taquizas", "tacos", "taco", "comilona"]
-reaction = "Setenta personas en tu taquiza, y el lunes ninguna te prestará para el camión."
+id = "equipo"
+words = ["equipo", "equipos", "un equipo", "en equipo"]
+reaction = "Equipo. Sabes que juntos se encuentran hasta las calabazas mejor escondidas."
 
 [[questions.B1.options]]
-id = "presupuesto"
-words = ["presupuesto", "presupuestos", "ahorro", "ahorros"]
-reaction = "Dieciséis hojas de cálculo para cuatro mil pesos. Te sobrarán doce pesos, y vas a abrir otra hoja para ellos."
+id = "misterio"
+words = ["misterio", "misterios", "el misterio", "investigar", "investigo"]
+reaction = "El misterio. Tú sigues cada pista hasta llegar al final."
 
 [questions.B2]
-prompt = "En plena junta, alguien presenta tu idea como suya. ¿Con qué contestas: un grito, o un archivo?"
-reprompt = "¿Grito, o archivo?"
+prompt = "Para pasear contigo esta temporada, ¿qué mascota mágica eliges: un dragón... o una tortuga?"
+reprompt = "¿Dragón... o tortuga?"
 
 [[questions.B2.options]]
-id = "grito"
-words = ["grito", "gritos", "gritar", "gritarle", "voz"]
-reaction = "Con un grito ganas la junta, pierdes el trabajo, y lo cuentas diez años como una victoria."
+id = "dragon"
+label = "Dragón"
+words = ["dragon", "dragones", "un dragon", "dragoncito"]
+reaction = "¡Un dragón! Nada de mascotas tímidas: tú quieres alas y chispas."
 
 [[questions.B2.options]]
-id = "archivo"
-words = ["archivo", "archivos", "archivero", "carpeta", "carpetas"]
-reaction = "Guardarás ese archivo con fecha y copia. Morirás con razón y sin ascenso."
+id = "tortuga"
+words = ["tortuga", "tortugas", "tortuguita", "una tortuga"]
+reaction = "Una tortuga. Paciencia por fuera y fuerza por dentro: gran combinación."
 
 [questions.B3]
-prompt = "Tu ex te escribe de madrugada, llorando. ¿Qué le mandas: un insulto, una pregunta, un consuelo o una factura?"
-reprompt = "¿Insulto, pregunta, consuelo o factura?"
+prompt = "Y para terminar: de paseo bajo las estrellas, ¿qué te llevas: una brújula, un telescopio, una canasta o una escalera?"
+reprompt = "¿Brújula, telescopio, canasta o escalera?"
 
 [[questions.B3.options]]
-id = "insulto"
-words = ["insulto", "insultos", "groseria", "groserias", "mentada"]
-reaction = "Ese insulto lo tenías redactado desde febrero, y solo te faltaba el pretexto."
+id = "brujula"
+label = "Brújula"
+words = ["brujula", "brujulas", "la brujula", "una brujula"]
+reaction = "La brújula: tú sigues adelante, aunque no sepas qué hay."
 
 [[questions.B3.options]]
-id = "pregunta"
-words = ["pregunta", "preguntas", "preguntar", "preguntarle"]
-reaction = "Una pregunta nomás, dices, y en tres horas ya sabes cómo se llama su nueva pareja y su perro."
+id = "telescopio"
+words = ["telescopio", "telescopios", "el telescopio", "un telescopio"]
+reaction = "El telescopio. Tú quieres ver lo que hay detrás de la luna."
 
 [[questions.B3.options]]
-id = "consuelo"
-words = ["consuelo", "consuelos", "consolar", "apapacho", "apapachos"]
-reaction = "Consuelas a quien te dejó en visto medio año. A la semana te pedirá prestado para el anillo de otra persona."
+id = "canasta"
+words = ["canasta", "canastas", "canastita", "cesta", "la canasta"]
+reaction = "La canasta, con pan de muerto para compartir. Qué buen corazón."
 
 [[questions.B3.options]]
-id = "factura"
-words = ["factura", "facturas", "cuenta", "cuentas", "cobro"]
-reaction = "Una factura, con todo e intereses. Es lo más romántico que has hecho en años."
+id = "escalera"
+words = ["escalera", "escaleras", "la escalera", "escalerita"]
+reaction = "La escalera: siempre un escalón más arriba, ¿verdad?"
 
 [questions.C1]
-prompt = "Llegas al Gran Comedor y no conoces a nadie. ¿Qué sacas primero: un chisme, o un plano?"
-reprompt = "¿Chisme, o plano?"
+prompt = "Esta temporada, ¿qué se te antoja más: una fiesta de disfraces... o pedir calaverita de puerta en puerta?"
+reprompt = "¿Fiesta de disfraces... o de puerta en puerta?"
 
 [[questions.C1.options]]
-id = "chisme"
-words = ["chisme", "chismes", "chismoso", "chismosa", "mitote"]
-reaction = "Con un chisme, a la sopa ya eres de la familia. Al postre, el chisme eres tú."
+id = "disfraces"
+words = ["disfraces", "disfraz", "fiesta", "la fiesta", "fiesta de disfraces"]
+reaction = "¡Fiesta de disfraces! Ya te veo jalando a todos a la pista de baile."
 
 [[questions.C1.options]]
-id = "plano"
-words = ["plano", "planos", "mapa", "mapas"]
-reaction = "Ya ubicaste las tres salidas en tu plano. Así entras a todas partes, con la chamarra puesta y un pie afuera."
+id = "puertas"
+label = "De puerta en puerta"
+words = ["puertas", "puerta", "puerta en puerta", "calaverita", "pedir calaverita", "dulce o truco", "trick or treat"]
+reaction = "De puerta en puerta. Seguro ya sabes qué casa tiene más calabazas, y por dónde empezar."
 
 [questions.C2]
-prompt = "En toda foto de grupo hay dos lugares. ¿Dónde te paras: en el centro, o en la orilla?"
-reprompt = "¿Centro, o orilla?"
+prompt = "Si fueras un animalito de la noche, ¿serías un murciélago... o un gato negro?"
+reprompt = "¿Murciélago... o gato negro?"
 
 [[questions.C2.options]]
-id = "centro"
-words = ["centro", "centros", "medio", "enmedio"]
-reaction = "El centro, otra vez. Tienes un álbum entero de gente cortada para que quepas tú."
+id = "murcielago"
+label = "Murciélago"
+words = ["murcielago", "murcielagos", "un murcielago", "murcielaguito"]
+reaction = "¡Murciélago! Tú sales a volar cuando los demás apenas se asoman."
 
 [[questions.C2.options]]
-id = "orilla"
-words = ["orilla", "orillas", "esquina", "esquinas"]
-reaction = "En la orilla te cortan medio cuerpo desde la primaria. Tu mamá te reconoce en las fotos por el codo."
+id = "gato"
+words = ["gato", "gatos", "gato negro", "gatito", "un gato"]
+reaction = "Un gato negro. Tú observas todo en silencio, curioseas, y siempre caes de pie."
 
 [questions.C3]
-prompt = "Te prestan la capa de invisibilidad un día. ¿Dónde te metes: en una pelea, un sótano ajeno, tu casa o un banco?"
-reprompt = "¿Pelea, sótano, casa o banco?"
+prompt = "Antes de salir a pedir calaverita, ¿qué te llevas: una linterna, un libro de hechizos, una bolsa de dulces o una corona?"
+reprompt = "¿Linterna, hechizos, dulces o corona?"
 
 [[questions.C3.options]]
-id = "pelea"
-words = ["pelea", "peleas", "pleito", "pleitos"]
-reaction = "Eres invisible, y aun así te llevas el primer golpe. Eso ya no es valor, es talento."
+id = "linterna"
+words = ["linterna", "linternas", "la linterna", "lampara"]
+reaction = "La linterna: tú vas por delante, alumbrando la calle para los demás."
 
 [[questions.C3.options]]
-id = "sotano"
-label = "Sótano"
-words = ["sotano", "sotanos", "subterraneo", "sotano ajeno"]
-reaction = "Bajas al sótano y encuentras lo que guardan los vecinos. Ya no vas a poder saludarlos."
+id = "hechizos"
+words = ["hechizos", "hechizo", "libro de hechizos", "libro", "libro de magia"]
+reaction = "El libro de hechizos. Tú quieres saber cómo funciona la magia, no solo verla."
 
 [[questions.C3.options]]
-id = "casa"
-words = ["casa", "casas", "hogar", "hogares"]
-reaction = "Tu casa. Ahí llevas años sin que nadie te vea, y la capa no cambió nada."
+id = "dulces"
+words = ["dulces", "dulce", "bolsa de dulces", "dulcecitos", "bolsa"]
+reaction = "La bolsa de dulces. Contigo, nadie del grupo se queda con las manos vacías."
 
 [[questions.C3.options]]
-id = "banco"
-words = ["banco", "bancos", "boveda", "bovedas"]
-reaction = "En el banco ya calculaste cuánto cabe bajo una capa. Nunca pensaste con quién lo ibas a gastar."
+id = "corona"
+words = ["corona", "coronas", "la corona", "coronita"]
+reaction = "¡La corona! Esta noche, la reina o el rey de la calle eres tú."
 
-# One line is picked, dealt before repeat. pref_/reason_/house_/future_ go by the house.
 [pools]
 greet = [
-    "Préstame la cabeza. Prometo devolverla igual de vacía.",
-    "Otra cabeza. Agáchala, que no voy a ir hasta allá por tan poco.",
-    "Deja quieta la cabeza. Si te mueves leo chueco, y de por sí no sales muy bien.",
-    "Me han tocado cabezas que cambiaron el mundo, y hoy la tuya. Alguien tenía que hacerlo.",
-    "Trae esa cabeza. Huele a pretexto recién hecho, y todavía no te pregunto nada.",
-    "Con permiso, voy a entrar a tu cabeza. No te molestes en recoger, ya vi el desorden.",
-    "Siéntate en el banco y baja la voz. Quien se sentó antes también tenía opiniones, y salió preguntando por su mamá.",
-    "Le pusiste candado a esa cabeza, y la llave la perdiste hace años. Yo entro por la oreja.",
-    "Mira al frente y suelta la cabeza. No me ayudes, que ya vi cómo ayudas.",
-    "Llegas tarde, como siempre. Dame la cabeza y vemos qué dejaste olvidado adentro.",
+    "¡Feliz Halloween! Acércate, que este sombrero viejo quiere asomarse a tu cabeza.",
+    "Ah, una cabeza nueva. Ayúdame a ver qué guardas ahí adentro, además de dulces.",
+    "Pásale, pásale. Contesta mis preguntas y entre tú y yo leemos tu cabeza.",
+    "Mmm, siento una mente inquieta. ¿Me ayudas a averiguar a qué casa perteneces?",
+    "Aquí estoy, entre calabazas y velitas. Tú contesta con confianza, que del resto me encargo yo.",
+    "¡Qué gusto, otra cabeza llena de ideas! Ayúdame a leerla con unas preguntitas.",
+    "Este sombrero lleva siglos leyendo cabezas, y la tuya promete. ¿Me echas la mano?",
+    "Híjole, cuántas ideas juntas. Ayúdame a ordenarlas y te digo tu casa.",
+    "Un gato negro me avisó que venías. Acércate y ayúdame a leer tu cabeza.",
+    "Ya desperté de mi siesta entre el cempasúchil. ¿Me prestas tu cabeza un momento?",
 ]
 nose = [
-    "No sabes. Es lo primero honesto que sale de esa boca.",
-    "Tú tampoco sabes qué hay en tu cabeza. Ya somos dos, y yo estoy adentro.",
-    "Esa respuesta te ha sacado de peores. Aquí no.",
-    "Lo anoto en mi forro: no sabe. Ya venía anotado, con otra letra.",
+    "Quien duda es porque piensa. Eso también lo anoto.",
+    "No pasa nada: lo que no sabes tú, lo adivino yo.",
+    "Ah, un misterio. Me encantan los misterios.",
+    "Está bien no saber. Hasta este sombrero viejo duda de vez en cuando.",
 ]
 bridge = [
-    "Tu boca no contestó, tu cabeza sí. Se llevan mal, ya lo vi.",
-    "No te entendí, y no hizo falta. Lo que traes adentro habla más fuerte y con mejor dicción.",
-    "Déjalo, ya lo leí. Hablas como quien esconde algo en el ropero.",
-    "Doy eso por contestado. El Barón Sanguinario se da a entender mejor, y nomás arrastra cadenas.",
-    "Murmura lo que quieras. Aquí adentro se oye todo, hasta lo que te da vergüenza.",
-    "Por ahí no llego a ningún lado. Me voy por otra parte de tu cabeza, que tampoco es muy grande.",
-    "Ya lo tengo, aunque no lo dijiste. Lo que callas es lo único tuyo que vale la pena.",
+    "No hace falta que lo digas: ya lo leí en tu cabeza.",
+    "Lo leí entre líneas, como buen sombrero. Vamos adelante.",
+    "Ya lo vi. A veces las respuestas se oyen mejor en silencio.",
+    "Muy bien, eso lo guardo bajo mi ala.",
+    "Tu cabeza contestó primero. Sigamos.",
+    "Eso que pensaste me basta. Vamos con lo siguiente.",
+    "Lo escuché clarito aquí adentro, entre mis hilos. Sigamos.",
 ]
 suspense = [
-    "Ni respires. Acabo de dar con una promesa tuya, y todavía tiene la etiqueta puesta.",
-    "Espera. Esto no lo había visto, y no es un halago.",
-    "Aquí hay algo detrás de las excusas. Detrás de ese algo, más excusas.",
-    "Cuatro relojes de arena, y ya sé cuál se va a vaciar en cuanto te nombre.",
-    "Voy leyendo lo que borraste. Hiciste bien en borrarlo.",
-    "Tardo porque estoy decidiendo a qué casa castigo contigo.",
-    "Ya casi. He leído cabezas enteras en un suspiro, y tenían más páginas que la tuya.",
+    "Mmm... déjame pensarlo bien.",
+    "Ya casi lo tengo...",
+    "A ver... se está aclarando.",
+    "Siento algo... sí, ya lo veo.",
+    "Un momento, que esto es importante.",
+    "Mis costuras me están diciendo algo...",
+    "Híjole... esto se pone bueno.",
 ]
 tie = [
-    "Dos casas te quedan, y ninguna te quiere con ganas. Decido yo.",
-    "Empate. Ni para decidirte te alcanzó el carácter.",
-    "Contestaste para dos lados, como con todo. Tus amigos ya lo notaron, y a ti no te lo dicen.",
-    "Me sobra una casa. Alguien se va a salvar de ti, y me toca escoger quién.",
+    "Tu cabeza tiene lugar para dos casas. Tendré que escoger yo.",
+    "Dos casas te quieren, fíjate nomás. Yo decido.",
+    "Estás justo en medio de dos caminos. Esta vez escojo yo.",
+    "Veo dos casas brillando en tu cabeza, como dos estrellas. Me toca elegir.",
 ]
 pref_G = [
-    "¿Gryffindor? Lo pides con la voz con que se pide permiso.",
-    "Pides Gryffindor. Quien tiembla pide eso primero.",
+    "¿Gryffindor? Lo pides con valor, y eso ya dice mucho.",
+    "Pides Gryffindor. Tú tocas primero en la puerta nueva, ¿verdad?",
 ]
 pref_H = [
-    "¿Hufflepuff? Nadie lo pide, y tú lo pides para no molestar.",
-    "Pides Hufflepuff. Ya te vi quedarte a recoger las sillas al final de la fiesta.",
+    "¿Hufflepuff? Buena elección: ahí nadie se queda sin compañía.",
+    "Quieres Hufflepuff. Se nota: tú compartes tus dulces para que nadie se quede sin el suyo.",
 ]
 pref_R = [
-    "¿Ravenclaw? Confundes leer la contraportada con saber.",
-    "Pides Ravenclaw, y ya ensayaste cómo explicar por qué.",
+    "¿Ravenclaw? Con esa curiosidad, no me sorprende.",
+    "Pides Ravenclaw... tú adivinas qué hay en la bolsa antes de abrirla.",
 ]
 pref_S = [
-    "¿Slytherin? Quieres que te teman, y en tu casa ni el perro te obedece.",
-    "Pides Slytherin, y lo dices en voz baja para que parezca peligro.",
+    "¿Slytherin? Sabes lo que quieres, y eso es muy de esa casa.",
+    "Pides Slytherin... y seguro ya planeaste la mejor ruta de la cuadra.",
 ]
 reason_G = [
-    "Te lanzas primero y preguntas después. Por eso sales en las anécdotas de todos, y nunca de pie.",
-    "Das la cara por cualquiera en la calle, y en tu casa no te atreves a decir que no te gusta la sopa.",
-    "Por fuera tanto valor, y adentro revisas tres veces si cerraste la puerta.",
-    "Eres valiente cuando hay público. Sin público también, pero nadie se entera, y eso te duele.",
+    "Por fuera hay calma, pero cuando algo es injusto, levantas la mano antes que nadie.",
+    "Lo nuevo a veces te da nervios, y aun así das el primer paso.",
+    "A veces dudas en silencio, pero cuando toca, das la cara.",
+    "Te encanta la aventura, pero nunca dejas atrás a los tuyos.",
 ]
 reason_H = [
-    "Aguantas a todo el mundo con una paciencia de mula. Un día la mula patea, y tú lo sabes.",
-    "No buscas aplausos, y llevas años contando a los que no te aplauden.",
-    "Prestas todo lo que tienes, y en la cabeza apuntas a quién. Ya vi la lista, y es larga.",
-    "Te dicen buena gente porque nunca dices que no. Por dentro has dicho que no unas cuatro mil veces.",
+    "No buscas aplausos, pero todos te buscan cuando necesitan ayuda.",
+    "Tienes paciencia de sobra, y cuando hace falta, también sabes plantarte.",
+    "Disfrutas el bullicio de una fiesta, y también un ratito en calma con los tuyos.",
+    "Compartes lo que tienes, aunque sea tu favorito, y eso dice mucho de ti.",
 ]
 reason_R = [
-    "Lees todo y no terminas nada. Hay un libro en tu buró que te juzga desde marzo.",
-    "Tienes respuesta para todo, menos para lo que te preguntan en tu casa.",
-    "Explicas todo con mucha razón, y luego lloras con un comercial.",
-    "Callas en las juntas y dices que es porque piensas. Callas porque ya te oíste por dentro, y no te gustó.",
+    "A veces te pierdes en tus pensamientos, y ahí encuentras las mejores ideas.",
+    "Hablas poco cuando piensas, y cuando hablas, sorprendes.",
+    "Te gusta entender cómo funcionan las cosas, y también disfrutas un misterio sin resolver.",
+    "Tu cabeza guarda todo en su lugar, aunque a veces parezca un remolino de ideas.",
 ]
 reason_S = [
-    "Planeas diez jugadas, como en el ajedrez mágico, y se te olvida pagar la luz.",
-    "Le sonríes a quien no soportas, muy bien, pero se te nota en la quijada.",
-    "Quieres ganarle a todos, hasta en la fila del súper. Luego le guardas el lugar a una señora, y no se lo cuentas a nadie.",
-    "Guardas rencor con un orden admirable, y se te cae todo a la primera disculpa.",
+    "Tienes planes grandes, aunque no se los cuentes a todos.",
+    "Sabes esperar tu momento, y cuando llega, no lo dejas pasar.",
+    "Puedes ser muy amable, y aun así nadie te convence de lo que no quieres.",
+    "Te gusta ganar, pero lo que más disfrutas es el plan para lograrlo.",
 ]
 house_G = [
     "¡Gryffindor!",
-    "Ni modo, que te aguanten ellos. ¡Gryffindor!",
+    "Ya está decidido: ¡Gryffindor!",
 ]
 house_H = [
     "¡Hufflepuff!",
-    "Ya hay quien lave los platos. ¡Hufflepuff!",
+    "Que lo oiga toda la cuadra: ¡Hufflepuff!",
 ]
 house_R = [
     "¡Ravenclaw!",
-    "Por fin alguien que les corrija la ortografía. ¡Ravenclaw!",
+    "Lo veo clarísimo: ¡Ravenclaw!",
 ]
 house_S = [
     "¡Slytherin!",
-    "Cuenten los cubiertos del Gran Comedor. ¡Slytherin!",
+    "Mis costuras no mienten: ¡Slytherin!",
 ]
 future_G = [
-    "El jueves vas a decir lo que piensas en una mesa. Vas a comer en otra.",
-    "Al domingo no llegas sin defender a quien no te lo pidió. Te lo va a cobrar.",
-    "Antes de que acabe el mes vas a abrir la puerta que te dijeron que no abrieras. Adentro hay una junta, y ya te toca hablar.",
+    "Esta noche vas a tocar una puerta nueva, y te van a abrir con una sonrisa.",
+    "Veo que vas a ayudar a alguien sin que te lo pida, cerca de una calabaza encendida.",
+    "Antes de que se apaguen las velitas, vas a animarte a algo nuevo, y te va a salir muy bien.",
 ]
 future_H = [
-    "El sábado vas a cargar una caja ajena por tres pisos. Nadie va a recordar tu nombre, y tú sí el de todos.",
-    "Antes de que termine la semana vas a decir que no por primera vez. Vas a pedir perdón a los cinco minutos.",
-    "Un tóper tuyo va a volver antes de Navidad, después de dos años. Va a volver vacío y con otra tapa.",
+    "Hoy vas a hacer una amistad nueva, quizá con alguien de disfraz parecido al tuyo.",
+    "Alguien va a compartir contigo su pan de muerto, y tú vas a devolver el favor.",
+    "Veo una carcajada compartida bajo esta misma luna.",
 ]
 future_R = [
-    "El martes vas a corregir a alguien en público. Vas a tener razón y vas a pagar la cuenta.",
-    "Antes de que acabe el mes vas a mandar una nota de voz de seis minutos para aclarar una coma.",
-    "Mañana vas a ganar una discusión que nadie más estaba teniendo.",
+    "Esta noche se te va a prender el foco: una idea brillante va a llegar de repente.",
+    "Vas a descubrir un detalle escondido entre las flores de cempasúchil que nadie más notó.",
+    "Esta temporada vas a hacer una pregunta muy buena, y la respuesta te va a encantar.",
 ]
 future_S = [
-    "Antes del lunes vas a mandar un mensaje con doble intención. Lo van a contestar con un pulgar, y te va a arder.",
-    "Esta semana te van a contar un secreto. Lo vas a guardar como en bóveda de duendes, y lo vas a sacar con intereses.",
-    "El viernes vas a perder a propósito, para que te deban una.",
+    "Un plan que traes en la cabeza va a salir mejor de lo que esperas, quizá esta misma noche.",
+    "En tu bolsa vas a encontrar justo el dulce que querías, aunque todavía no sepas cuál es.",
+    "Veo un pequeño triunfo en tu camino, antes de que la luna se esconda.",
 ]
 season = [
-    "Halloween es la única fecha en que tu cara pasa por disfraz.",
-    "El cempasúchil les marca el camino a los muertos. Tú sigues sin rumbo, y a ti ni un pétalo.",
-    "Te vas a comer el pan de la ofrenda antes de que llegue el difunto. El difunto lo va a anotar.",
-    "La Flaca va a pasar por tu calle el dos de noviembre. Va a ver tu refri y se va a ir con hambre.",
-    "Una calaca de barro te va a ver pasar. Puros huesos, y tiene mejor postura que tú.",
-    "Día de Muertos. Los que ya cruzaron vienen a ver cómo te va, y se regresan con mucho de qué hablar.",
-    "La calabaza de tu puerta va a durar tres días antes de pudrirse. Tu última promesa duró menos.",
-    "Entró un trol al festín de Halloween, y a él por lo menos lo sacaron rápido. A ti te siguen invitando.",
-    "Copal en toda la cuadra, y aun así se va a oler lo que hiciste en agosto.",
-    "Ni el papel picado de todas las ventanas tiene tantos agujeros como tu versión de los hechos.",
-    "Dulce o truco, te van a gritar en la puerta. Vas a apagar la luz y aguantar la respiración, igual que cuando te cobran.",
-    "En la ofrenda vas a prender una vela de más, por alguien que sigue vivo, nomás para que se entere.",
-    "Alguien te va a regalar una calavera de azúcar con tu nombre. Es lo más dulce que te han dicho en todo el año.",
-    "Con disfraz o sin él, en la calle te van a preguntar de qué vienes. Ni tú vas a saber.",
-    "Un gato negro se va a topar contigo en la banqueta el domingo, y se va a cruzar a la otra.",
+    "Fíjate en las calabazas de la cuadra: una de ellas te va a guiñar el ojo.",
+    "Si ves un gato negro hoy, salúdalo de mi parte; es amigo mío.",
+    "La casa con más calabazas encendidas guarda un buen recuerdo para ti.",
+    "Cuando toques la próxima puerta, vas a escuchar una risa antes de que te abran.",
+    "Esta temporada las sonrisas abren puertas. Pide con una gran sonrisa: ¿me da mi calaverita?",
+    "En el plato de un vecino te espera tu golosina favorita, escondida hasta abajo.",
+    "Antes de que acabe la temporada vas a probar pan de muerto recién hecho.",
+    "Esta temporada vas a compartir un chocolate caliente con alguien de tu familia.",
+    "Vas a encontrar un pétalo de cempasúchil en el lugar menos pensado.",
+    "Hoy un murciélago de papel te va a saludar desde una ventana.",
+    "Cuando grites dulce o truco, alguien en la cuadra lo va a gritar contigo.",
+    "Esta temporada alguien te va a contar una historia divertida que vas a recordar mucho tiempo.",
+    "En mis tiempos se pedía con una caja de zapatos y una velita; tu bolsa va a brillar igual.",
+    "Vas a seguir un caminito naranja de cempasúchil, y al final va a oler a pan de muerto.",
+    "Gato negro y luna llena: esta noche viene buena.",
 ]
 farewell = [
-    "Ya te vi por dentro, y con una vez basta. Párate.",
-    "Vete ya. Lo que vi adentro no se lo cuento a nadie, y a nadie le interesa.",
-    "Te devuelvo la cabeza como estaba. No me pidas milagros.",
-    "Busca tu sala común. Te van a dar la cama junto a la puerta, por si acaso.",
-    "Tu casa ya perdió puntos, y apenas te estás parando.",
-    "Cuando te pregunten qué te dije, vas a mentir. Yo también lo haría.",
-    "No vuelvas pronto. Tengo que sacudirme lo que dejaste en las costuras.",
-    "Recoge lo tuyo. Se te cayó el orgullo al sentarte, y ahí se queda.",
-    "Ve a presumir tu casa. Ya les avisé, y cambiaron la chapa.",
-    "Camina sin voltear. Lo que vi viene detrás de ti, y no trae prisa.",
+    "Anda, ve y disfruta la noche. Este sombrero se queda pensando en ti.",
+    "Ándale, que la calle está llena de calabazas encendidas. ¡A pedir calaverita!",
+    "Que te vaya bonito, y que tu bolsa se llene de dulces.",
+    "Ya está. Que pase la siguiente cabeza valiente.",
+    "Fue un gusto leerte. Que tengas una temporada llena de dulces y risas.",
+    "Ve y presume tu casa. Yo me quedo aquí, con las velitas.",
+    "Gracias por prestarme tu cabeza un ratito. ¡Feliz Halloween!",
+    "Ahora, a pedir dulces. Y no olvides dar las gracias en cada puerta.",
+    "Con tu bolsa y calabaza, ve tocando cada casa.",
+    "Órale, a disfrutar la noche. Guárdame un chocolate, aunque yo no tenga con qué comerlo.",
 ]

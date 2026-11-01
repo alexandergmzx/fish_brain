@@ -318,11 +318,14 @@ class FortuneRun:
 
     # ---- which reading ---------------------------------------------------------------------
     def mode_now(self) -> tuple[str, str]:
-        """("llm" | "script", why): echo is the clips; with the show on, its word; else the
-        model whenever it can be trusted right now."""
+        """("llm" | "script", why): echo is the clips; with the show on, its word, or with
+        FISH_FORTUNE_MODEL only its trust check; else the model whenever it can be trusted."""
         if self.c.echo:
             return "script", "echo"
         show_run = self.c.show
+        if show_run is not None and self.cfg.model:
+            ok, why = show_run.model_ok()
+            return ("llm" if ok else "script"), why
         if show_run is not None:
             return show_run.mode_now()
         ok, why = model_trusted(self.c)
@@ -598,7 +601,8 @@ class FortuneRun:
                 or self.mode_now()[0] != "llm"):
             return None
         try:
-            llm = self.c.llm                     # the client is built here, on this thread
+            # Under a scripted house this is the first model call: the SDK import waits with fillers.
+            llm = self.c._await("llm", lambda: self.c.llm)
             if not v["ask_begun"]:
                 begin_model(llm, self.cfg.ask_rules)
                 llm.thinking = self.cfg.thinking or None

@@ -858,6 +858,11 @@ class ShowConfig:
     idle_s: float = 90.0         # a pause this long mid-visit means a new visitor
 
 
+def _fortune_thinking() -> str:
+    """The fortune's calls: Sonnet 5.5 answers a 400 to "disabled" (ADR 0033)."""
+    return "between_tools" if _env("FISH_LLM_PROFILE", "") == "claude-sonnet" else "disabled"
+
+
 def _fortune_deck() -> str:
     deck = _env("FISH_FORTUNE_DECK", "tarot").strip().lower()
     return deck if deck in ("tarot", "off") else "tarot"
@@ -887,11 +892,13 @@ class FortuneConfig:
     # Model mode: Haiku reacts and asks the next question, the clips the fallback (ADR 0029).
     ask: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_ASK", True))
     ask_rules: str = field(default_factory=lambda: texts.rules("ask.md"))
+    # The model's fortune under a scripted house act: only the trust check decides (ADR 0015).
+    model: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_MODEL", False))
     # The reading's thinking on an anthropic profile, over the profile's (ADR 0026): with
     # Haiku's thinking at effort low a reading took 6.5 to 8 s and 4 of 11 hit the 8 s client
     # timeout; without it 1.5 to 2.7 s (docs/results/2026-10-29-roast-readings.md). "" = the
     # profile's own.
-    thinking: str = "disabled"
+    thinking: str = field(default_factory=_fortune_thinking)
     # La consulta's model and thinking (ADR 0032): Sonnet holds the length and takes a position
     # better than Haiku, about 1.6 s slower (docs/results/2026-11-01-consulta-trial.md).
     consulta_profile: str = field(default_factory=lambda: _env("FISH_CONSULTA_PROFILE", "claude-sonnet"))

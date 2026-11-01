@@ -34,7 +34,8 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     from dotenv import load_dotenv
     load_dotenv()
-    os.environ.update(FISH_PERSONA="hat", FISH_SHOW="auto", FISH_FILLER="false", FISH_BURBLE="false")
+    os.environ.setdefault("FISH_SHOW", "auto")           # as set: the board runs script + FISH_FORTUNE_MODEL
+    os.environ.update(FISH_PERSONA="hat", FISH_FILLER="false", FISH_BURBLE="false")
     from fish_brain import canned, cloud, voice_guard
     from fish_brain.config import Config
     from fish_brain.conversation import FishConversation

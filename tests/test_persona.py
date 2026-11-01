@@ -153,3 +153,11 @@ def test_the_hat_spells_its_english_right_and_jorge_hears_a_respelling(monkeypat
     assert "Jafel paf" in spoken and "Jálowin" in spoken and "Slíderin" in spoken
     assert "Grifindór" in voice_text("¡Gryffindor!", cfg.loq_prefix, cfg.loq_hum, cfg.say_as)
     assert "Réivenclo" in voice_text("¡Ravenclaw!", cfg.loq_prefix, cfg.loq_hum, cfg.say_as)
+
+
+def test_the_fortunes_thinking_follows_the_profile(monkeypatch):
+    from fish_brain.config import FortuneConfig
+    monkeypatch.setenv("FISH_LLM_PROFILE", "claude")
+    assert FortuneConfig().thinking == "disabled"
+    monkeypatch.setenv("FISH_LLM_PROFILE", "claude-sonnet")
+    assert FortuneConfig().thinking == "between_tools"

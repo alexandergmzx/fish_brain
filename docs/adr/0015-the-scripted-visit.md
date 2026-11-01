@@ -67,3 +67,19 @@ audience is adults since 2026-10-27.
 ## Amendment, 2026-10-27 (ADR 0022)
 
 The two-question rule for a child (`edad=niño`) is gone with the child chip.
+
+## Amendment, 2026-10-31
+
+His word: the model's house questions are too complex for most visitors, and the fortune "is
+great". The board runs `FISH_SHOW=script`, so the house act is this script on every visit, and
+`FISH_FORTUNE_MODEL=true`, so the fortune keeps the model with its trust check and clips as the
+fallback. The setting's default is `false`: the fortune follows the show, as before. Some children
+are back for trick-or-treat, so the house act's kid lines stay.
+
+## Amendment, 2026-11-01
+
+His word: the house act felt "out of control", too much of La burla and low deterministic. A name
+typed on the page no longer goes to the model under script: it joins the open visit in silence or
+starts one, and it reaches the fortune and the ticket. The first SDK import runs inside the turn's
+wait, since a scripted house no longer builds the client first. On the board since 2026-11-01:
+`docs/results/2026-11-01-the-house-rollback-checked.md`.

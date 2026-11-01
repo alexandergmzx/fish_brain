@@ -3,8 +3,8 @@
 # the board renders what changed. Limits: tests/test_fortune_bank.py (about 35 words, two sentences;
 # a question ends in "?"; a beat up to 9 words). Run the tests after an edit.
 
-# The visit's greeting, said to every new visitor.
-visit_greeting = "Soy el Sombrero Seleccionador, y he estado sobre cabezas peores que la tuya, no muchas. Dime tu nombre y préstame lo que traes adentro."
+# The model visit's greeting (Auto or Model on the page); under script the house act greets from pools.greet.
+visit_greeting = "Soy el Sombrero Seleccionador, dime tu nombre."
 # Said after the card's name when it comes out reversed.
 reversed = "Y salió de cabeza. Ahora enseña su lado oscuro."
 # The model's seeds, not clips: one of each per reading, reworded by the model.

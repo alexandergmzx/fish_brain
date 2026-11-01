@@ -214,9 +214,10 @@ class Consulta:
         from .show_run import model_trusted
         if not self.lines_ready():
             return "lines not ready"
-        if self.c.cfg.show.mode == "script":
+        show = self.c.show
+        if self.c.cfg.show.mode == "script" and not (show is not None and self.run.cfg.model):
             return "scripted show"
-        ok, why = model_trusted(self.c)
+        ok, why = show.model_ok() if show is not None else model_trusted(self.c)
         if not ok and why != "no key":
             return why
         key = LLMConfig(profile=self.run.cfg.consulta_profile).api_key_env
@@ -335,17 +336,20 @@ class Consulta:
         self._job = None
         speaker, timing = c.speaker, {}
         try:
-            llm, rules = self.llm, texts.rules("consulta.md")
+            rules = texts.rules("consulta.md")
         except Exception as e:
             return self._failed(lead, f"not asked: {type(e).__name__}: {e}")
         line = tag(v["pregunta"], v["data"], v["deck"], v["first"])
 
         def work():
+            llm = self.llm                    # here: the SDK's first import took 7 to 17 s on the board
             llm.reset()
             llm.extra_rules = rules
             llm.thinking = run.cfg.consulta_thinking or None
             raw = llm.reply(line, remember=False)
-            text = None if llm.last_error else clean_reply(raw)
+            if llm.last_error:
+                raise RuntimeError(llm.last_error)
+            text = clean_reply(raw)
             wav = speaker.synthesize(text, timing) if text and hasattr(speaker, "synthesize") else None
             return raw, text, wav
 
@@ -377,8 +381,8 @@ class Consulta:
                 return self._failed([], f"timeout after {WAIT_S:g} s")
             c._wait_on(job.done, min((more or deadline) - now, deadline - now, 0.25))
         debug.turn_adopt(mark)                   # the worker's model record, to this turn
-        if job.exc is not None or llm.last_error:
-            return self._failed([], f"error: {job.exc or llm.last_error}")
+        if job.exc is not None:
+            return self._failed([], f"error: {job.exc}")
         raw, text, wav = job.result
         if not text:
             return self._failed([], "the reply was empty or too long")
