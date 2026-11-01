@@ -362,7 +362,7 @@ nothing of them reaches `/status` or `/face`.
   {"cues": {…}}`** (the chips; `400` on a value that is not one of the fixed words), **`POST
   /show {"action": "answer"|"force"|"skip", "value"}`** (the scripted visit's taps; `400`,
   `409 busy`, `200 {ok, visit}`).
-- **`POST /fortune {"action": "start"|"skip"|"end", "value"}`**: `start` opens a fortune
+- **`POST /fortune {"action": "start"|"consulta"|"skip"|"end", "value"}`** (`consulta`: ADR 0032, 409 with `why` when it cannot start): `start` opens a fortune
   (`value` the typed name, at most 20 characters, or empty: after a verdict within 10 min the
   act carries the house and the first name by itself), `skip` passes the open question with a
   bridge line, `end` goes to the ending now. Answers: `400 {"ok": false, "error": …}` on a bad
