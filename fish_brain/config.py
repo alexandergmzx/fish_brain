@@ -887,6 +887,8 @@ class FortuneConfig:
     # Model mode: Haiku reacts and asks the next question, the clips the fallback (ADR 0029).
     ask: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_ASK", True))
     ask_rules: str = field(default_factory=lambda: texts.rules("ask.md"))
+    # The model's fortune under a scripted house act: only the trust check decides (ADR 0015).
+    model: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_MODEL", False))
     # The reading's thinking on an anthropic profile, over the profile's (ADR 0026): with
     # Haiku's thinking at effort low a reading took 6.5 to 8 s and 4 of 11 hit the 8 s client
     # timeout; without it 1.5 to 2.7 s (docs/results/2026-10-29-roast-readings.md). "" = the

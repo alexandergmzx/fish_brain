@@ -473,6 +473,9 @@ class FishConversation:
         the answer is the next normal voice turn, with the question seeded in the history.
         Confirmed (typed): the fish tells the future now. The quit words never apply here."""
         if self._visit_on():
+            if self.show is not None and self.show.mode_now()[0] == "script":
+                debug.turn_set(trigger="reading", outcome="show: name")
+                return self.show.name_given(r.first_name)
             return self._visit_reading_turn(r)
         from . import reading
         times: dict[str, float] = {}
