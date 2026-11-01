@@ -415,7 +415,7 @@ def run_fortune(llm, cfg, visitor: dict, visit_rec: dict | None, *, seed: int = 
             ask["begun"] = True
         f = fortune_run.fortune_of(data, nombre=first_q, lugar=place_of(cfg, visitor), casa=casa_q,
                                    pistas=pistas_q, hoy=fortune.today_words(now))
-        tag = fortune.ask_tag(asks, modo, fortune_run.ask_dijo(said_by, words, data), f, deck)
+        tag = fortune.ask_tag(asks, modo, words, f, deck)
         raw, line = fortune_run.ask_model(llm, tag, asks, deck)
         if line is None:
             ask["on"] = not llm.last_error       # as the act: a refusal costs this question only

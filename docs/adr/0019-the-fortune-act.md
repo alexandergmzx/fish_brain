@@ -169,3 +169,7 @@ fortune like a typed one.
 ## Amendment, 2026-11-01
 
 Decision 9: with `FISH_FORTUNE_MODEL=true` the mode is the trust check alone, not the show's (ADR 0015). The reading and the clips carry no burla (ADR 0030).
+
+## Amendment, 2026-11-01 (fortune #14 on the board)
+
+His word: "the fortune is not getting the answers". "No sé" to the sign asks the day and month. A told dream of three or more words that no theme hears is `otro` at once, with no re-ask. `DREAM_NO_WORDS` is gone: every dream's words reach the question turn and the reading (also amends [0029](0029-haiku-asks.md) decision 5).

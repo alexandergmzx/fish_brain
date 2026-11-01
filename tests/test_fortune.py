@@ -325,12 +325,8 @@ def test_today_and_the_opening():
 
 
 @pytest.mark.parametrize("theme", ["seres_queridos", "otro"])
-def test_no_dream_words_for_the_dead_and_the_kept(theme):
-    tag = reading_tag(Fortune(sueno=theme, sueno_txt="mi tío que se murió"), TAROT)
-    assert "tío" not in tag and "murió" not in tag and '"' not in tag
-    assert f"sueño={theme} (" in tag
-    assert "un ser querido, o alguien que ya cruzó" in reading_tag(
-        Fortune(sueno="seres_queridos", sueno_txt="mi abuela"), TAROT)
+def test_every_dream_reaches_the_reading_in_its_words(theme):
+    assert f'sueño={theme} ("mi tío que se murió")' in reading_tag(Fortune(sueno=theme, sueno_txt="mi tío que se murió"), TAROT)
 
 
 def test_the_magic_words_and_places():

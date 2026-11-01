@@ -405,9 +405,8 @@ DREAM_THEMES: tuple[Theme, ...] = (
         "no me acuerdo", "no recuerdo", "no sueno", "no sueno nada", "nunca sueno",
         "no he sonado", "nada", "ninguno", "no se", "no tuve", "casi no sueno", "se me olvido",
         "se me olvidan", "no me acuerdo de nada", "no sueno mucho", "no suelo sonar")),
-    # Said with a cheeky deflection, never read: sexual content, violence, a pregnancy,
-    # religion. A transcript no other theme hears also lands here, after the reprompt.
-    Theme("otro", "Otro sueño (me lo guardo)", (
+    # Sexual content, violence, a pregnancy, religion; and any told dream no other theme hears.
+    Theme("otro", "Otro sueño", (
         "sexo", "sexual", "sexuales", "cogiendo", "cogia", "cogimos", "me acostaba con",
         "me acoste con", "relaciones", "hacer el amor", "haciendo el amor", "porno", "orgia",
         "pistola", "me disparaban", "disparos", "balazos", "me mataban", "me mataron", "mataba",
@@ -939,7 +938,6 @@ class Fortune:
 
 # The two themes whose words the model never gets (a named relative, a dead one, what the hat
 # keeps to itself): the theme's description goes instead.
-DREAM_NO_WORDS = frozenset({"seres_queridos", "otro"})
 
 WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 
@@ -1028,10 +1026,7 @@ def _tag_parts(f: Fortune, deck: dict | None) -> list[str]:
         parts.append(f"elemento={s.element}")
     if f.numero is not None:
         parts.append(f"número={f.numero}")
-    if f.sueno in DREAM_NO_WORDS and f.sueno in DREAM_BY_ID:
-        label = DREAM_BY_ID[f.sueno].label
-        parts.append(f"sueño={f.sueno} ({label[0].lower() + label[1:]})")
-    elif f.sueno:
+    if f.sueno:
         words = _quoted(f.sueno_txt)
         parts.append(f'sueño={f.sueno} ("{words}")' if words else f"sueño={f.sueno}")
     if f.deseo:

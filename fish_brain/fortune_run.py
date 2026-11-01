@@ -80,7 +80,7 @@ def parse_answer(qid: str, words: str, deck: dict | None, data: dict) -> tuple[s
     if fortune.has_answer(rest):
         found: dict = {}
         kind, value = _parse(qid, rest, deck, found)
-        if kind not in ("none", "not_sure") and not (kind == "wish" and value == "otro"):
+        if kind not in ("none", "not_sure") and value != "otro":   # "otro": any words, so maybe not an answer
             data.update(found)
             return kind, value
     # A question that holds the answer all the same: "¿Mi signo es Escorpio?", "¿Qué tal
@@ -109,7 +109,11 @@ def _parse(qid: str, words: str, deck: dict | None, data: dict) -> tuple[str, ob
     if qid == "sueno":
         theme = fortune.dream_theme(words)
         if theme is None:
-            return "none", None
+            # A told dream no theme hears is still the dream, in the visitor's words (his word,
+            # 2026-11-01: "Soñé que me despertaba"); a bare "no" or "sí" is not.
+            if len(fortune.tokens(words)) < 3:
+                return "none", None
+            theme = "otro"
         data.update(sueno=theme, sueno_txt=clean_cue_text(words, DREAM_TEXT_MAX))
         return "theme", theme
     if qid == "deseo":
@@ -201,25 +205,8 @@ def told_dream(heard: list) -> str:
 
 
 def reading_has(data: dict) -> set:
-    """What the reading can open with ("signo", "sueno", "carta"): a dream told but never
-    clear is not one, and is not in the tag either."""
-    has = {k for k in ("signo", "sueno", "carta") if data.get(k) is not None}
-    return has - {"sueno"} if data.get("sueno_vago") else has
-
-
-def ask_dijo(qid: str, words: str, data: dict) -> str:
-    """The visitor's words as the question turn may send them. A dream's words go only when its
-    theme is clear and not one the model never gets (fortune.DREAM_NO_WORDS): an unclear one may
-    be anything, and would stay in the act's history. A question back or a bare no is no dream."""
-    if qid != "sueno":
-        return words
-    if data.get("sueno") and data["sueno"] not in fortune.DREAM_NO_WORDS:
-        return words
-    asked, rest = fortune.split_ask_back(words, fortune.ECHO["sueno"])
-    if asked and not fortune.has_answer(rest):
-        return words
-    bare_no = fortune.parse_yes_no(words) == "no" and len(fortune.tokens(words)) <= 2
-    return words if bare_no else ""
+    """What the reading can open with ("signo", "sueno", "carta")."""
+    return {k for k in ("signo", "sueno", "carta") if data.get(k) is not None}
 
 
 def ask_model(llm, tag: str, asks: str, deck: dict | None) -> tuple[str, str | None]:
@@ -267,7 +254,7 @@ def fortune_of(data: dict, *, nombre: str = "", lugar: str = "",
     d, sd = data, seeds or {}
     return fortune.Fortune(nombre=nombre, lugar=lugar, casa=casa, pistas=dict(pistas or {}),
                            fecha=d.get("fecha"), signo=d.get("signo"), numero=d.get("numero"),
-                           sueno=None if d.get("sueno_vago") else d.get("sueno"),
+                           sueno=d.get("sueno"),
                            sueno_txt=d.get("sueno_txt", ""),
                            deseo=d.get("deseo"), deseo_txt=d.get("deseo_txt", ""),
                            tema=sd.get("tema"), carta=d.get("carta"),
@@ -546,8 +533,10 @@ class FortuneRun:
             shown = f"{shown} reversed"
         debug.turn_set(fortune=f"#{v['n']} {qid} {kind} {shown}")
         print(f"[fortune] #{v['n']} {qid} heard={text!r} -> {kind} {shown}", flush=True)
-        if kind == "not_sure":
+        if kind == "not_sure" and qid != "fecha":
             return self._next([self._pick("bridge")], filler=True)
+        if kind == "not_sure":                   # "no sé" to the sign: the day and month next
+            kind = "none"
         if kind in ("none", "ask_back"):
             return self.no_answer(kind)
         if kind == "no_card":
@@ -579,7 +568,7 @@ class FortuneRun:
         """Nothing usable for the open question (`kind` "none"), or a question back
         ("ask_back"): the question once more, narrower, as `reask` decides; else the bridge
         line and the next question. A dream that was told but never came clear is "otro",
-        kept out of the reading's tag."""
+        with its words in the reading's tag."""
         v = self.v
         if v is None or v["stage"] != "ask":
             return False
@@ -612,7 +601,7 @@ class FortuneRun:
                 begin_model(llm, self.cfg.ask_rules)
                 llm.thinking = self.cfg.thinking or None
                 v["ask_begun"] = True
-            dijo = ask_dijo(v["qs"][v["i"] if modo == "repite" else v["i"] - 1], v["said"], v["data"])
+            dijo = (v["said"])
             f = fortune_of(v["data"], nombre=v["first"], lugar=place_word(self.c.cfg.place),
                            casa=v["house"], pistas=self._pistas(), hoy=fortune.today_words())
             tag = fortune.ask_tag(asks, modo, dijo, f, v["deck"])

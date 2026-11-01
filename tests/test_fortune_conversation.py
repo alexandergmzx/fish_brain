@@ -123,6 +123,7 @@ def make(monkeypatch, tmp_path):
         monkeypatch.setenv("FISH_PLACE", place)
         monkeypatch.setattr(fortune, "moon_tonight", lambda now=None: "llena")
         cfg = Config()
+        cfg.show.ask_name = False
         cfg.canned.cache_dir = tmp_path / "canned"
         cfg.show.state = str(tmp_path / "show.json")
         cfg.fortune.state = str(tmp_path / "fortune.json")
@@ -244,10 +245,11 @@ def test_a_date_missed_twice_still_reaches_the_closing_with_no_error_line(make):
 def test_no_se_moves_on_without_a_second_ask(make):
     c = make()
     start(c)
+    say(c, "no sé")                                              # the sign: the day and month, once
+    assert c.speaker.stages[-1] == ["fortune_rq_fecha"]
     say(c, "no sé")
     st = c.speaker.stages[-1]
     assert st[0].startswith("fortune_bridge_") and st[-1] == "fortune_q_sueno"
-    assert not any(n.startswith("fortune_rq_") for n in c.speaker.all())
     say(c, "soñé que volaba")
     say(c, "ninguna")                                            # the wish: the same
     assert c.speaker.stages[-1][0].startswith("fortune_bridge_")
@@ -269,17 +271,14 @@ def test_no_me_acuerdo_at_the_dream_is_its_own_theme(make):
     assert c.fortune.v["data"]["sueno"] == "nada"
 
 
-def test_a_dream_told_but_unclear_is_otro_and_the_words_are_kept(make, monkeypatch):
+def test_a_dream_no_theme_hears_is_still_the_dream(make):
     c = make()
-    monkeypatch.setattr(fortune, "dream_theme", lambda text: None)
     start(c)
     say(c, "23 de octubre")
-    say(c, "pues fíjate que anoche")
-    assert c.speaker.stages[-1] == ["fortune_rq_sueno"]
-    say(c, "no te lo puedo contar")
-    assert c.speaker.stages[-1][0].startswith("fortune_bridge_")
+    say(c, "Soñé que me despertaba.")               # fortune #14, 2026-11-01
     assert c.fortune.v["data"]["sueno"] == "otro"
-    assert c.fortune.v["data"]["sueno_txt"] == "no te lo puedo contar"
+    assert c.fortune.v["data"]["sueno_txt"] == "Soñé que me despertaba."
+    assert c.speaker.stages[-1][-1] == "fortune_q_deseo"
 
 
 # ---- a question back (2026-10-31: "¿Y cómo que muerte?", "¿Cómo? Dinero.") ------------------
@@ -359,21 +358,6 @@ def test_a_protest_at_the_card_that_ends_in_a_yes_is_the_hats_draw(make):
     assert c.fortune.view()["last"]["data"]["carta"].endswith("(la sacó el sombrero)")
 
 
-def test_a_dream_never_clear_stays_out_of_the_tag(make, online, monkeypatch):
-    llm = FakeLLM()
-    c = make("auto", llm=llm, cup=False)
-    monkeypatch.setattr(fortune, "dream_theme", lambda text: None)
-    start(c)
-    say(c, "Capricornio.")
-    say(c, "¿Cómo?")                                 # a question back is not the dream
-    say(c, "Me tiene que trabajar mucho.")           # unclear after it: no second re-ask
-    assert c.fortune.v["data"]["sueno_txt"] == "Me tiene que trabajar mucho."
-    say(c, "Amor.")
-    say(c, "No.")
-    tag = llm.asked[-1]
-    assert "sueño=" not in tag and "forma=sueño" not in tag and "carta" not in tag
-
-
 # ---- the question turn: the model reacts and asks (ADR 0029) --------------------------------
 
 class AskLLM(FakeLLM):
@@ -428,16 +412,6 @@ def test_a_question_back_goes_to_the_model_to_answer(make, online):
     assert "fortune_rq_deseo" not in c.speaker.all() and "deseo" not in c.fortune.v["data"]
 
 
-def test_an_unclear_dream_never_reaches_the_models_history(make, online):
-    c = asking(make)
-    start(c)
-    say(c, "Cáncer.")
-    say(c, "mi jefe me acosaba en la oficina")
-    say(c, "pues mi jefe otra vez")
-    said = " ".join(c._llm.asked) + " ".join(u for u, _a in c._llm.remembered)
-    assert "jefe" not in said and "pide=sueño; modo=repite" in said
-
-
 def test_a_refused_line_is_the_clip_for_that_question_only(make, online):
     llm = AskLLM()
     llm.LINES = {**AskLLM.LINES, "sueño": "Esto no pregunta nada."}
@@ -462,12 +436,12 @@ def test_a_failed_call_is_the_clip_with_no_error_line(make, online):
     assert not (set(c.speaker.all()) & ERROR_LINES)
 
 
-def test_a_declined_theme_never_sends_the_visitors_words(make, online):
+def test_every_dream_reaches_the_question_turn(make, online):
     c = asking(make)
     start(c)
     say(c, "Cáncer.")
     say(c, "soñé con mi tío que se murió")
-    assert "tío" not in c._llm.asked[-1] and "dijo=" not in c._llm.asked[-1]
+    assert "tío" in c._llm.asked[-1]
 
 
 def test_a_card_keeps_its_name_clip_and_clips_alone_never_call_the_model(make, online):
@@ -686,7 +660,7 @@ def test_the_cues_and_a_wish_in_the_visitors_words_reach_the_model(make, online)
     tag = llm.asked[0]
     assert "pistas=edad: joven, impresión: escepticismo" in tag
     assert 'deseo=otro ("Que mis alumnos lean.")' in tag
-    assert "sueño=seres_queridos (" in tag and "tío" not in tag and "murió" not in tag
+    assert 'sueño=seres_queridos ("soñé con mi tío que se murió")' in tag
 
 
 def test_a_wish_outside_the_four_gets_its_own_reaction_clip(make):
