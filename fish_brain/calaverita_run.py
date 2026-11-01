@@ -9,6 +9,7 @@ reply and a real model error tell the show the model is down: a refusal, a bad p
 a busy speaker say nothing about the next visit."""
 from __future__ import annotations
 
+import os
 import time
 import traceback
 from datetime import datetime
@@ -25,6 +26,8 @@ class CalaveritaRun:
         self.cfg = fortune_run.cfg
         self.busy = False
         self._last: dict = {}                 # the last verse, for the page (this visit's only)
+        self._own_llm = None                  # the act's own model, built on first use
+        self._own_stale = None                # its job given up on, still running
 
     # ---- may it start ----------------------------------------------------------------------------
     def _lines_ready(self, letter: str) -> bool:
@@ -57,6 +60,26 @@ class CalaveritaRun:
         return {"lit": why is None and not self.busy, "why": why, "busy": self.busy,
                 "first": visit.first_name if visit is not None and why is None else "",
                 "last": self._last if same else None}
+
+    # ---- which model -------------------------------------------------------------------------------
+    def _own_profile(self) -> str:
+        """The act's own profile; "" = the visit's model (the same one, none, or no key)."""
+        from .config import LLM_PROFILES
+        name = self.cfg.calaverita_profile
+        if name not in LLM_PROFILES or name == self.c.cfg.llm.profile:
+            return ""
+        return name if os.environ.get(LLM_PROFILES[name]["api_key_env"], "").strip() else ""
+
+    def _client(self, own: str):
+        """In the worker: a first SDK import must not be silence before the lead."""
+        if not own:
+            return self.c.llm
+        if self._own_llm is None:
+            from .config import LLMConfig
+            from .llm import make_conversation
+            # The cap the rehearsal ran with: thinking shares it.
+            self._own_llm = make_conversation(LLMConfig(profile=own, max_completion_tokens=2000))
+        return self._own_llm
 
     # ---- clips -------------------------------------------------------------------------------------
     def _pick(self, slot: str, names: list[str]) -> str:
@@ -110,14 +133,15 @@ class CalaveritaRun:
                 "letter": show.HOUSE_LETTERS[visit.house], "place": self.c.cfg.place.place,
                 "tag": calaverita.verse_tag(first, visit.house, place_word(self.c.cfg.place),
                                             used, list(visit.heard)),
-                "how": "", "why": "", "said": False, "stanzas": None, "ticket": None,
+                "own": "", "how": "", "why": "", "said": False, "stanzas": None, "ticket": None,
                 "clips": [], "model_s": None, "tts_s": None, "t0": time.monotonic()}
 
     def _compose(self, rec: dict) -> None:
         self.f._probe_printer()
         lead = [self._pool("lead")]
         mode, why = self.f.mode_now()
-        stale = self.c._stale.get("llm")
+        rec["own"] = self._own_profile()
+        stale = self._own_stale if rec["own"] else self.c._stale.get("llm")
         if mode == "llm" and stale is not None and not stale.done.is_set():
             mode, why = "script", "the model is still busy with an older turn"
         if mode != "llm":
@@ -152,15 +176,16 @@ class CalaveritaRun:
 
     def _start(self, rec: dict):
         """The model's job, then its voice. The client is touched in the worker: a first SDK
-        import (7.0 and 17.4 s on the board) must not be silence before the lead."""
+        import (7.0 and 17.4 s on the board) must not be silence before the lead. The act's own
+        client never touches the visit's history."""
         from .conversation import _Job
         box = {"timing": {}, "reply": False, "gone": False}
         tag, thinking = rec["tag"], self.cfg.calaverita_thinking
         speaker, rules = self.c.speaker, self.cfg.calaverita_rules
-        convo = self.c
+        own = rec["own"]
 
         def work():
-            llm = convo.llm
+            llm = self._client(own)
             if box["gone"]:                       # given up on during the import: the rules and
                 return "", None, None, "gone"     # the history are the next act's by now
             begin_model(llm, rules)
@@ -196,7 +221,10 @@ class CalaveritaRun:
             if now >= deadline:
                 box["gone"] = True
                 job.abandon()
-                c._stale["llm"] = job             # the next turn waits for it, never asks twice
+                if rec["own"]:
+                    self._own_stale = job         # the next tap goes to the clips while it runs
+                else:
+                    c._stale["llm"] = job         # the next turn waits for it, never asks twice
                 why = f"timeout after {self.cfg.calaverita_s:g} s"
                 if box["reply"]:                  # the model answered, the voice was slow
                     rec["why"] = why + " (the voice)"
@@ -214,7 +242,7 @@ class CalaveritaRun:
     def _model_failed(self, rec: dict, why: str) -> None:
         print(f"[calaverita] the model gave way to the clips: {why}", flush=True)
         rec["why"] = why
-        if self.c.show is not None:
+        if self.c.show is not None and not rec["own"]:
             self.c.show.model_failed()            # the next visits stay scripted a while
 
     def _fallback(self, rec: dict, lead: list, how: str) -> None:
@@ -277,7 +305,8 @@ class CalaveritaRun:
                   f"model={rec['model_s']} tts={rec['tts_s']} ticket={rec['ticket']} {seconds}s",
                   flush=True)
             debug.emit("calaverita", n=rec["n"], how=rec["how"], why=rec["why"], first=rec["first"],
-                       house=rec["house"], place=rec["place"], tag=rec["tag"], verse=verse,
+                       house=rec["house"], place=rec["place"], profile=rec["own"] or self.c.cfg.llm.profile,
+                       tag=rec["tag"], verse=verse,
                        clips=list(rec["clips"]), model_s=rec["model_s"], tts_s=rec["tts_s"],
                        ticket=rec["ticket"], seconds=seconds)
             debug.turn_set(calaverita=f"#{rec['n']} {rec['how']}",

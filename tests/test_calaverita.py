@@ -190,7 +190,7 @@ class Fail:
 @pytest.fixture
 def make(monkeypatch, tmp_path):
     def build(*, llm=None, speaker=None, printer=None, mode="auto", house="Ravenclaw", first="Ana",
-              rendered=True, ticket=True):
+              rendered=True, ticket=True, profile="main"):
         monkeypatch.setenv("FISH_PERSONA", "hat")
         monkeypatch.setenv("FISH_SHOW", mode)
         monkeypatch.setenv("FISH_PLACE", "fiesta")
@@ -205,6 +205,7 @@ def make(monkeypatch, tmp_path):
         cfg.show.state = str(tmp_path / "show.json")
         cfg.fortune.state = str(tmp_path / "fortune.json")
         cfg.fortune.ticket = ticket
+        cfg.fortune.calaverita_profile = profile
         cfg.show.seed = "test"
         cfg.filler.enabled = False
         cfg.canned.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -250,7 +251,7 @@ def test_the_model_verse_is_said_shown_and_printed_after_the_lead(make, monkeypa
     tag = c._llm.asked[0]
     assert "nombre=Ana" in tag and "casa=Ravenclaw" in tag and "lugar=fiesta" in tag
     assert 'dijo="Un libro"|"A mi gato"' in tag
-    assert "LA BURLA" in c._llm.rules_seen[0] and c._llm.thinking_seen == ["disabled"]
+    assert "LA BURLA" in c._llm.rules_seen[0] and c._llm.thinking_seen == [None]
     assert len(p.submitted) == 1
     t = p.submitted[0]
     assert t.first == "Ana" and t.casa == "Ravenclaw" and t.verse == cal.clean_verse(VERSE)
@@ -406,6 +407,68 @@ def test_a_stop_signal_starts_no_ticket(make, monkeypatch):
     with pytest.raises(KeyboardInterrupt):
         tap(c)
     assert p.submitted == [] and not c.fortune.calaverita.busy
+
+
+# ---- its own model ----------------------------------------------------------------------------
+def own(monkeypatch, llm):
+    built = []
+
+    def make(cfg):
+        built.append(cfg)
+        return llm
+    monkeypatch.setattr("fish_brain.llm.make_conversation", make)
+    return built
+
+
+def test_sonnet_writes_it_and_the_visits_model_is_never_asked(make, monkeypatch):
+    sonnet = LLM()
+    built = own(monkeypatch, sonnet)
+    c = make(profile="claude-sonnet", llm=LLM(raises=AssertionError("never")))
+    online_mode(c, monkeypatch)
+    tap(c)
+    tap(c)
+    assert len(sonnet.asked) == 2 and c._llm.asked == []
+    assert len(built) == 1 and built[0].model == "claude-sonnet-5-5"
+    assert built[0].max_completion_tokens == 2000
+    assert sonnet.thinking_seen == [None, None]          # the profile's own
+    assert c.speaker.performed
+
+
+def test_sonnet_is_the_default_and_main_or_no_key_is_the_visits_model(make, monkeypatch):
+    monkeypatch.delenv("FISH_CALAVERITA_PROFILE", raising=False)
+    assert Config().fortune.calaverita_profile == "claude-sonnet"
+    c = make(profile="claude-sonnet")
+    r = c.fortune.calaverita
+    assert r._own_profile() == "claude-sonnet"
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    assert r._own_profile() == ""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x" * 12)
+    c.cfg.fortune.calaverita_profile = "main"
+    assert r._own_profile() == ""
+    c.cfg.fortune.calaverita_profile = "claude-sonnet"
+    c.cfg.llm.profile = "claude-sonnet"
+    assert r._own_profile() == ""
+
+
+def test_a_sonnet_outage_does_not_script_the_visits(make, monkeypatch):
+    own(monkeypatch, LLM(error="connection lost"))
+    c = make(profile="claude-sonnet")
+    online_mode(c, monkeypatch)
+    f = Fail()
+    monkeypatch.setattr(c.show, "model_failed", f.model_failed)
+    tap(c)
+    assert f.n == 0 and any(n.startswith("calaverita_verso_R_") for n in c.speaker.all())
+
+
+def test_its_own_job_still_running_goes_to_the_clip_and_leaves_the_turns_alone(make, monkeypatch):
+    sonnet = LLM()
+    own(monkeypatch, sonnet)
+    c = make(profile="claude-sonnet")
+    online_mode(c, monkeypatch)
+    c.fortune.calaverita._own_stale = SimpleNamespace(done=threading.Event())
+    tap(c)
+    assert sonnet.asked == [] and "llm" not in c._stale
+    assert any(n.startswith("calaverita_verso_R_") for n in c.speaker.all())
 
 
 # ---- when it may start ------------------------------------------------------------------------

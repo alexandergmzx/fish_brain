@@ -33,11 +33,13 @@ answers: a button, voice and ticket, three stanzas.
 10. **The ticket has its own layout**, so the fortune's paper does not change. Reprint stays one slot,
     so a later fortune replaces the verse.
 
+11. **Sonnet writes it, his word 2026-11-01** (`FISH_CALAVERITA_PROFILE`, default `claude-sonnet`), on a client of its own, built in the worker on first use; the rest of the hat stays on its model. `main` or a missing key uses the visit's. Its failures never call `show.model_failed()`: they say nothing about the visit's model. Its rhyme is still below the bar set beforehand: 38 % of stanzas.
+
 ## Alternatives
 
 - **Automatic after the verdict:** a longer visit for someone who may be leaving; his choice was the button.
 - **One verse per verdict:** nothing asked for it, and it caused most of the design's edge cases.
-- **A model of its own for this act (`FISH_CALAVERITA_PROFILE`):** added only if a rehearsal shows the visit's model can't write it.
+- **Haiku, the visit's model:** 67 % of lines within one of 8 against Sonnet's 97 % ([rehearsal](../results/2026-11-01-calaverita-arms.md)).
 - **Scansion as a refusal:** a crude counter must not reject a good poem.
 
 ## Consequences

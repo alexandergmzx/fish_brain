@@ -896,9 +896,12 @@ class FortuneConfig:
     ticket: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_TICKET", True))   # the ticket at the closing line, when a printer is set
     # The calaverita (calaverita_run.py, ADR 0033), an act of this persona that shares carry_s,
     # ticket and suspense_more_s. calaverita_s: from the end of the lead, the model and the voice
-    # (estimate). Its thinking is one of THINKING_MODES, the rehearsal's pick.
+    # (estimate). The act's own model (his word, 2026-11-01: Sonnet, the best of the rehearsal's
+    # arms, docs/results/2026-11-01-calaverita-arms.md); a name that is no profile, like "main",
+    # or a missing key = the visit's model. Its thinking, one of THINKING_MODES; "" = the profile's.
     calaverita_s: float = 20.0
-    calaverita_thinking: str = field(default_factory=lambda: _env("FISH_CALAVERITA_THINKING", "disabled"))
+    calaverita_profile: str = field(default_factory=lambda: _env("FISH_CALAVERITA_PROFILE", "claude-sonnet"))
+    calaverita_thinking: str = field(default_factory=lambda: _env("FISH_CALAVERITA_THINKING", ""))
     calaverita_rules: str = field(default_factory=lambda: texts.calaverita()["rules"].strip())
 
 
