@@ -19,6 +19,32 @@ The last arm, `claude-sonnet:adaptive`, ran afterwards with `--takes 1` on the s
 - **The refusals of the two no-thinking arms:** `nunca: cerveza` 4 (the visitors' own words), 16 lines 4, over 90 words 2, one long line. No verse named another visitor's house; 5 of Haiku's 28 and 1 of Sonnet's 28 left out their own.
 - "Rhymed" is strict: both pairs of a stanza, consonant, by the rehearsal's crude scanner. Which verses are funny is his to read. Not measured: anything by voice.
 
+## Sonnet through the act, and the one rule (after his word: Sonnet writes it)
+
+`tools/calaverita_once.py` ran the act's real code path against the real model, with a stand-in speaker and printer. 10 takes on two visitors: 3 refused for length and 7 said, the model taking 2.5 to 4.4 s; every refusal went to the house's clip and its ticket. The long replies were a fourth stanza, or the model restarting aloud ("Pero esa idea no cuadra con las rimas, así que va de nuevo.").
+
+One visitor, a reply that is not 12 lines (a small sample): 3 of 14 before the rule "Tu primera versión es la que se dice…", 2 of 20 after it. Script:
+
+```python
+import sys; sys.path.insert(0,".")
+from dotenv import load_dotenv; load_dotenv(".env") or load_dotenv("/home/alexmint/Development/fish_brain/.env")
+import os; os.environ["FISH_PERSONA"]="hat"
+from fish_brain.config import Config, LLMConfig
+from fish_brain.llm import make_conversation
+from fish_brain.visit import begin_model
+from fish_brain import calaverita as c
+l=make_conversation(LLMConfig(profile="claude-sonnet",max_completion_tokens=2000)); R=Config().fortune.calaverita_rules
+long=0
+for i in range(20):
+    begin_model(l,R)
+    raw=l.reply(c.verse_tag("Mónica","Hufflepuff","",{},["Por mi perro","Porque me deja mis calcetines en la cama"]),remember=False)
+    n=sum(map(len,c.stanzas_of(raw)))
+    if n!=12:
+        long+=1
+        if long<=0: print("-----",n,"\n"+raw)
+print("not 12:",long,"of 20")
+```
+
 ## claude:disabled
 
 ### visitor 1 take 1: 1.7 s, 10/12 lines within one of 8, 3/3 stanzas rhymed
