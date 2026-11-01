@@ -69,8 +69,12 @@ class ShowRun:
             return "script", "forced"
         if mode != "auto":
             return "llm", "off"
-        ok, why = model_trusted(self.c, self._model_failed_at, self.cfg.back_s)
+        ok, why = self.model_ok()
         return ("llm" if ok else "script"), why
+
+    def model_ok(self) -> tuple[bool, str]:
+        """model_trusted with this run's last failure and back-off, whatever the mode."""
+        return model_trusted(self.c, self._model_failed_at, self.cfg.back_s)
 
     @property
     def open(self) -> bool:
@@ -125,7 +129,7 @@ class ShowRun:
 
     # ---- a visit --------------------------------------------------------------------------
     def start(self, why: str, *, at_question: int = 0, greet: bool = True,
-              lead: list[str] | None = None, keep_cues: bool = False) -> bool:
+              lead: list[str] | None = None, keep_cues: bool = False, first: str = "") -> bool:
         n = self.state.next_visit()
         set_id = show.question_set(n)
         visit = self.c.visit
@@ -136,7 +140,7 @@ class ShowRun:
                   "t0": time.monotonic()}
         self.force = None
         if visit is not None:
-            visit.start("", self.c._clock(), keep_cues=keep_cues)
+            visit.start(first, self.c._clock(), keep_cues=keep_cues)
             self.c._push_visit()
         clips = list(lead or []) + ([self._pick("greet")] if greet else [])
         clips.append(show_bank.prompt_name(qs[at]))
@@ -144,6 +148,17 @@ class ShowRun:
         debug.turn_set(trigger="show", show=f"#{n} {set_id} start ({why})")
         self._say(clips)
         return True
+
+    def name_given(self, first: str) -> bool:
+        """A name from the page in script mode: no model and no live voice. It joins the open
+        visit in silence, or starts one, and the fortune finds it there."""
+        visit = self.c.visit
+        if self.v is not None and visit is not None and not visit.needs_new(self.c._clock()):
+            visit.first_name = first
+            self.c._push_visit()
+            print(f"[show] name given: {first}", flush=True)
+            return True
+        return self.start(self.mode_now()[1], first=first)
 
     def hand_over(self, stage: int, why: str) -> bool:
         """A model visit that failed mid-way goes on as the script, in the same voice: a bridge

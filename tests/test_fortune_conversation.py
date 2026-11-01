@@ -6,10 +6,11 @@ import time
 import pytest
 
 from fish_brain import show_bank
-from fish_brain import cloud, fortune, fortune_bank, voice_guard
+from fish_brain import cloud, fortune, fortune_bank, texts, voice_guard
 from fish_brain.config import Config
 from fish_brain.conversation import FishConversation
 from fish_brain.fortune_run import FortuneInput
+from fish_brain.reading import Reading
 from fish_brain.serial_link import MockSerialLink
 from fish_brain.visit import NewVisit
 
@@ -831,6 +832,106 @@ def test_the_waits_are_his_fifteen_seconds():
     from fish_brain.config import FortuneConfig, LLMConfig
     assert FortuneConfig().reading_s == 15.0 and FortuneConfig().suspense_more_s == 7.0
     assert LLMConfig(profile="claude").timeout_s == 15.0
+
+
+def test_fortune_model_keeps_the_model_under_a_scripted_house(make, online, monkeypatch):
+    c = make("script", llm=FakeLLM())
+    assert c.fortune.mode_now() == ("script", "forced")           # the setting off: the show's word
+    c.fortune.cfg.model = True
+    assert c.fortune.mode_now() == ("llm", "online")
+    assert c.show.mode_now() == ("script", "forced")              # the house act stays scripted
+    c.show._model_failed_at = time.monotonic()
+    assert c.fortune.mode_now() == ("script", "model failed")     # the back-off still holds
+    c.show._model_failed_at = None
+    c.echo = True
+    assert c.fortune.mode_now() == ("script", "echo")
+    c.echo = False
+    monkeypatch.setattr(cloud, "is_online", lambda: False)
+    assert c.fortune.mode_now() == ("script", "offline")
+
+
+def typed(c, name="Ana"):
+    return c._handle_item(Reading(name=name, first_name=name, confirmed=True))
+
+
+def scripted_house(c):
+    """The first option of the three questions of the open set."""
+    for i in range(3):
+        say(c, show_bank.question(c.show.v["qs"][c.show.v["i"]])["options"][0]["words"][0])
+
+
+def test_a_scripted_house_asks_no_model_and_the_fortune_is_the_first_call(make, online):
+    llm = FakeLLM()
+    c = make("script", llm=llm)
+    c.fortune.cfg.model = True
+    say(c, "hola")
+    scripted_house(c)
+    assert c.visit.house and not c.show.open
+    assert llm.calls == 0 and c.speaker.other == []
+    start(c)
+    answer_all(c)
+    assert llm.calls == 1 and fortune_bank.FORTUNE_RULES in llm.extra_rules
+
+
+def test_a_typed_name_in_script_mode_starts_the_visit_with_no_model(make, online):
+    llm = FakeLLM()
+    c = make("script", llm=llm)
+    c.fortune.cfg.model = True
+    typed(c)
+    assert llm.calls == 0 and c.speaker.other == []
+    assert c.show.open and c.visit.first_name == "Ana"
+    assert c.speaker.stages[-1][0].startswith("show_greet_") and c.speaker.stages[-1][1] == "show_q_A1"
+    scripted_house(c)
+    assert llm.calls == 0 and c.visit.first_name == "Ana"
+    start(c)
+    answer_all(c)
+    assert "nombre=Ana" in llm.asked[0]
+
+
+def test_a_typed_name_joins_an_open_scripted_visit_in_silence(make, online):
+    llm = FakeLLM()
+    c = make("script", llm=llm)
+    say(c, "hola")
+    said = len(c.speaker.stages)
+    typed(c)
+    assert llm.calls == 0 and len(c.speaker.stages) == said and c.show.v["i"] == 0
+    assert c.visit.first_name == "Ana"
+    scripted_house(c)
+    assert c.visit.first_name == "Ana"
+
+
+def test_a_typed_name_after_a_verdict_is_a_new_scripted_visit(make, online):
+    llm = FakeLLM()
+    c = make("script", llm=llm)
+    say(c, "hola")
+    scripted_house(c)
+    typed(c, "Luis")
+    assert llm.calls == 0 and c.show.open and c.visit.first_name == "Luis"
+    assert c.show.v["set"] == "B"
+
+
+def test_the_first_model_call_of_a_fortune_builds_the_client_in_the_wait(make, online, monkeypatch):
+    import threading
+    from fish_brain import llm as llm_module
+    built = []
+    fake = FakeLLM("Dime, ¿qué soñaste?")
+    monkeypatch.setattr(llm_module, "make_conversation",
+                        lambda cfg: built.append(threading.current_thread()) or fake)
+    c = make("script", llm=FakeLLM(), ask=True)
+    c.fortune.cfg.model = True
+    c._llm = None
+    start(c)
+    c.text_input, c.cfg.filler.enabled = False, True     # a voice turn: its stages run in workers
+    c._start_wait(c._clock())
+    say(c, "soy de escorpio")
+    assert built and built[0] is not threading.current_thread()
+
+
+def test_the_fortunes_words_carry_no_mockery():
+    r = fortune_bank.FORTUNE_RULES.lower()
+    words = (texts.folder() / "lines.toml").read_text(encoding="utf-8").lower()
+    for bad in ("burl", "roast", "mala lengua", "se mofa"):
+        assert bad not in r and bad not in words
 
 
 def test_echo_and_offline_read_from_the_clips(make, online, monkeypatch):

@@ -155,7 +155,7 @@ def test_the_nav_begins_visit_status_settings_and_each_control_sits_in_its_panel
     for needle in ('data-mode="auto"', 'data-hw="speaker"', 'id="volSlider"', 'data-net="ap"', 'id="spkBtn"',
                    'id="setupMsg"', 'id="btBlock"', 'id="btFind"', 'id="btPin"'):
         assert needle in setup and needle not in status and needle not in visit, needle
-    for needle in ('id="fortuneRow"', 'id="fortuneBtn"', 'id="showRow"', 'id="cVisit"', 'id="cRead"', 'id="readName"',
+    for needle in ('id="fortuneRow"', 'id="fortuneBtn"', 'id="consultaBtn"', 'id="showRow"', 'id="cVisit"', 'id="cRead"', 'id="readName"',
                    'data-place="casa"', 'data-place="otro"', 'id="placeText"', 'data-fortune="deck"', 'id="cupBtn"',
                    'id="actMsg"'):
         assert needle in visit and needle not in status and needle not in setup, needle
@@ -222,12 +222,12 @@ def test_the_fortune_row_posts_only_to_fortune_and_names_the_questions():
     js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
     block = js[js.index("const fortuneRow = guard("):js.index("const phoneMic = guard(")]
     assert set(re.findall(r'post\(\s*"(/[\w/]+)"', block)) == {"/fortune"}
-    assert re.search(r'action: "start", value: reader\.name\(\)\.slice\(0, 20\)', block)
+    assert re.search(r'action, value: reader\.name\(\)\.slice\(0, 20\)', block) and 'begin("start")' in block and 'begin("consulta")' in block
     for action in ("skip", "end"):
         assert f'tap("{action}")' in block
     assert "showTab(\"visit\")" in block
     # its refusals are explain()'s: a 503 names the fortune, a 409 with why "visit open" the visit
-    assert 'explain(out, "the fortune")' in block
+    assert '"the fortune")' in block
     assert '"visit open": "finish the visit first (or Force a house)"' in js
     qids = set(re.findall(r'(\w+): "[^"]+"', re.search(r"QUESTION_EN = \{([^}]*)\}", js).group(1)))
     assert qids == {"fecha", "sueno", "deseo", "carta", "taza"}

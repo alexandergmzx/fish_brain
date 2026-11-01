@@ -41,3 +41,20 @@ Clip mode and the fallback mix the two registers until the second pass. Old rend
 the offline fallback by name (`canned.py`), so a first start offline can say an old line under a new
 text: check `ready == lines` on Status before a visitor. Tests of the house act are positional, so
 new nouns do not break them. Lines are drafts for his edit. Not measured: all of it by voice.
+
+## Amendment, 2026-10-31: the house act's first words are back
+
+His word: the new house lines are "too complex to understand for the majority". `house.toml` holds
+the fair's 143 lines again (`show_bank.py` at `52cacd1^`, word for word), reversing the words of
+decision 4's house act; the file stays his (decision 5). The rest of this record stands: the model's
+visit, the fortune and `reading.md` keep the voice above, so the scripted house act and those two now
+speak in different registers. The rewritten lines are in git at `aab3dc4`.
+
+## Amendment, 2026-11-01: no burla in the fortune
+
+His word: La burla is erased from the fortune and stays out. `reading.md` lost its section and the
+fortune's clips in `lines.toml` were reworded, so decision 2 no longer holds for the fortune;
+`visit.md` keeps it, heard only on the page's Auto or Model. The comments in `fortune_bank.py` name
+ADR 0032, the consulta's record, which is not written yet. `visit_greeting` was shortened with the
+restore of 2026-10-31; it is not said under script. Decision 5's nine new questions went with that
+restore too.

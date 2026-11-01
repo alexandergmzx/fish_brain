@@ -257,6 +257,10 @@ y ella en Ravenclaw: un sujeto.
 
 fully rhymed: 12/12; seconds median 4.4, max 9.0; versions median 4
 
+## The page, end to end
+
+The real app and page with `FISH_PERSONA=hat FISH_SHOW=script FISH_LLM_PROFILE=claude-sonnet FISH_PRINTER=mock`, `--dry-run --viz --no-audio`, silent stand-in clips and voice, no motors. `POST /fortune {"action":"calaverita"}` before a house: `409 {"why":"no house"}`. After `POST /visit` and a forced Slytherin, with the value Leo: 200; `how=model versions=3 rhymed=3 model=2.99`, 5.1 s, ticket printed on the mock. A screenshot at 390 wide showed the button under Fortune and Consulta, the verse by lines and Reprint. The taps were POSTs: the button was not clicked. Script: `POST`s by curl over a wrapper of `app.main`, one-off, as described here.
+
 ## claude:disabled
 
 ### visitor 1 take 1: 1.7 s, 10/12 lines within one of 8, 3/3 stanzas rhymed

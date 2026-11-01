@@ -521,11 +521,29 @@ def card_by_n(deck: dict, n: int) -> Card:
     raise KeyError(n)
 
 
+_MINOR = re.compile(r"\bde (?:copas?|espadas?|bastos?|oros?|varas?|pentaculos?|pentagramas?|discos?|monedas?|"
+                    r"corazones|diamantes|treboles|picas)\b|\bof (?:cups|swords|wands|pentacles|coins|disks)\b")
+_SEVERAL_CARDS = re.compile(r"\b(?:\d+|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|muchas|varias) cartas\b")
+
+
+def names_minor(text: str) -> bool:
+    """A minor card ("Dos de Copas", "Rey de bastos"): none is in the deck, and its number is
+    not a major's (it read as La Sacerdotisa until 2026-11-01)."""
+    return bool(_MINOR.search(" ".join(tokens(text))))
+
+
+def several_cards(text: str) -> bool:
+    """A count of cards ("Saqué dos cartas"), never the card of that number."""
+    return bool(_SEVERAL_CARDS.search(" ".join(tokens(text))))
+
+
 def parse_card(text: str, deck: dict) -> int | None:
     """The card a transcript names, by name (any alias, the longest first), by sound (one
     card alone at least 0.88 close), else by number when the deck has them and exactly one
-    number 0..21 is said. Two different cards, or none: None. With a yes, "uno" is a count
-    ("Sí, dame uno."), never card 1."""
+    number 0..21 is said. Two different cards, a minor card, a count of cards, or none: None.
+    With a yes, "uno" is a count ("Sí, dame uno."), never card 1."""
+    if names_minor(text) or several_cards(text):
+        return None
     ws = [w for w in tokens(text) if w not in _CARRIERS]
     if not ws:
         return None
@@ -1069,45 +1087,49 @@ MAX_READING_SENTENCES = 6
 MAX_READING_WORDS = 90
 
 
-def reading_problems(text: str) -> list[str]:
+def reading_problems(text: str, *, max_words: int = MAX_READING_WORDS,
+                     max_sentences: int = MAX_READING_SENTENCES) -> list[str]:
     """Why a reading would be refused ([] = it would be said): empty, more than 6 sentences,
-    more than 90 words. Bracket tags are removed first, as for the voice."""
+    more than 90 words (or the limits given). Bracket tags are removed first, as for the voice."""
     text = strip_notes(text or "")
     if not text:
         return ["empty"]
     out = []
     sentences = len(re.findall(r"[.!?…]+(?:\s|$)", text)) or 1
-    if sentences > MAX_READING_SENTENCES:
+    if sentences > max_sentences:
         out.append(f"{sentences} sentences")
     words = len(text.split())
-    if words > MAX_READING_WORDS:
+    if words > max_words:
         out.append(f"{words} words")
     return out
 
 
-def trim_reading(text: str) -> str:
+def trim_reading(text: str, *, max_words: int = MAX_READING_WORDS,
+                 max_sentences: int = MAX_READING_SENTENCES) -> str:
     """A reading over 6 sentences or 90 words cut to fit: its first sentences in order, as many
     as fit with the last one (the moon and the magic word), which is always kept. A reading
     that fits, or one that cannot be cut (one long sentence), comes back as it was."""
     parts = [p.strip() for p in re.findall(r"[^.!?…]+[.!?…]+(?:\s+|$)|[^.!?…]+$", text or "")
              if p.strip()]
-    if len(parts) < 2 or (len(parts) <= MAX_READING_SENTENCES
-                          and len(text.split()) <= MAX_READING_WORDS):
+    if len(parts) < 2 or (len(parts) <= max_sentences
+                          and len(text.split()) <= max_words):
         return text
     last = parts[-1]
     kept, words = [], len(last.split())
     for p in parts[:-1]:
         n = len(p.split())
-        if len(kept) + 2 > MAX_READING_SENTENCES or words + n > MAX_READING_WORDS:
+        if len(kept) + 2 > max_sentences or words + n > max_words:
             break
         kept.append(p)
         words += n
     return " ".join(kept + [last]) if kept else text
 
 
-def clean_reading(reply: str) -> str | None:
+def clean_reading(reply: str, *, max_words: int = MAX_READING_WORDS,
+                  max_sentences: int = MAX_READING_SENTENCES) -> str | None:
     """The model's reading fit to be said: any bracket tag removed, whitespace collapsed, a
     long one trimmed (trim_reading); None when it is empty or still does not fit in 6
     sentences and 90 words."""
-    text = trim_reading(strip_notes(reply or ""))
-    return None if reading_problems(text) else text
+    limits = {"max_words": max_words, "max_sentences": max_sentences}
+    text = trim_reading(strip_notes(reply or ""), **limits)
+    return None if reading_problems(text, **limits) else text

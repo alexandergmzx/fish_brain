@@ -1,4 +1,4 @@
-# 0033 — La calaverita: a verse after the House
+# 0034 — La calaverita: a verse after the House
 
 **Status:** proposed · **Date:** 2026-11-01
 
@@ -36,6 +36,9 @@ answers: a button, voice and ticket, three stanzas.
     so a later fortune replaces the verse.
 
 11. **Sonnet writes it, his word 2026-11-01** (`FISH_CALAVERITA_PROFILE`, default `claude-sonnet`), on a client of its own, built in the worker on first use; the rest of the hat stays on its model. `main` or a missing key uses the visit's. Its failures never call `show.model_failed()`: they say nothing about the visit's model. Its one version rhymed 38 % of stanzas, hence decision 8.
+
+12. **It runs under a scripted house** (`FISH_SHOW=script`): it asks the show's trust check, never its mode. Each version has its client even when the visit is on the same profile.
+13. **Left to the operator:** a scripted house has no name, so a typed name goes with that visit's house and answers for 600 s; New visitor ends that. A word said just after a consulta's reading may still get its closing line.
 
 ## Alternatives
 

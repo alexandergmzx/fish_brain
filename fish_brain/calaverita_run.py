@@ -1,4 +1,4 @@
-"""La calaverita, the act (ADR 0033): after a House verdict the operator taps the skull and the hat
+"""La calaverita, the act (ADR 0034): after a House verdict the operator taps the skull and the hat
 composes three stanzas from what the visit knows, says them and prints them.
 
 It asks the visitor nothing, so it is one blocking call on the turn loop's thread and nothing stays
@@ -9,13 +9,16 @@ reply and a real model error tell the show the model is down: a refusal, a bad p
 a busy speaker say nothing about the next visit."""
 from __future__ import annotations
 
+import importlib
 import os
+import threading
 import time
 import traceback
 from datetime import datetime
 
 from . import calaverita, canned, debug, show, ticket
 from .fortune_run import _drop_wav
+from .show_run import model_trusted
 from .visit import clean_cue_text, place_word
 
 
@@ -28,6 +31,7 @@ class CalaveritaRun:
         self._last: dict = {}                 # the last verse, for the page (this visit's only)
         self._own_llms: list = []             # the act's own model, one client a version
         self._own_stale = None                # its job given up on, still running
+        self._warm()
 
     # ---- may it start ----------------------------------------------------------------------------
     def _lines_ready(self, letter: str) -> bool:
@@ -63,12 +67,22 @@ class CalaveritaRun:
 
     # ---- which model -------------------------------------------------------------------------------
     def _own_profile(self) -> str:
-        """The act's own profile; "" = the visit's model (the same one, none, or no key)."""
+        """The act's own profile, even when the visit runs on the same one: the versions need a
+        client each. "" = the visit's model (`main`, or no key)."""
         from .config import LLM_PROFILES
         name = self.cfg.calaverita_profile
-        if name not in LLM_PROFILES or name == self.c.cfg.llm.profile:
+        if name not in LLM_PROFILES:
             return ""
         return name if os.environ.get(LLM_PROFILES[name]["api_key_env"], "").strip() else ""
+
+    def _warm(self) -> None:
+        """The SDK's first import took 7.0 and 17.4 s on the board: at start-up, in the background,
+        so the first tap does not spend its wait on it."""
+        from .config import LLM_PROFILES
+        own = self._own_profile()
+        if own and LLM_PROFILES[own].get("provider") == "anthropic":
+            threading.Thread(target=lambda: importlib.import_module("anthropic"),
+                             name="calaverita-warm", daemon=True).start()
 
     def _clients(self, own: str) -> list:
         """In the worker: a first SDK import must not be silence before the lead. The visit's
@@ -84,6 +98,15 @@ class CalaveritaRun:
                                                           timeout_s=self.cfg.calaverita_compose_s))
                               for _ in range(max(1, self.cfg.calaverita_versions))]
         return self._own_llms
+
+    def _mode(self) -> tuple[str, str]:
+        """("llm" | "script", why): the model whenever it can be trusted, even under a scripted
+        house (FISH_SHOW=script on the board): a verse from clips is not this visitor's."""
+        if self.c.echo:
+            return "script", "echo"
+        show_run = self.c.show
+        ok, why = show_run.model_ok() if show_run is not None else model_trusted(self.c)
+        return ("llm" if ok else "script"), why
 
     # ---- clips -------------------------------------------------------------------------------------
     def _pick(self, slot: str, names: list[str]) -> str:
@@ -143,7 +166,7 @@ class CalaveritaRun:
     def _compose(self, rec: dict) -> None:
         self.f._probe_printer()
         lead = [self._pool("lead")]
-        mode, why = self.f.mode_now()
+        mode, why = self._mode()
         rec["own"] = self._own_profile()
         stale = self._own_stale if rec["own"] else self.c._stale.get("llm")
         if mode == "llm" and stale is not None and not stale.done.is_set():
@@ -152,9 +175,14 @@ class CalaveritaRun:
             rec["why"] = why
             return self._fallback(rec, lead, "clips")
         job, box = self._start(rec)
-        rec["clips"] += lead + [self._pool("suspense")]
-        self.f._say(lead + [rec["clips"][-1]])
-        if not self._wait(rec, job, box):
+        try:
+            rec["clips"] += lead + [self._pool("suspense")]
+            self.f._say(lead + [rec["clips"][-1]])
+            waited = self._wait(rec, job, box)
+        except BaseException:                     # the clips failed: the job must not be left loose
+            self._let_go(rec, job, box)
+            raise
+        if not waited:
             return self._fallback(rec, [], "clips")
         raw, wav, stanzas, err = job.result
         if err or not stanzas or wav is None:
@@ -204,7 +232,7 @@ class CalaveritaRun:
             if r["stanzas"] and not stanzas:
                 box["why"] = f"only {r['rhymed']} of {calaverita.STANZAS} stanzas rhymed in {r['versions']} versions"
             wav = None
-            if stanzas:
+            if stanzas and not box["gone"]:
                 try:
                     wav = speaker.synthesize(calaverita.spoken_verse(stanzas), box["timing"])
                 except Exception as e:
@@ -228,12 +256,7 @@ class CalaveritaRun:
                 self.f._say([name])
                 continue
             if now >= deadline:
-                box["gone"] = True
-                job.abandon()
-                if rec["own"]:
-                    self._own_stale = job         # the next tap goes to the clips while it runs
-                else:
-                    c._stale["llm"] = job         # the next turn waits for it, never asks twice
+                self._let_go(rec, job, box)
                 why = f"timeout after {self.cfg.calaverita_s:g} s"
                 if box["reply"]:                  # the model answered, the voice was slow
                     rec["why"] = why + " (the voice)"
@@ -248,6 +271,15 @@ class CalaveritaRun:
             self._model_failed(rec, f"error: {type(job.exc).__name__}")
             return False
         return True
+
+    def _let_go(self, rec: dict, job, box: dict) -> None:
+        """Give up on a running job: its voice is dropped and nothing asks the model beside it."""
+        box["gone"] = True
+        job.abandon()
+        if rec["own"]:
+            self._own_stale = job                 # the next tap goes to the clips while it runs
+        else:
+            self.c._stale["llm"] = job            # the next turn waits for it, never asks twice
 
     def _model_failed(self, rec: dict, why: str) -> None:
         print(f"[calaverita] the model gave way to the clips: {why}", flush=True)

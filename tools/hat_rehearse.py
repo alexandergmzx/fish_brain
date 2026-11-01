@@ -295,7 +295,7 @@ def run_visit(llm, cfg, visitor: dict, *, clock=None) -> dict:
                                             else "the visit did not reach the verdict"]}
 
 
-# ---- the calaverita's arms (ADR 0033) ----------------------------------------------------------
+# ---- the calaverita's arms (ADR 0034) ----------------------------------------------------------
 def compose_verse(llm, cfg, visitor: dict, rec: dict, *, thinking: str | None) -> dict:
     """One calaverita from a visit's record, as the act asks for it (the same tag, rules, no
     history); never run through the act's clips."""

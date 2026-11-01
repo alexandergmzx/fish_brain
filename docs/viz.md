@@ -362,7 +362,7 @@ nothing of them reaches `/status` or `/face`.
   {"cues": {…}}`** (the chips; `400` on a value that is not one of the fixed words), **`POST
   /show {"action": "answer"|"force"|"skip", "value"}`** (the scripted visit's taps; `400`,
   `409 busy`, `200 {ok, visit}`).
-- **`POST /fortune {"action": "start"|"skip"|"end", "value"}`**: `start` opens a fortune
+- **`POST /fortune {"action": "start"|"consulta"|"skip"|"end", "value"}`** (`consulta`: ADR 0032, 409 with `why` when it cannot start): `start` opens a fortune
   (`value` the typed name, at most 20 characters, or empty: after a verdict within 10 min the
   act carries the house and the first name by itself), `skip` passes the open question with a
   bridge line, `end` goes to the ending now. Answers: `400 {"ok": false, "error": …}` on a bad
@@ -373,7 +373,7 @@ nothing of them reaches `/status` or `/face`.
   the inbox: the next `visit` event shows the act. A start is refused in the loop, silently for
   the visitor, while the question clips are not cached (`fortune.ready` false: the page greys
   the button). "New visitor" or a typed name while a fortune is open drops it without a line.
-- **The calaverita** (ADR 0033): `fortune.calaverita` is `{lit, why, busy, first, last}`; `why` is
+- **The calaverita** (ADR 0034): `fortune.calaverita` is `{lit, why, busy, first, last}`; `why` is
   `no house`, `too late`, `act open` or `lines not ready`, `last` the visit's last verse
   `{visit, n, first, house, verse}` or null. `POST /fortune {"action": "calaverita", "value": name}`
   gets `409 {"why": …}` for the same reasons, `409 {"busy": true}` while the loop is not listening.

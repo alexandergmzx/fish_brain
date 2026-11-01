@@ -7,7 +7,7 @@ from fish_brain import fortune_bank, texts
 def test_every_file_loads_and_the_bank_is_whole():
     for name in ("visit.md", "ask.md", "reading.md"):
         assert texts.rules(name).strip() and not texts.rules(name).endswith("\n")
-    assert len(fortune_bank.FORTUNE_PHRASES) == 183
+    assert len(fortune_bank.FORTUNE_PHRASES) == 197
 
 
 def test_a_broken_lines_file_names_itself(tmp_path):

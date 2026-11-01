@@ -193,10 +193,11 @@ class Speaker:
         timing["_t0"] = t0
         return wav
 
-    def perform(self, wav: str | Path, text: str, timing: dict, *, role: str = "fish") -> bool:
+    def perform(self, wav: str | Path, text: str, timing: dict, *, role: str = "fish",
+                wait_s: float = 0.0) -> bool:
         """Say a WAV rendered by `synthesize`, under the lock; the file is deleted. Returns
-        False when the fish is already speaking (dropped), like `speak`."""
-        if not self._lock.acquire(blocking=False):
+        False when the fish is already speaking after `wait_s` (dropped), like `speak`."""
+        if not self._lock.acquire(timeout=wait_s) if wait_s > 0 else not self._lock.acquire(blocking=False):
             Path(wav).unlink(missing_ok=True)
             return False
         try:

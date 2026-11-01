@@ -1,4 +1,4 @@
-"""La calaverita, pure (ADR 0033): its clips' names and texts from prompts/calaverita.toml, the tag
+"""La calaverita, pure (ADR 0034): its clips' names and texts from prompts/calaverita.toml, the tag
 sent to the model and the checks on the verse it sends back. calaverita_run.py is the act."""
 from __future__ import annotations
 

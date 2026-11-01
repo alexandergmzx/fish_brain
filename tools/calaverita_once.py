@@ -64,7 +64,7 @@ def main() -> int:
         for said in args[2:] or ["La estudio primero", "Un negocio con un amigo"]:
             c.visit.hear(said)
         c.visit.delivered(house)
-        c.fortune.mode_now = lambda: ("llm", "forced")
+        c.show.model_ok = lambda: (True, "forced")
         c._handle_item(FortuneInput("calaverita", ""))
         print("verse from:", c.fortune.calaverita._own_llms[0].cfg.model if c.fortune.calaverita._own_llms else "clips")
     return 0

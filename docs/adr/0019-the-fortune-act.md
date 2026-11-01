@@ -165,3 +165,7 @@ the question once more, narrower, once a question and outside the act's budget o
 latest sentence that names a card or says yes or no, so a protest that ends "Sí, saco una carta"
 is the hat's draw. The name the visitor says to the greeting, when the hat echoes it, reaches the
 fortune like a typed one.
+
+## Amendment, 2026-11-01
+
+Decision 9: with `FISH_FORTUNE_MODEL=true` the mode is the trust check alone, not the show's (ADR 0015). The reading and the clips carry no burla (ADR 0030).

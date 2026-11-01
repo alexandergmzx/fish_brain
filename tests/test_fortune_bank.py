@@ -95,7 +95,7 @@ def test_every_datum_has_its_clip():
 
 
 def test_the_counts_are_the_plans():
-    kinds = {"q": 5, "rq": 5, "re_fecha": 12, "re_sueno": 21, "re_deseo": 6, "re_carta_tarot": 22,
+    kinds = {"q": 7, "rq": 7, "consulta": 10, "re_fecha": 12, "re_sueno": 21, "re_deseo": 6, "re_carta_tarot": 22,
              "re_taza": 11, "nombre_tarot": 22, "reves": 1, "num": 9, "luna": 8, "intro": 12,
              "vision": 6, "bridge": 2, "suspense": 2, "magic": 12, "cierre": 8, "beat": 12,
              "barajo": 3, "sin_carta": 2, "suspense_mas": 2}
@@ -109,7 +109,7 @@ def test_the_counts_are_the_plans():
         else:
             raise AssertionError(name)
     assert got == kinds
-    assert sum(kinds.values()) == len(P) == 183
+    assert sum(kinds.values()) == len(P) == 197
 
 
 def test_magic_words_one_per_clip_in_order():
@@ -176,7 +176,7 @@ def test_the_rules_are_the_oracles():
     assert "FORMATO" in r and "REGLAS FIJAS" in r and "setenta y cinco palabras" in r
     # ADR 0027: the old sorcerer's oracle over the roast's bones (ADR 0026)
     assert "voz de oráculo" in r and "UNA SOLA PROFECÍA SOBRE SU DESEO" in r
-    assert "roast" not in r and "búrlate" not in r and "Sin burla" in r
+    assert "roast" not in r and "burl" not in r and "mala lengua" not in r
     assert "lo leíste en su cabeza" in r and "dos lecturas" in r
     assert "Cuídate" in r or "cuídate" in r
     assert "ay de ti" in r and "el de rito=" in r and "mal de ojo" in r

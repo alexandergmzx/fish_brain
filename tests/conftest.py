@@ -21,5 +21,5 @@ def _no_fillers(monkeypatch):
                  "FISH_PLACE_TEXT", "FISH_FORTUNE_DECK", "FISH_FORTUNE_CUP",
                  "FISH_TTS_RATE_FACTOR", "FISH_TTS_PITCH_ST", "FISH_TTS_TEMPO",
                  "FISH_PRINTER", "FISH_PRINTER_CHANNEL", "FISH_FORTUNE_TICKET",
-                 "FISH_CALAVERITA_THINKING", "FISH_CALAVERITA_PROFILE"):
+                 "FISH_FORTUNE_MODEL", "FISH_CALAVERITA_THINKING", "FISH_CALAVERITA_PROFILE"):
         monkeypatch.delenv(name, raising=False)

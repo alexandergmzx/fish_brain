@@ -307,6 +307,8 @@ def make(monkeypatch, tmp_path):
         c.speaker = speaker or Speaker()
         c._llm = llm if llm is not None else LLM()
         c.clock = clock
+        if mode == "script":                      # these tests are about the clips
+            c.show.model_ok = lambda: (False, "no trust")
         c.visit.start(first, clock.t)
         c.visit.set_cues({"edad": "adulto"})
         c.visit.hear("Un libro")
@@ -323,7 +325,7 @@ def tap(c, name=""):
 
 
 def online_mode(c, monkeypatch):
-    monkeypatch.setattr(c.show, "mode_now", lambda: ("llm", "trusted"))
+    monkeypatch.setattr(c.show, "model_ok", lambda: (True, "trusted"))
 
 
 def test_the_model_verse_is_said_shown_and_printed_after_the_lead(make, monkeypatch):
@@ -483,6 +485,15 @@ def test_an_exception_says_no_error_line_and_the_loop_goes_on(make, monkeypatch)
     assert p.submitted == [] and c.speaker.all() == [] and not c.fortune.calaverita.busy
 
 
+def test_clips_that_fail_during_the_wait_let_the_job_go(make, monkeypatch):
+    c = make(llm=LLM(delay=0.05), speaker=Speaker(tts_error=True))
+    online_mode(c, monkeypatch)
+    monkeypatch.setattr(c.speaker, "say_sequence", lambda names, **kw: (_ for _ in ()).throw(ValueError("bad wav")))
+    assert tap(c) is True
+    assert c._stale.get("llm") is not None and not c.fortune.calaverita.busy
+    c._stale["llm"].done.wait(2)
+
+
 def test_a_stop_signal_starts_no_ticket(make, monkeypatch):
     p = Printer()
     c = make(mode="script", printer=p)
@@ -494,6 +505,30 @@ def test_a_stop_signal_starts_no_ticket(make, monkeypatch):
     with pytest.raises(KeyboardInterrupt):
         tap(c)
     assert p.submitted == [] and not c.fortune.calaverita.busy
+
+
+def test_a_scripted_house_still_gets_the_models_verse_and_echo_the_clips(make, monkeypatch):
+    c = make(mode="script")                       # FISH_SHOW=script on the board
+    online_mode(c, monkeypatch)
+    tap(c)
+    assert c._llm.asked and c.speaker.performed
+    c = make(mode="script")
+    online_mode(c, monkeypatch)
+    c.echo = True
+    tap(c)
+    assert c._llm.asked == [] and c.speaker.performed == []
+
+
+def test_a_verdict_from_the_script_gives_the_model_its_answers(make, monkeypatch):
+    c = make(mode="script", house=None, first="")
+    online_mode(c, monkeypatch)
+    c.visit.heard = []
+    c.show.start("test")
+    while c.show.open:
+        c.show.answer("no sé, la verdad")
+    assert c.visit.house and "no sé, la verdad" in c.visit.heard
+    tap(c, "Leo")
+    assert "nombre=Leo" in c._llm.asked[0] and "no sé, la verdad" in c._llm.asked[0]
 
 
 # ---- its own model ----------------------------------------------------------------------------
@@ -533,8 +568,8 @@ def test_sonnet_is_the_default_and_main_or_no_key_is_the_visits_model(make, monk
     c.cfg.fortune.calaverita_profile = "main"
     assert r._own_profile() == ""
     c.cfg.fortune.calaverita_profile = "claude-sonnet"
-    c.cfg.llm.profile = "claude-sonnet"
-    assert r._own_profile() == ""
+    c.cfg.llm.profile = "claude-sonnet"                  # the board: still a client per version
+    assert r._own_profile() == "claude-sonnet"
 
 
 def test_a_sonnet_outage_does_not_script_the_visits(make, monkeypatch):
