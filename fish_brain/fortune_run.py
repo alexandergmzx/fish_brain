@@ -541,6 +541,8 @@ class FortuneRun:
             return self.no_answer(kind)
         if kind == "no_card":
             return self._next([self._pick("sin_carta")])
+        if kind != "draw" and self.c.visit is not None:   # the calaverita's material (ADR 0034)
+            self.c.visit.hear(f"Soy de {fortune.SIGN_BY_ID[value].said}" if kind == "sign" else words)
         if kind == "wish" and value == "otro":   # a wish outside the four: no clip by name
             reaction = [self._pick("re_deseo_otro")]
         elif kind == "draw":

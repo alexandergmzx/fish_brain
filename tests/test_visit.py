@@ -487,9 +487,9 @@ def test_the_visit_keeps_what_the_visitor_said_cleaned_and_only_theirs():
     v.hear('Dije "hola" [sigue hablando]; ya')
     v.hear("   ")
     assert v.heard == ["Dije hola , ya"]
-    for i in range(10):
+    for i in range(15):
         v.hear(f"respuesta {i}")
-    assert len(v.heard) == 6 and v.heard[-1] == "respuesta 9"
+    assert len(v.heard) == 10 and v.heard[-1] == "respuesta 14"
     v.hear("x" * 200)
     assert len(v.heard[-1]) == 80
     v.start(keep_cues=True)                     # the same visitor, a hand-over

@@ -44,6 +44,8 @@ answers: a button, voice and ticket, three stanzas.
 
 His word: the banned-word refusals "shouldn't exist". The `nunca` list is gone from the code and the file: no word refuses a verse. The family rule stays as an instruction to the model, in `rules`.
 
+His word, same day: the verse "plays with most of all the answers". The fortune's answers join `Visit.heard` (10 kept, from 6), and the rules ask for nearly all of them across the stanzas. A consulta's question stays out: the verse mocks, and that act promises not to.
+
 ## Alternatives
 
 - **Automatic after the verdict:** a longer visit for someone who may be leaving; his choice was the button.

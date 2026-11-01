@@ -1362,3 +1362,13 @@ def test_the_real_speaker_calls_at_just_before_its_clip(monkeypatch, capsys):
     assert played == ["a", "b"] and "the call at b failed" in capsys.readouterr().out
     played.clear()
     assert sp.say_sequence(["a", "b"], at=("z", boom)) and played == ["a", "b"]
+
+
+def test_the_fortunes_answers_reach_the_calaverita(make):
+    c = make()
+    start(c)
+    say(c, "12 de junio.")
+    say(c, "No.")
+    say(c, "Soñé con arañas.")
+    say(c, "Viajar mucho.")
+    assert c.visit.heard == ["Soy de Géminis", "Soñé con arañas.", "Viajar mucho."]

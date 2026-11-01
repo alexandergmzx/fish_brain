@@ -128,7 +128,7 @@ def rhyme_key(line: str) -> str:
     words = re.findall(r"[^\W\d_]+", line.lower())
     if not words:
         return ""
-    word = words[-1]
+    word = re.sub(r"(?<=[qg])u(?=[eiéí])", "", words[-1])   # conseguir and pedir: the u is silent
     back, at = _stress(word), 0
     spans = [m.start() for m in re.finditer(r"[aeiouáéíóúü]+", word)]
     if spans:

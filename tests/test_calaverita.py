@@ -669,3 +669,9 @@ def test_the_fish_has_no_calaverita(monkeypatch):
 def test_the_record_goes_to_disk():
     from fish_brain import debug
     assert "calaverita" in debug._RECORD_KINDS
+
+
+@pytest.mark.parametrize("a, b", [("a pedir", "va a conseguir"), ("quiero", "dinero"), ("quien", "bien"),
+                                  ("seguir", "vivir"), ("siguiente", "gente"), ("aquí", "allí")])
+def test_a_silent_u_still_rhymes(a, b):
+    assert cal.pair_rhymes(a, b)

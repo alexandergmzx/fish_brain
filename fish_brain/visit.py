@@ -195,7 +195,7 @@ def clean_cue_text(text, limit: int = CUE_TEXT_MAX) -> str:
 
 
 HEARD_MAX = 80             # characters kept of one answer
-HEARD_KEEP = 6             # answers kept of one visit
+HEARD_KEEP = 10            # answers kept of one visit: the house act and the fortune
 _HEARD_NOTE = re.compile(r"\[[^\]]*\]")   # a note on the text ("still talking"), never their words
 
 
