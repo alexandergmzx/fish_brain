@@ -399,7 +399,7 @@ def compose_verse(llm, cfg, visitor: dict, rec: dict, *, thinking: str | None) -
     raw = llm.reply(tag, remember=False)
     stanzas = calaverita.stanzas_of(raw)
     problems = [llm.last_error] if llm.last_error else calaverita.verse_problems(stanzas)
-    return {"tag": tag, "raw": raw, "stanzas": stanzas, "problems": problems,
+    return {"tag": tag, "raw": raw, "verse": stanzas, "problems": problems,
             "s": getattr(llm, "last_latency_s", 0.0), "usage": getattr(llm, "last_usage", None),
             **verse_metrics(stanzas)}
 
@@ -436,7 +436,7 @@ def run_calaverita_arms(arms: list[str], takes: int, cfg, visits: list, out: Pat
                         f"lines within one of 8, {r['rhymed']}/{r['stanzas']} stanzas rhymed")
                 write(head + (" · REFUSED: " + "; ".join(r["problems"]) if r["problems"] else "") + "\n")
                 write("`" + r["tag"] + "`\n")
-                write("\n\n".join("  \n".join(s) for s in r["stanzas"]) + "\n")
+                write("\n\n".join("  \n".join(s) for s in r["verse"]) + "\n")
         refused = sum(bool(r["problems"]) for r in takes_done)
         bad += refused
         lines = sum(r["lines"] for r in takes_done) or 1
