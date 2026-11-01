@@ -18,7 +18,7 @@ El Diablo by name; a drink or a song only in the `fiesta` pools; gender-neutral;
 time, no venue name, no word list (ADR 0025); at most two sentences and about
 35 words; prompts end in a question; the date prompt says the year is never asked.
 FORTUNE_RULES is the model's brief for its one reading call, in the shape of the visit's; the
-roast's bones since ADR 0026, the old sorcerer's oracle voice over them since ADR 0027, as are
+structure of ADR 0026, the old sorcerer's oracle voice over it since ADR 0027, no mockery since ADR 0032, as are
 the clips said only in model mode (the beats, the shuffle, the suspense lines). GANCHOS, RITOS and FORMAS are not clips: the act deals one
 of each into the model's tag.
 """
@@ -58,7 +58,7 @@ CARD_NAME_LINES: dict[str, dict[int, str]] = _by_number(texts.lines()["card_name
 REVERSED_LINE = texts.lines()["reversed"]
 
 # The cards the hat draws itself: every card once, and the five dark ones twice, dealt before
-# repeat (a design choice, not measured: the roast wants them more often). A "_bis" is the
+# repeat (a design choice, not measured: the oracle's dark cards come more often). A "_bis" is the
 # second copy of the same card.
 HAT_DRAW_EXTRA: dict[str, tuple[int, ...]] = {"tarot": (13, 15, 16, 18, 6)}
 REVERSED_BAG = ("derecha_1", "derecha_2", "cabeza")     # one hat draw in three, in model mode
@@ -203,7 +203,7 @@ FORTUNE_PHRASES: dict[str, str] = _phrases()
 
 
 # The model's brief for its one reading call (fortune_run.py: a fresh history, the data and the
-# seeds in the tag, the reply through fortune.clean_reading). A roast since ADR 0026: one story
-# about the wish, one sting, a task with a day. The bans below are on stock phrases, not on
+# seeds in the tag, the reply through fortune.clean_reading). One story about the wish since ADR
+# 0026, no mockery since ADR 0032, a task with a day. The bans below are on stock phrases, not on
 # topics (ADR 0025).
 FORTUNE_RULES = texts.rules("reading.md")

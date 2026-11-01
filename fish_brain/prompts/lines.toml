@@ -3,10 +3,10 @@
 # the board renders what changed. Limits: tests/test_fortune_bank.py (about 35 words, two sentences;
 # a question ends in "?"; a beat up to 9 words). Run the tests after an edit.
 
-# The visit's greeting, said to every new visitor.
-visit_greeting = "Soy el Sombrero Seleccionador, y he estado sobre cabezas peores que la tuya, no muchas. Dime tu nombre y préstame lo que traes adentro."
+# The model visit's greeting (Auto or Model on the page); under script the house act greets from pools.greet.
+visit_greeting = "Soy el Sombrero Seleccionador, dime tu nombre."
 # Said after the card's name when it comes out reversed.
-reversed = "Y salió de cabeza, como casi todas tus decisiones. Ahora enseña su lado malo."
+reversed = "Y salió de cabeza. Ahora enseña su lado oscuro."
 # The model's seeds, not clips: one of each per reading, reworded by the model.
 ganchos = [
     "un chat que tienes silenciado y abres a escondidas",
@@ -60,15 +60,15 @@ ritos = [
 # magic has one word per line, in the order of fortune.MAGIC_WORDS.
 [pools]
 intro_casa = [
-    "Los que ya cruzaron conocen esta casa y me contaron de ti, y no te defendieron. Acércate, que te voy a leer el futuro, y ahí tampoco te defiende nadie.",
+    "Los que ya cruzaron conocen esta casa, y me contaron de ti. Acércate, que te voy a leer el futuro.",
     "En esta casa todos saben lo que hiciste, y en la comida nadie lo menciona. Yo no como: acércate, que te voy a leer el futuro en voz alta.",
 ]
 intro_fiesta = [
-    "Deja el trago en la mesa: ya hablaste de más y todavía te falta lo peor. Ponme en la cabeza, que te leo el futuro, y mañana no vas a poder culpar al alcohol.",
-    "Todos aquí fingen divertirse con la copa en la mano, y tú lo finges peor que nadie. Acércate, que te voy a leer el futuro, y de ese no te saca otra ronda.",
+    "Deja el trago en la mesa: todavía te falta lo peor. Ponme en la cabeza, que te leo el futuro, y mañana no vas a poder culpar al alcohol.",
+    "Todos aquí fingen divertirse con la copa en la mano. Acércate, que te voy a leer el futuro, y de ese no te saca otra ronda.",
 ]
 intro_universidad = [
-    "Por estos pasillos pasa mucha gente que lo sabe todo y no ve venir nada, y tú vas a la cabeza. Acércate, que a ti también te voy a leer el futuro.",
+    "Por estos pasillos pasa mucha gente que lo sabe todo y no ve venir nada. Acércate, que a ti te voy a leer el futuro.",
     "Aquí se examina todo menos lo que traes en la cabeza. Déjame verla, que te voy a leer el futuro, y conmigo no hay extraordinario.",
 ]
 intro_otro = [
@@ -76,16 +76,16 @@ intro_otro = [
     "Viniste por curiosidad, y eso mismo dijo la última cabeza que salió de aquí sin color. Acércate, que te voy a leer el futuro, y luego vemos de qué color sales.",
 ]
 intro_G = [
-    "Gryffindor, claro: mucho pecho, y la cabeza te llega después. Quédate, que te leo el futuro con lo que haya.",
+    "Gryffindor: el pecho por delante, y lo que viene llega de frente. Quédate, que te leo el futuro.",
 ]
 intro_H = [
-    "Hufflepuff: cargas con el trabajo de todos y todavía das las gracias. Quédate, que te voy a leer el futuro, y también ahí te toca pagar lo de otros.",
+    "Hufflepuff: cargas con el trabajo de todos. Quédate, que te voy a leer el futuro, y también ahí te toca pagar lo de otros.",
 ]
 intro_R = [
-    "Ravenclaw: sabes el porqué de todo, y ninguno te ha sacado de un problema. Quédate, que te voy a leer el futuro, y esto no lo vas a poder corregir.",
+    "Ravenclaw: sabes el porqué de todo. Quédate, que te voy a leer el futuro, y esto no lo vas a poder corregir.",
 ]
 intro_S = [
-    "Slytherin: desde las mazmorras haces planes para todo, y no tienes a quién contárselos. Quédate, que te voy a leer el futuro, y ese plan no lo hiciste tú.",
+    "Slytherin: desde las mazmorras haces planes para todo. Quédate, que te voy a leer el futuro, y ese plan no lo hiciste tú.",
 ]
 vision = [
     "Sueñas así porque tienes mucha imaginación, y guardas cosas que no le cuentas a nadie. Lo veo, y no me lo tienes que confirmar.",
@@ -96,43 +96,43 @@ vision = [
     "Veo algo más en ese sueño: un animal, o alguien que corre, o un lugar muy alto. Quédate con el que te suene, que ese era.",
 ]
 re_deseo_otro = [
-    "Eso no venía en mi lista, y por eso me gusta. Lo apunto, y no pregunto para qué.",
-    "Pedido raro, pedido sincero. Lo guardo en el forro, junto con lo que no se dice en voz alta.",
+    "Eso no venía en mi lista. Lo apunto.",
+    "Pedido sincero. Lo guardo en el forro, junto con lo que no se dice en voz alta.",
 ]
 beat = [
-    "Mucha cabeza, y adentro puro eco.",
-    "Lo apunto. A mi pesar.",
-    "Tu cabeza ya lo había dicho, y mejor.",
-    "He oído cosas peores, pero no hoy.",
-    "Ensayado en el baño, se nota.",
-    "Con eso no te fían ni en la tienda.",
-    "Hasta el trol lo habría dicho más claro.",
-    "Me aburrí antes de que acabaras.",
-    "Tanto pensarlo para eso.",
-    "Ya veo por qué no te invitan dos veces.",
-    "Mis costuras se aflojan cuando hablas.",
-    "Te creo menos que al entrar.",
+    "Lo apunto.",
+    "Ya lo tengo.",
+    "Así lo oí.",
+    "Queda en el forro.",
+    "Lo vi antes de que hablaras.",
+    "Eso pesa, y lo guardo.",
+    "Mis costuras ya lo sabían.",
+    "Sigo bajando.",
+    "Eso me basta.",
+    "Ya voy viendo.",
+    "Te oí.",
+    "Lo guardo para el final.",
 ]
 barajo = [
-    "Mi baraja vive en el forro y baraja sola. Tú no toques nada, que todo lo descompones.",
-    "Cierra los ojos, que a las cartas les da pena verte. Yo barajo.",
-    "Aquí adentro las cartas cambian de lugar como las escaleras. La que salga, salió por lástima.",
+    "Mi baraja vive en el forro y baraja sola. Tú no toques nada.",
+    "Cierra los ojos. Yo barajo.",
+    "Aquí adentro las cartas cambian de lugar como las escaleras. La que salga, esa es.",
 ]
 sin_carta = [
-    "Sin carta, pues. Hay quien no abre el recibo y cree que no debe.",
-    "Como quieras, criatura. Las cartas tampoco querían verte.",
+    "Sin carta, pues. El recibo llega igual.",
+    "Como quieras, criatura. Las cartas se quedan donde están.",
 ]
 bridge = [
-    "Con eso me basta, y me sobra. Lo demás ya lo traes escrito en la cabeza, con mala letra.",
+    "Con eso me basta. Lo demás ya lo traes escrito en la cabeza.",
     "Ya dijiste más de lo que te convenía. Ahora hablo yo.",
 ]
 suspense = [
     "Silencio. Me estoy metiendo a lo que no le enseñas a nadie.",
-    "No te muevas. Estoy en el fondo de tu cabeza, y aquí no ha entrado una escoba.",
+    "No te muevas. Estoy en el fondo de tu cabeza, y aquí nadie había entrado.",
 ]
 suspense_mas = [
     "Todavía no. Hay un cajón en tu cabeza que se atora, y ya sé por qué.",
-    "No me apures. Busco algo tuyo que valga la pena, y ya voy en el tercer cajón.",
+    "No me apures. Hay algo tuyo en el tercer cajón, y ya lo vi.",
 ]
 magic = [
     "Y tu palabra mágica de esta noche es Zumbalí. Dila bajito antes de dormir, y lo que soñaste vuelve con final feliz.",
@@ -149,49 +149,49 @@ magic = [
     "Tu palabra mágica de esta noche es Espantillo. Dila cuando algo rechine en la oscuridad, y lo que rechina se ríe contigo.",
 ]
 cierre_casa = [
-    "Ya te leí. Vuelve con tu familia y pon cara de que no oíste nada, que de eso vives.",
+    "Ya te leí. Vuelve con tu familia y pon cara de que no oíste nada.",
     "Ya empezó lo que te dije, y en esta casa alguien lo sabía antes que tú. Deja el lugar, que otra cabeza espera.",
 ]
 cierre_fiesta = [
     "Ahora sí, vuelve por tu trago: lo vas a necesitar más que hace rato.",
-    "Ve a brindar por tu futuro, que nadie más lo va a hacer. Antes de la última canción vas a saber por qué.",
+    "Ve a brindar por tu futuro. Antes de la última canción vas a saber por qué.",
 ]
 cierre_universidad = [
-    "Hasta aquí la clase, y no tomaste una sola nota. Lo que te dije viene en el examen, y el examen ya empezó.",
+    "Hasta aquí la clase. Lo que te dije viene en el examen, y el examen ya empezó.",
     "Te puedes levantar, que ya sé lo suficiente de ti. En estos pasillos nadie se va a enterar, hasta que se enteren todos.",
 ]
 cierre_otro = [
     "No pienso repetirlo, y tampoco vas a poder olvidarlo. Levántate y camina como si no te hubiera dicho nada.",
-    "Deja el lugar para otra cabeza, de preferencia una con más adentro. Ya sabes lo que te espera, y vas a hacer lo mismo de siempre.",
+    "Deja el lugar para otra cabeza. Ya sabes lo que te espera, y vas a hacer lo mismo de siempre.",
 ]
 
 # The questions: the prompt, and the narrower re-ask.
 [questions.fecha]
-prompt = "Empiezo por lo fácil, para que no te canses. ¿De qué signo eres?"
-reprompt = "Si tu signo te da vergüenza, dame el día y el mes en que naciste. ¿Cuándo fue?"
+prompt = "Empiezo por lo fácil. ¿De qué signo eres?"
+reprompt = "Si no lo sabes, dame el día y el mes en que naciste. ¿Cuándo fue?"
 
 [questions.sueno]
-prompt = "Tus días ya los leí, y no dan para mucho. ¿Qué fue lo último que soñaste?"
-reprompt = "Hasta tú sueñas algo. Aunque sea un pedazo: ¿te perseguían, te caías, se te caían los dientes, volabas, o salía alguien que ya cruzó?"
+prompt = "Tus días ya los leí. ¿Qué fue lo último que soñaste?"
+reprompt = "Todos sueñan algo. Aunque sea un pedazo: ¿te perseguían, te caías, se te caían los dientes, volabas, o salía alguien que ya cruzó?"
 
 [questions.deseo]
-prompt = "Aquí se pide amor, dinero, salud o venganza, y cada quien cree que lo inventó. ¿Cuál es tu deseo?"
-reprompt = "Este banco no se calienta de gratis. ¿Amor, dinero, salud, venganza, u otra cosa que te dé pena decir?"
+prompt = "Aquí se pide amor, dinero, salud o venganza. ¿Cuál es tu deseo?"
+reprompt = "Algo viniste a pedir. ¿Amor, dinero, salud, venganza, u otra cosa que no se dice en voz alta?"
 
 [questions.carta_tarot]
 prompt = "¿Quieres que te lea una carta?"
-reprompt = "Contesta sí o no, que la baraja se aburre. Y si ya sacaste una, ¿cuál te salió?"
+reprompt = "Contesta sí o no, que la baraja espera. Y si ya sacaste una, ¿cuál te salió?"
 
 [questions.taza]
-prompt = "Mira el fondo de tu taza, que es donde acaba todo lo que empiezas. ¿Qué figura ves?"
-reprompt = "Tu taza habla más que tú. Estrella, corazón, luna, anillo, animal, árbol, ojo, nube, llave o calabaza: ¿a cuál se parece?"
+prompt = "Mira el fondo de tu taza. ¿Qué figura ves?"
+reprompt = "Tu taza ya habló. Estrella, corazón, luna, anillo, animal, árbol, ojo, nube, llave o calabaza: ¿a cuál se parece?"
 
 # Reactions, said at once in clip mode and held as the fallback in model mode.
 [wishes]
-"amor" = "Amor, claro: nadie pide salud con el corazón así de alborotado. Lo apunto en el forro."
-"dinero" = "Dinero. Honesto, por lo menos: respeto a quien no finge que viene por la paz interior."
+"amor" = "Amor. Lo apunto en el forro."
+"dinero" = "Dinero. Lo apunto, y los duendes ya lo saben."
 "salud" = "Salud: lo único que no se compra, y lo que más me piden. Ya te escuché."
-"venganza" = "Venganza. Ay, eso no me lo piden seguido: lo apunto con letra bonita."
+"venganza" = "Venganza. Lo apunto con tinta que no se borra."
 
 [signs]
 "aries" = "Aries, de fuego: naciste con la mecha encendida, y esta noche alguien se quema si te lleva la contra. Calma, que del humo también salen buenas ideas."
@@ -266,28 +266,28 @@ reprompt = "Tu taza habla más que tú. Estrella, corazón, luna, anillo, animal
 
 # The card's name, said in model mode; the model reads the meaning.
 [card_names.tarot]
-"0" = "El Loco. Camina al borde, como tú."
-"1" = "El Mago. Mesa puesta, y nada servido."
+"0" = "El Loco. Camina al borde, sin mirar abajo."
+"1" = "El Mago. La mesa puesta, y todo por servirse."
 "2" = "La Sacerdotisa. Sabe lo tuyo, y calla."
-"3" = "La Emperatriz. Su trigo crece, tú no."
-"4" = "El Emperador. Ese trono no es tuyo."
-"5" = "El Sumo Sacerdote. Viene a regañarte, con razón."
-"6" = "Los Enamorados. Y tú mirando desde afuera."
-"7" = "El Carro. Dos bestias, ninguna te obedece."
-"8" = "La Fuerza. Tú ni un frasco abres."
-"9" = "El Ermitaño. Linterna prendida, y nadie viene."
-"10" = "La Rueda de la Fortuna. Ya te pasó por encima."
+"3" = "La Emperatriz. Su trigo crece sin pedir permiso."
+"4" = "El Emperador. Ese trono ya tiene dueño."
+"5" = "El Sumo Sacerdote. Viene con dos llaves."
+"6" = "Los Enamorados. Uno de los dos va a escoger."
+"7" = "El Carro. Dos bestias, y cada una jala para su lado."
+"8" = "La Fuerza. Cierra la boca del león."
+"9" = "El Ermitaño. Su linterna alumbra un solo paso."
+"10" = "La Rueda de la Fortuna. Ya está girando."
 "11" = "La Justicia. Su espada ya te midió."
-"12" = "El Colgado. Así cuelgan tus pendientes."
+"12" = "El Colgado. De cabeza, y no pide que lo bajen."
 "13" = "La Muerte. Ya sabe dónde vives."
-"14" = "La Templanza. Mide lo que tú derramas."
-"15" = "El Diablo. Cadenas flojas, y ahí sigues."
+"14" = "La Templanza. Pasa el agua sin derramarla."
+"15" = "El Diablo. Las cadenas están flojas."
 "16" = "La Torre. La tuya ya estaba cuarteada."
-"17" = "La Estrella. Desnuda, y ni te mira."
-"18" = "La Luna. Hasta los perros te aúllan."
-"19" = "El Sol. Ese niño ya te rebasó."
+"17" = "La Estrella. Vierte su agua en la noche."
+"18" = "La Luna. Los perros le aúllan."
+"19" = "El Sol. Un niño sobre un caballo blanco."
 "20" = "El Juicio. La trompeta es por ti."
-"21" = "El Mundo. Ella baila, tú no terminas."
+"21" = "El Mundo. Ella baila dentro de la corona."
 
 # The card's meaning, clip mode.
 [cards.tarot]

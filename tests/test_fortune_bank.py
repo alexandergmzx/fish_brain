@@ -176,7 +176,7 @@ def test_the_rules_are_the_oracles():
     assert "FORMATO" in r and "REGLAS FIJAS" in r and "setenta y cinco palabras" in r
     # ADR 0027: the old sorcerer's oracle over the roast's bones (ADR 0026)
     assert "voz de oráculo" in r and "UNA SOLA PROFECÍA SOBRE SU DESEO" in r
-    assert "roast" not in r and "búrlate" not in r and "Sin burla" in r
+    assert "roast" not in r and "burl" not in r and "mala lengua" not in r
     assert "lo leíste en su cabeza" in r and "dos lecturas" in r
     assert "Cuídate" in r or "cuídate" in r
     assert "ay de ti" in r and "el de rito=" in r and "mal de ojo" in r
