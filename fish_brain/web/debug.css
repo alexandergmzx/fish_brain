@@ -422,3 +422,6 @@ body.still .perch { animation: none !important; }
 .bt-ask { margin: 8px 0; padding: 8px; border-radius: 8px; background: rgba(127,127,127,.08); }
 #btPin { min-height: 44px; flex: 1 1 8em; min-width: 0; font-size: 16px; padding: 0 10px; background: var(--hoja-campo); color: var(--hoja-texto); border: 1px solid var(--hoja-linea); border-radius: 8px; }
 #btAllBtn { margin-top: 6px; }
+
+/* The calaverita's verse: its own lines and stanzas, as printed. */
+.verse { white-space: pre-line; margin: 6px 0 10px; line-height: 1.35; overflow-wrap: anywhere; }

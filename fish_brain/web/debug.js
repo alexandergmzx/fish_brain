@@ -110,7 +110,10 @@
   // One sentence for every refusal a POST can bring back (docs/debug.md): the status first, then
   // the server's `why` or `error`. `what` names the act a 503 says is off ("the fortune").
   const WHY = { "visit open": "finish the visit first (or Force a house)",
-                "printing": "a ticket is printing: wait for it", "no ticket yet": "no fortune has ended yet" };
+                "printing": "a ticket is printing: wait for it", "no ticket yet": "no fortune has ended yet",
+                "act open": "a fortune is open: end it first", "no house": "give a house first",
+                "too late": "the verdict was over ten minutes ago: start a new visitor",
+                "lines not ready": "its lines are still rendering: wait" };
   const BUSY = { recording: "the hat is recording", speaking: "the hat is speaking",
                  "a phone is the microphone": "a phone is the microphone", "link off": "the motor link is off",
                  "test running": "a test is running", working: "a speaker is being connected", "not heard": "the phrase was not heard" };
@@ -2001,6 +2004,7 @@
     const row = $("fortuneRow"), btn = $("fortuneBtn"), q = $("fortuneQ"), heard = $("fortuneHeard");
     const data = $("fortuneData"), last = $("fortuneLast");
     const tRow = $("ticketRow"), tLine = $("ticketLine"), reprintBtn = $("reprintBtn");
+    const calBtn = $("calaveritaBtn"), calVerse = $("calaveritaVerse");
     let tBusy = false, tAt = 0;
     let open = false, ready = false, wantOpen = false, btnTimer = 0, still = false, label = "🔮 Fortune";
     function refuse(out) {
@@ -2017,7 +2021,22 @@
       btn.textContent = label + (ready ? "" : " · rendering…");
       btn.title = !ready ? "its lines are still rendering: wait" : open ? "a fortune is open" : "";
     }
+    // The calaverita: the server says whether it may start (`lit`, and `why` not) and has its last
+    // verse for this visitor; a tap asks, the view that follows paints.
+    const CAL_WHY = { "no house": "after a House's verdict", "too late": "more than ten minutes since the verdict",
+                      "act open": "a fortune is open", "lines not ready": "its lines are still rendering" };
+    function drawCalaverita(cal) {
+      if (!cal) return;
+      calBtn.disabled = !cal.lit;
+      calBtn.classList.toggle("dim", !cal.lit);
+      calBtn.textContent = cal.busy ? "💀 Composing…" : "💀 Calaverita" + (cal.first ? " for " + cal.first : "");
+      calBtn.title = cal.busy ? "" : CAL_WHY[cal.why] || "";
+      const verse = cal.last && cal.last.verse;
+      calVerse.hidden = !verse;
+      calVerse.textContent = verse || "";
+    }
     function draw(f, v) {
+      drawCalaverita(f.calaverita);
       open = !!f.open;
       if (open && wantOpen) { wantOpen = false; clearTimeout(btnTimer); }
       row.hidden = !open;
@@ -2082,6 +2101,14 @@
       wantOpen = false; paint();
       refuse(out);
     });
+    calBtn.addEventListener("click", async () => {
+      if (calBtn.disabled || reader.busy()) return;
+      visitRow.flush();
+      calBtn.disabled = true;
+      const out = await post("/fortune", { action: "calaverita", value: reader.name().slice(0, 20) });
+      if (!out.ok) { calBtn.disabled = false; msg(null, "calaverita: " + explain(out, "the calaverita"), 6000, true); }
+      else showTab("visit");
+    });
     $("fortuneSkip").addEventListener("click", () => tap("skip"));
     $("fortuneEnd").addEventListener("click", () => tap("end"));
     // ?fortune=<1..6>: a still at that question (6 = the reading), for screenshots.
@@ -2101,10 +2128,19 @@
       draw(f, { n: 1, stage: 5, of: 4, first: "Ana", house: "Ravenclaw" });
       if (f.stage === "reading") fish.foresee(f.data.signo);
     }
+    // ?calaverita=1: a still with a verse, for screenshots.
+    if (PARAMS.get("calaverita")) {
+      still = true;
+      calBtn.hidden = false;
+      showTab("visit");
+      drawCalaverita({ lit: true, first: "Rodrigo", last: { verse: "Estudiaba el buen Rodrigo\ncada puerta antes de entrar,\ny a un negocio con su amigo\nle dio todo sin dudar.\n\nLlegó la Flaca por él\ncon su guadaña y su pluma;\nél leyó todo el papel\ny exigió que lo resuma.\n\nLa Flaca se fue sin nada:\nde Slytherin no se cobra,\ny él sigue en la madrugada\ncontando lo que le sobra." } });
+    }
     return {
       status(page, tab, printer) {
         if (still) return;
         btn.hidden = !page.fortune_enabled;
+        calBtn.hidden = !page.fortune_enabled;
+        if (page.visit && page.visit.fortune) drawCalaverita(page.visit.fortune.calaverita);
         const p = printer && !printer.error ? printer : {};
         tRow.hidden = !p.present || !page.fortune_enabled;
         if (p.present && performance.now() - tAt > 2000) ticketPaint(p);   // a record just now is newer
