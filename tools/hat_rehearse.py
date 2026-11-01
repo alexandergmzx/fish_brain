@@ -285,13 +285,85 @@ def run_visit(llm, cfg, visitor: dict, *, clock=None) -> dict:
             v.first_name = visit.heard_name(value, spoken)
     verdict = v.done
     said = [t["hat"] for t in turns if "sent" in t]
+    heard = [t["you"] for t in turns if "sent" in t and t["hat"]]
     used, unused = coverage(cues, said)
     return {"turns": turns, "house": v.house, "done": verdict, "skipped": skipped,
-            "first": v.first_name, "refused": refused, "cues": cues, "used": used, "unused": unused,
+            "first": v.first_name, "heard": heard, "refused": refused, "cues": cues, "used": used, "unused": unused,
             "verdict": next((t["hat"] for t in reversed(turns)
                              if "sent" in t and t["stage"] == v.stages and t["hat"]), ""),
             "problems": [] if v.house else ["no house at the verdict" if verdict
                                             else "the visit did not reach the verdict"]}
+
+
+# ---- the calaverita's arms (ADR 0034) ----------------------------------------------------------
+def compose_verse(llm, cfg, visitor: dict, rec: dict, *, thinking: str | None) -> dict:
+    """One calaverita from a visit's record, as the act asks for it (the same tag, rules, no
+    history); never run through the act's clips."""
+    from fish_brain import calaverita, visit
+    ok, _bad = accepted_cues(rec["cues"])
+    tag = calaverita.verse_tag(rec["first"], rec["house"], place_of(cfg, visitor), ok,
+                               [h for h in rec["heard"]][-visit.HEARD_KEEP:])
+    visit.begin_model(llm, cfg.fortune.calaverita_rules)
+    llm.thinking = thinking
+    raw = llm.reply(tag, remember=False)
+    stanzas = calaverita.stanzas_of(raw)
+    problems = [llm.last_error] if llm.last_error else calaverita.verse_problems(stanzas)
+    return {"tag": tag, "raw": raw, "verse": stanzas, "problems": problems,
+            "s": getattr(llm, "last_latency_s", 0.0), "usage": getattr(llm, "last_usage", None),
+            **calaverita.verse_metrics(stanzas)}
+
+
+def run_calaverita_arms(arms: list[str], takes: int, cfg, visits: list, out: Path | None) -> int:
+    """Each arm ("profile:thinking") composes `takes` verses from each visit's record, so the
+    visitor is not the variable. One line per arm; the verses to `out` as they come. Returns how
+    many takes were refused or failed."""
+    from fish_brain.ab import _cost
+    from fish_brain.config import LLMConfig
+    from fish_brain.llm import make_conversation
+
+    def write(text: str) -> None:
+        print(text, flush=True)
+        if out is not None:
+            with out.open("a", encoding="utf-8") as f:
+                f.write(text + "\n")
+    bad = 0
+    table = []
+    for arm in arms:
+        profile, _, thinking = arm.partition(":")
+        lcfg = LLMConfig(profile=profile)
+        lcfg.max_completion_tokens = 2000        # as Haiku's: thinking shares the cap
+        llm = make_conversation(lcfg)
+        takes_done, secs, cost = [], [], 0.0
+        write(f"\n## {arm}\n")
+        for i, visitor, rec in visits:
+            for take in range(takes):
+                r = compose_verse(llm, cfg, visitor, rec, thinking=thinking or None)
+                takes_done.append(r)
+                secs.append(r["s"])
+                cost += _cost(lcfg, r["usage"])
+                head = (f"### visitor {i} take {take + 1}: {r['s']:.1f} s, {r['near8']}/{r['lines']} "
+                        f"lines within one of 8, {r['rhymed']}/{r['stanzas']} stanzas rhymed")
+                write(head + (" · REFUSED: " + "; ".join(r["problems"]) if r["problems"] else "") + "\n")
+                write("`" + r["tag"] + "`\n")
+                write("\n\n".join("  \n".join(s) for s in r["verse"]) + "\n")
+        refused = sum(bool(r["problems"]) for r in takes_done)
+        bad += refused
+        lines = sum(r["lines"] for r in takes_done) or 1
+        stanzas = sum(r["stanzas"] for r in takes_done) or 1
+        secs.sort()
+        p90 = secs[min(len(secs) - 1, int(len(secs) * 0.9))] if secs else 0.0
+        table.append(f"| {arm} | {len(takes_done)} | {refused} | "
+                     f"{100 * sum(r['at8'] for r in takes_done) / lines:.0f} % | "
+                     f"{100 * sum(r['near8'] for r in takes_done) / lines:.0f} % | "
+                     f"{100 * sum(r['rhymed'] for r in takes_done) / stanzas:.0f} % | "
+                     f"{statistics.median(secs) if secs else 0:.1f} / {p90:.1f} / {secs[-1] if secs else 0:.1f} s | "
+                     f"${cost:.4f} |")
+    write("\n## The arms\n")
+    write("| Arm | Takes | Refused | Lines at 8 | Within one of 8 | Stanzas rhymed | Model median / p90 / max | Cost |")
+    write("|---|---|---|---|---|---|---|---|")
+    for row in table:
+        write(row)
+    return bad
 
 
 def place_of(cfg, visitor: dict) -> str:
@@ -668,6 +740,12 @@ def main(argv: list[str] | None = None) -> int:
                          "the commit and the rules (rehearsals/ is ignored by git)")
     ap.add_argument("--repeat", type=int, default=1,
                     help="run the visitors N times over (the collapse check: --only 3 --repeat 20)")
+    ap.add_argument("--calaverita", metavar="ARMS",
+                    help="after each visit, compose verses with these arms, comma-separated "
+                         "profile:thinking (claude:disabled,claude:adaptive), and no fortune")
+    ap.add_argument("--takes", type=int, default=3, help="verses per visit per arm (default 3)")
+    ap.add_argument("--verses-out", type=Path, metavar="FILE",
+                    help="append the arms' verses and their table to FILE as they come")
     ap.add_argument("--prompts", type=Path, metavar="DIR",
                     help="the words from this folder instead of fish_brain/prompts/ (before and after)")
     args = ap.parse_args(argv)
@@ -700,6 +778,7 @@ def main(argv: list[str] | None = None) -> int:
         visitors = [visitors[args.only - 1]]
     visitors = visitors * max(1, args.repeat)
     worst = 0
+    verse_visits: list = []
     for name in [n.strip() for n in args.profiles.split(",") if n.strip()]:
         lcfg = LLMConfig(profile=name)
         if args.thinking:
@@ -731,7 +810,10 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"\n=== visitor {i} · {name} ===")
             frec = None
-            if visitor["fortune"] is not None:
+            if args.calaverita:
+                if rec is not None and rec["house"]:
+                    verse_visits.append((i, visitor, rec))
+            elif visitor["fortune"] is not None:
                 frec = run_fortune(llm, cfg, visitor, rec, seed=i, state=state,
                                    thinking=args.thinking)
                 _print_fortune(frec)
@@ -761,6 +843,9 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"    repeated phrasing across {label}: none")
         worst = max(worst, problems)
+    if args.calaverita:
+        arms = [a.strip() for a in args.calaverita.split(",") if a.strip()]
+        worst = max(worst, run_calaverita_arms(arms, args.takes, cfg, verse_visits, args.verses_out))
     if log_file is not None:
         folder = Path(log_file.name).with_suffix("")
         paths = write_markdown(folder, header, runs)

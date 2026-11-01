@@ -21,8 +21,9 @@ def test_hat_overrides_only_its_own_words(monkeypatch):
     monkeypatch.setenv("FISH_PERSONA", "hat"); hat = CannedConfig().phrases
     assert set(fish) <= set(hat)                       # nothing lost
     from fish_brain.fortune_bank import FORTUNE_PHRASES
-    # And only the visit's greeting and the fortune act's lines added.
-    assert set(hat) - set(fish) == VISIT_PHRASES | set(FORTUNE_PHRASES)
+    from fish_brain.calaverita import CALAVERITA_PHRASES
+    # And only the visit's greeting, the fortune act's and the calaverita's lines added.
+    assert set(hat) - set(fish) == VISIT_PHRASES | set(FORTUNE_PHRASES) | set(CALAVERITA_PHRASES)
     assert "pez" not in hat["welcome"] and "Sombrero" in hat["welcome"]
     assert hat["filler_first_1"] != fish["filler_first_1"]       # the hat waits in its own words
     assert hat["no_mic"] == fish["no_mic"]

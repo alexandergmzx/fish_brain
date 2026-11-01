@@ -1,0 +1,218 @@
+# La calaverita, the act after a House (ADR 0034): every word it says and the model's rules. Drafts
+# for his edit. Each line of [pools] and [fallback] is a rendered clip. A fallback verse is 12 lines
+# with no name in it, three stanzas with a blank line between them, for when the model cannot.
+
+rules = """
+COMPONES UNA CALAVERITA LITERARIA sobre el visitante que acabas de sortear. Es para decirla en voz alta y para imprimirla: chistosa de verdad, de las que se leen en familia el Día de Muertos.
+
+FORMATO
+- Te llega una sola línea entre corchetes: [CALAVERITA: nombre=...; casa=...; lugar=...; dijo="..."|"..."; pistas=...]. Nunca repitas los corchetes ni sus claves.
+- Respondes solo el verso: tres estrofas de cuatro versos, doce versos en total, con una línea en blanco entre estrofas. Sin título, sin presentación y sin despedida.
+- Ni una estrofa de más, y nunca comentes tu verso ni empieces de nuevo en voz alta.
+- Versos de ocho sílabas, y que rimen de verdad: el primero con el tercero y el segundo con el cuarto, en cada estrofa, con la misma terminación desde la última vocal acentuada. Dos palabras distintas, y que existan: nunca una palabra inventada para la rima. Si tienes que escoger, primero la rima y el chiste.
+- Cada verso cabe en una línea corta. Sin emojis, listas, markdown, siglas, paréntesis ni comillas. Español de México.
+
+LA FORMA
+- Se cuenta en tercera persona, como las de siempre: "Estaba Rodrigo...".
+- Primera estrofa: quién es, por lo que dijo. Segunda: la Flaca viene por él. Tercera: el giro, y nombras su casa.
+- El giro es la gracia: su propio defecto lo salva, o le complica la vida a la Flaca. Nadie se muere de verdad y nadie sufre.
+- La muerte se llama la Flaca, la Huesuda o la Catrina.
+- Su nombre de pila si viene, a lo mucho dos veces. Si no viene, una criatura, y sin adjetivos que digan su género.
+- El género lo dice el nombre cuando es claro: concuerda con él.
+
+LA BURLA
+- Te burlas de lo que dijo y de lo que hace: sus excusas, sus planes, sus manías. En cada estrofa, con la cara seria.
+- Usa sus propias palabras de dijo=, exageradas hasta el absurdo. Sin nada de lo que dijo no hay chiste.
+- Conceder primero, cobrar después: el golpe cae al final de la estrofa.
+- Una imagen concreta y mala vale más que tres abstractas.
+- La bondad va por debajo y no se dice: su defecto es lo que le salva el pellejo.
+
+TE OYEN NIÑOS Y ABUELAS
+- Ni ex, ni trago, ni albures, ni groserías, ni nada de doble sentido. Si dijo una grosería, no la repitas: cámbiala por algo más chistoso.
+- Si contó una pérdida de verdad o una enfermedad, no la toques: la burla va a otra parte.
+- Nada de su cuerpo ni de lo que trae puesto. Lo de pistas= es para acertar, nunca lo digas como algo que viste.
+
+REGLAS FIJAS
+- Nunca inventes sus datos: exageras lo que dijo, no le inventas familia ni trabajo.
+- El lugar y el castillo, a lo mucho una pizca: una imagen en todo el verso, o ninguna.
+- De los nombres en inglés, solo el de su casa, y nunca al final de un verso: tu voz lo dice distinto y la rima se pierde.
+
+EJEMPLO (nombre=Rodrigo; casa=Slytherin; dijo="La estudio primero"|"Un negocio con un amigo"; muestra el tono, no copies sus frases ni sus rimas)
+Estudiaba el buen Rodrigo
+cada puerta antes de entrar,
+y a un negocio con su amigo
+le dio todo sin dudar.
+
+Llegó la Flaca por él
+con su guadaña y su pluma;
+él leyó todo el papel
+y exigió que lo resuma.
+
+La Flaca se fue sin nada:
+de Slytherin no se cobra,
+y él sigue en la madrugada
+contando lo que le sobra.
+"""
+
+# Sent with the model's best version when some pairs do not rhyme: {verso} and {parejas} are filled in.
+corrige = """
+Tu borrador:
+{verso}
+
+Estas parejas no riman de verdad, con la misma terminación desde la última vocal acentuada:
+{parejas}
+Devuelve las tres estrofas completas. Deja igual lo que ya rima y cambia lo menos posible para que estas parejas rimen, sin perder el chiste, en versos de ocho sílabas y con palabras que existan.
+"""
+
+# A word here refuses the model's verse, and the house's fallback is said: paper can't be unsaid.
+# Whole words, with or without accents. This act only (ADR 0025 stands for the others).
+nunca = ["pendejo", "pendeja", "cabrón", "cabrona", "chingar", "chingada", "chingón", "verga",
+         "culo", "mierda", "puta", "puto", "pinche", "sexo", "ex", "tequila", "cerveza",
+         "borracho", "borracha", "peda"]
+
+[pools]
+lead = [
+    "Antes de que te vayas, te debo unos versos.",
+    "La Flaca preguntó por ti. Te escribo tu calaverita.",
+    "Con lo que me dijiste, ya tengo para tu calavera.",
+]
+suspense = [
+    "Afilo la pluma.",
+    "Busco qué rima con lo que dijiste, y no hay mucho.",
+    "La Flaca me dicta, y dicta feo.",
+]
+suspense_mas = [
+    "Tu vida no rima con nada bueno.",
+    "Falta un verso, y es el peor.",
+]
+cierre = [
+    "Ahí queda, para que no digas que no te avisé.",
+    "Guárdala bien: la Flaca ya tiene copia.",
+    "Llévatela, antes de que la Flaca la corrija.",
+]
+
+[fallback]
+G = ["""
+Una criatura a la fiesta
+llegó sin ver a qué iba;
+se metió sin dar respuesta
+por la escalera de arriba.
+
+La Flaca le dijo: vente,
+y sin preguntar por dónde
+se le adelantó de frente,
+y ahora la Flaca se esconde.
+
+Se quedó sin su difunto
+la Huesuda, tan campante:
+es de Gryffindor, y punto;
+pensará más adelante.
+""", """
+Con la espada y sin la cena
+salió a salvar a la gente;
+no traía ni una pena
+ni una idea por la frente.
+
+Se encontró con la Catrina
+y a duelo la desafió;
+y ella, que nunca se inclina,
+de la risa se murió.
+
+Gryffindor ganó la Copa
+por matar a la que mata,
+y ya busca entre la ropa
+su espada, que era de lata.
+"""]
+H = ["""
+Fiel como perro sin dueño
+se quedó a lavar los platos,
+guardó a todos en su sueño
+y les cuidó los zapatos.
+
+Vino la Flaca a llevarle
+y le sirvió un chocolate;
+no hubo manera de hablarle:
+le dio pan con aguacate.
+
+Ya no se lleva a esta gente:
+Hufflepuff da de comer;
+volvió la Flaca, sonriente,
+con hambre, al amanecer.
+""", """
+Prestó su casa y su cama
+y hasta el cepillo de dientes;
+se quedó sin la pijama
+por culpa de sus parientes.
+
+La Huesuda tocó un día:
+venía a cobrar la cuenta,
+y salió de la alcancía
+con un préstamo a setenta.
+
+Hufflepuff hasta la tumba,
+presta lo que no le sobra;
+la Flaca anda por la rumba
+y esa deuda no la cobra.
+"""]
+R = ["""
+Todo lo quiso entender
+con un libro en cada mano;
+se olvidaba de comer
+y de acostarse temprano.
+
+Cuando la Flaca llegó
+le pidió identificarse,
+su guadaña corrigió
+y la mandó a actualizarse.
+
+Ravenclaw, y con razón:
+nadie le gana en la clase;
+la Flaca, sin discusión,
+sigue pidiendo que pase.
+""", """
+Leyó la sección prohibida
+buscando qué es lo que pasa,
+y se aprendió de por vida
+los planos de cada casa.
+
+La Huesuda, muy formal,
+vino por ella temprano;
+le pidió el acta oficial
+firmada de puño y mano.
+
+Como nadie la traía,
+y Ravenclaw ya se salva,
+y la Flaca, todavía,
+sigue haciendo fila, calva.
+"""]
+S = ["""
+Quiso quedarse con todo
+y empezó por la merienda;
+le vendió, con mucho modo,
+a su abuela hasta su tienda.
+
+Llegó la Flaca a cobrar
+con la guadaña en la mano;
+se la acabó por rentar
+con interés de villano.
+
+Slytherin, ni qué dudar:
+ya la Muerte le trabaja;
+y si vuelve a preguntar
+le va a cobrar la mortaja.
+""", """
+Tenía un plan muy discreto
+para quedarse la Copa;
+lo llevaba en un boleto
+escondido entre la ropa.
+
+La Catrina lo encontró
+y le dijo: voy a medias;
+el plan entero firmó,
+y hoy cobran por las comedias.
+
+Slytherin hasta en la mesa:
+se sirve el pan y el dinero;
+y la Flaca, con tristeza,
+le lava hasta el candelero.
+"""]

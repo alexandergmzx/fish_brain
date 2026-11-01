@@ -930,6 +930,19 @@ def test_fortune_taps_need_the_token_a_fortune_and_no_live_visit(server):
     assert server.take_inbox() == FortuneInput("skip", "")
 
 
+def test_a_calaverita_tap_is_refused_with_why_or_handed_to_the_loop(server):
+    from types import SimpleNamespace
+    from fish_brain.fortune_run import FortuneInput
+    url = server.url + "/fortune"
+    why = ["no house"]
+    server.register_fortune(SimpleNamespace(calaverita=SimpleNamespace(refusal=lambda: why[0])))
+    server.set_listening(True)
+    assert post(url, {"action": "calaverita"}, AUTH) == (409, {"ok": False, "why": "no house"})
+    why[0] = None
+    assert post(url, {"action": "calaverita", "value": "Ana"}, AUTH) == (200, {"ok": True})
+    assert server.take_inbox() == FortuneInput("calaverita", "Ana")
+
+
 def test_reprint_goes_straight_to_the_printer_while_the_hat_speaks(server):
     class P:
         def __init__(self, answer):

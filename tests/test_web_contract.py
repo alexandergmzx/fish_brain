@@ -455,3 +455,15 @@ def test_the_ticket_sits_after_the_last_fortune_and_its_toggle_beside_the_cup():
     setup = _fn(js, "function renderSetup() {")
     assert '$("ticketBtn").hidden = !prn.present;' in setup and 'switchValue("fortune_ticket")' in setup
     assert 'setFromTap("fortune_ticket", on)' in js
+
+
+def test_the_calaverita_button_posts_its_action_and_draws_the_verse_as_text():
+    html = (WEB_DIR / "debug.html").read_text(encoding="utf-8")
+    js = (WEB_DIR / "debug.js").read_text(encoding="utf-8")
+    block = js[js.index("const fortuneRow = guard("):js.index("const phoneMic = guard(")]
+    assert 'id="calaveritaBtn"' in html and 'id="calaveritaVerse"' in html
+    assert 'action: "calaverita", value: reader.name().slice(0, 20)' in block
+    assert "calVerse.textContent" in block and "calVerse.innerHTML" not in block
+    for why in ("no house", "too late", "act open", "lines not ready"):
+        assert f'"{why}":' in js[js.index("const WHY = {"):js.index("const BUSY = {")]
+    assert ".verse" in (WEB_DIR / "debug.css").read_text(encoding="utf-8")

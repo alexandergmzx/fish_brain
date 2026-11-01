@@ -3,6 +3,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 TOOLS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
 sys.path.insert(0, TOOLS)
 
@@ -292,3 +294,24 @@ def test_the_then_lines_and_the_typed_name_reach_the_markdown():
     assert "**Visitor:** Hola, soy Albert." in md and "**Hat now**: Albert, veo." in md
     assert "*Hat then:* ¡Albert! ¿Mapa o libro?" in md and "> Veo borregos." in md
     assert "- **fecha:** Tres de marzo. (sign → piscis)" in md and "```\n  L A\n```" in md
+
+
+def test_the_arms_write_each_verse_and_a_table(tmp_path, monkeypatch):
+    from fish_brain import calaverita as cal, llm as llm_mod
+
+    class Fake:
+        last_error, last_latency_s, last_usage, thinking, extra_rules = None, 1.5, None, None, ""
+
+        def reset(self):
+            pass
+
+        def reply(self, text, remember=True):
+            return cal.page_verse(cal.FALLBACK["S"][0])
+    monkeypatch.setattr(llm_mod, "make_conversation", lambda cfg: Fake())
+    monkeypatch.setattr("fish_brain.ab._cost", lambda cfg, usage: 0.0)
+    out = tmp_path / "verses.md"
+    rec = {"first": "Ana", "house": "Slytherin", "heard": ["Un plan"], "cues": {}}
+    bad = hat_rehearse.run_calaverita_arms(["claude:disabled"], 2, Config(), [(1, {}, rec)], out)
+    text = out.read_text(encoding="utf-8")
+    assert bad == 0 and "Quiso quedarse con todo" in text and text.count("### visitor 1 take") == 2
+    assert "| claude:disabled | 2 | 0 |" in text and 'dijo="Un plan"' in text

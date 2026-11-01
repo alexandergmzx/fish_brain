@@ -215,8 +215,9 @@ def _fortune_phrases() -> dict[str, str]:
     hat), with or without FISH_SHOW: the fish's set stays exactly as before."""
     if "fortune" not in _persona():
         return {}
+    from .calaverita import CALAVERITA_PHRASES
     from .fortune_bank import FORTUNE_PHRASES
-    return dict(FORTUNE_PHRASES)
+    return {**FORTUNE_PHRASES, **CALAVERITA_PHRASES}
 
 
 def _fortune_rules() -> str:
@@ -904,6 +905,22 @@ class FortuneConfig:
     consulta_profile: str = field(default_factory=lambda: _env("FISH_CONSULTA_PROFILE", "claude-sonnet"))
     consulta_thinking: str = "between_tools"
     ticket: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_TICKET", True))   # the ticket at the closing line, when a printer is set
+    # The calaverita (calaverita_run.py, ADR 0034), an act of this persona that shares carry_s,
+    # ticket and suspense_more_s. calaverita_s: from the end of the lead, the model and the voice
+    # (estimate). The act's own model (his word, 2026-11-01: Sonnet, the best of the rehearsal's
+    # arms, docs/results/2026-11-01-calaverita-arms.md); a name that is no profile, like "main",
+    # or a missing key = the visit's model. Its thinking, one of THINKING_MODES; "" = the profile's.
+    calaverita_s: float = 20.0
+    # Rhyme first (his word, 2026-11-01): this many versions at once, then the best one sent back
+    # with what does not rhyme, for at most this many passes, no new one after this many seconds
+    # (the voice's render still has to fit calaverita_s). Only a verse with every stanza rhymed
+    # is said; otherwise the house's clip.
+    calaverita_versions: int = 3
+    calaverita_passes: int = 4
+    calaverita_compose_s: float = 12.0
+    calaverita_profile: str = field(default_factory=lambda: _env("FISH_CALAVERITA_PROFILE", "claude-sonnet"))
+    calaverita_thinking: str = field(default_factory=lambda: _env("FISH_CALAVERITA_THINKING", ""))
+    calaverita_rules: str = field(default_factory=lambda: texts.calaverita()["rules"].strip())
 
 
 @dataclass

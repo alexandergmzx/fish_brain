@@ -185,6 +185,11 @@ def clean_cue_text(text, limit: int = CUE_TEXT_MAX) -> str:
     return s.strip(" -,").strip()
 
 
+HEARD_MAX = 80             # characters kept of one answer
+HEARD_KEEP = 6             # answers kept of one visit
+_HEARD_NOTE = re.compile(r"\[[^\]]*\]")   # a note on the text ("still talking"), never their words
+
+
 _HOURS = ("doce", "una", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve",
           "diez", "once")
 
@@ -271,6 +276,7 @@ class Visit:
         self.said = 0                  # the hat's delivered turns in this visit
         self.first_name = ""
         self.house: str | None = None
+        self.heard: list[str] = []     # what this visitor said, cleaned (the calaverita's material)
         self.started_at: float | None = None
         self.last_s: float | None = None     # the end of the hat's last speech in this visit
         self._said_at: float | None = None   # this visit's last delivered turn
@@ -320,6 +326,8 @@ class Visit:
         self.open, self.said, self.house = True, 0, None
         self._said_at = None
         self.first_name = first_name or (self.first_name if keep_cues else "")
+        if not keep_cues:
+            self.heard = []
         self.started_at = self.last_s = now
 
     def _prune_locked(self) -> None:
@@ -354,6 +362,21 @@ class Visit:
                 self._prune_locked()
         if not carry:
             self.first_name = ""          # someone else: the last visitor's name is not theirs
+            self.heard = []
+
+    def hear(self, text: str) -> None:
+        """What the visitor just said, kept for the act after the verdict: the model's history
+        is wiped by the next act and the script's record ends with its verdict."""
+        said = clean_cue_text(_HEARD_NOTE.sub(" ", text or "").replace('"', ""), HEARD_MAX)
+        if said:
+            self.heard = (self.heard + [said])[-HEARD_KEEP:]
+
+    def since_verdict(self, now: float | None = None) -> float | None:
+        """Seconds since this visit's house was given; None without one. Fixed from the verdict,
+        unlike `last_s`, which every later line moves."""
+        if not (self.done and self.house) or self._said_at is None:
+            return None
+        return (self._clock() if now is None else now) - self._said_at
 
     def end(self) -> None:
         self.open = False

@@ -504,12 +504,13 @@ class VizServer:
         """`POST /fortune {"action": "start"|"consulta"|"skip"|"end", "value": ...}`: the operator's tap
         for the fortune act or la consulta (409 with `why` when the consulta cannot start) (`value`: the typed first name with `start`), handed to the turn
         loop like the show's. A start over a live house act is refused here (the loop checks
-        again): 409 with `why: "visit open"`. `reprint` goes straight to the printer, never
+        again): 409 with `why: "visit open"`. `calaverita` (`value`: the typed name, when the visit
+        has none) is refused the same way while it may not start. `reprint` goes straight to the printer, never
         through the inbox (the visitor is leaving while the hat speaks): the last ticket
         again, even with tickets off; 409 `printing` / `no ticket yet`, 503 `no printer`."""
         from .fortune_run import FortuneInput
         action, value = body.get("action"), body.get("value") or ""
-        if action not in ("start", "consulta", "skip", "end", "reprint") or not isinstance(value, str) \
+        if action not in ("start", "consulta", "skip", "end", "reprint", "calaverita") or not isinstance(value, str) \
                 or len(value) > 20:
             return 400, {"ok": False, "error": "bad fortune input"}
         if action == "reprint":
@@ -527,6 +528,10 @@ class VizServer:
             return 409, {"ok": False, "busy": True, "why": "visit open"}
         if action == "consulta":
             why = self._fortune.consulta.refusal()
+            if why:
+                return 409, {"ok": False, "why": why}
+        if action == "calaverita":
+            why = self._fortune.calaverita.refusal()
             if why:
                 return 409, {"ok": False, "why": why}
         if not self.offer(FortuneInput(action, value)):

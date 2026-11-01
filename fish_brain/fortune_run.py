@@ -315,6 +315,8 @@ class FortuneRun:
         self._last: dict = {}                 # the last reading or drop, for the page
         from .consulta import Consulta
         self.consulta = Consulta(self)        # the other act of this slot (ADR 0032)
+        from .calaverita_run import CalaveritaRun
+        self.calaverita = CalaveritaRun(self)  # the act after a House, on the same state file
 
     # ---- which reading ---------------------------------------------------------------------
     def mode_now(self) -> tuple[str, str]:
@@ -390,7 +392,8 @@ class FortuneRun:
         v = self.v
         out = {"on": True, "ready": self.lines_ready(), "open": v is not None,
                "deck": self.cfg.deck, "cup": bool(self.cfg.cup),
-               "place": self.c.cfg.place.place, "last": self._last}
+               "place": self.c.cfg.place.place, "last": self._last,
+               "calaverita": self.calaverita.view()}
         if v is not None:
             asking = v["stage"] == "ask" and v["i"] < len(v["qs"])
             qid = v["qs"][v["i"]] if asking else None
@@ -460,6 +463,8 @@ class FortuneRun:
                 begin = self.consulta.start if item.action == "consulta" else self.start
                 begin("operator", first=item.value)
             return True
+        if item.action == "calaverita":
+            return self.calaverita.run(item.value)
         if self.v is None:
             print(f"[fortune] operator {item.action}: no act open", flush=True)
             return True

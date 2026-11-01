@@ -107,10 +107,16 @@
     try { return make(); } catch (e) { console.error("[page] " + name + " is off:", e); return stub; }
   }
   const PHONE = matchMedia("(max-width: 700px)");
+  // Why the calaverita's button is not lit (its title and the Status row).
+  const CAL_WHY = { "no house": "after a House's verdict", "too late": "more than ten minutes since the verdict",
+                    "act open": "another act is open", "lines not ready": "its lines are still rendering" };
   // One sentence for every refusal a POST can bring back (docs/debug.md): the status first, then
   // the server's `why` or `error`. `what` names the act a 503 says is off ("the fortune").
   const WHY = { "visit open": "finish the visit first (or Force a house)",
-                "printing": "a ticket is printing: wait for it", "no ticket yet": "no fortune has ended yet" };
+                "printing": "a ticket is printing: wait for it", "no ticket yet": "no fortune has ended yet",
+                "act open": "a fortune is open: end it first", "no house": "give a house first",
+                "too late": "the verdict was over ten minutes ago: start a new visitor",
+                "lines not ready": "its lines are still rendering: wait" };
   const BUSY = { recording: "the hat is recording", speaking: "the hat is speaking",
                  "a phone is the microphone": "a phone is the microphone", "link off": "the motor link is off",
                  "test running": "a test is running", working: "a speaker is being connected", "not heard": "the phrase was not heard" };
@@ -486,6 +492,8 @@
     function fortune(f, live) {
       if (!f) return;
       const prev = lastFortune; lastFortune = f;
+      // The calaverita: a live edge into composing gets the fortune's room, with the skull.
+      if (live && f.calaverita && f.calaverita.busy && !(prev && prev.calaverita && prev.calaverita.busy)) foresee("💀");
       if (live && f.open && f.stage === "reading" && prev && prev.n === f.n && prev.open && prev.stage !== "reading") foresee((f.data || {}).signo || "");
     }
     function foresee(sign) {
@@ -671,6 +679,10 @@
           + (typeof ft.ready === "number" && ft.lines ? " · " + ft.ready + " of " + ft.lines + " lines" : ""),
         short ? "rendering after a restart" : "");
     }
+    const cal = S.fortune && S.fortune.calaverita;
+    if (cal) row("Calaverita", cal.why === "lines not ready" ? "warn" : "ok",
+      cal.busy ? "composing" : cal.lit ? "ready" + (cal.first ? " · " + cal.first : "") : CAL_WHY[cal.why] || cal.why || "",
+      cal.why === "lines not ready" ? "rendering after a restart" : "");
     row("Act", "ok", actNow(), "");
     const svc = st.service || {};
     row("Start at boot", svc.enabled === false ? "bad" : "ok", svc.enabled === false ? "off" : "on",
@@ -691,7 +703,8 @@
   }
   // What is on now: a fortune, a visit, or nothing (the band says the same).
   function actNow() {
-    const v = S.visit, f = S.fortune;
+    const v = S.visit, f = S.fortune, cal = f && f.calaverita;
+    if (cal && cal.busy) return "calaverita: composing" + (v && v.first ? " · " + v.first : "");
     if (f && f.open && f.act === "consulta") return "consulta: " + (f.stage === "reading" ? "reading" : f.qid === "consulta" ? "their question" : "the card") + (f.first ? " · " + f.first : "");
     if (f && f.open) return (f.stage === "reading" ? "fortune: reading the future" : "fortune: question " + f.q + " of " + f.of) + (f.first ? " · " + f.first : "");
     if (v && v.stage) return (v.stage > v.of ? "verdict: " + (v.house || "—") : "visit: stage " + v.stage + " of " + v.of) + (v.first ? " · " + v.first : "");
@@ -1718,9 +1731,12 @@
     a.textContent = secsAgo === null ? "" : secsAgo < 2 ? "now" : secsAgo + " s ago";
     a.className = "chip " + (secsAgo === null ? "unknown" : { live: "ok", quiet: "warn", down: "bad" }[conn.stream]);
     const v = S.visit, f = S.fortune, b = $("bandVisit");
-    const fortune = !!(f && f.open);
-    b.hidden = !fortune && !(v && v.stage);
-    if (fortune) {                                // the act on now; a tap opens the Visit tab
+    const fortune = !!(f && f.open), composing = !!(f && f.calaverita && f.calaverita.busy);
+    b.hidden = !fortune && !composing && !(v && v.stage);
+    if (composing) {
+      b.textContent = "Calaverita" + (v && v.first ? " · " + v.first : "");
+      b.className = "chip warn";
+    } else if (fortune) {                                // the act on now; a tap opens the Visit tab
       b.textContent = f.act === "consulta" ? "Consulta" + (f.first ? " · " + f.first : "") : (f.stage === "reading" ? "Fortune: reading" : "Fortune " + f.q + "/" + f.of) + (f.first ? " · " + f.first : "");
       b.className = "chip warn";
     } else if (v && v.stage) {
@@ -2003,6 +2019,7 @@
     const row = $("fortuneRow"), btn = $("fortuneBtn"), consultaBtn = $("consultaBtn"), q = $("fortuneQ"), heard = $("fortuneHeard");
     const data = $("fortuneData"), last = $("fortuneLast");
     const tRow = $("ticketRow"), tLine = $("ticketLine"), reprintBtn = $("reprintBtn");
+    const calBtn = $("calaveritaBtn"), calVerse = $("calaveritaVerse");
     let tBusy = false, tAt = 0;
     let open = false, ready = false, wantOpen = false, btnTimer = 0, still = false, label = "🔮 Fortune";
     function refuse(out) {
@@ -2021,7 +2038,21 @@
       consultaBtn.disabled = btn.disabled;
       consultaBtn.classList.toggle("dim", !ready);
     }
+    // The calaverita: the server says whether it may start (`lit`, and `why` not) and has its last
+    // verse for this visitor; a tap asks, the view that follows paints.
+    function drawCalaverita(cal) {
+      if (!cal) return;
+      calBtn.disabled = !cal.lit;
+      calBtn.classList.toggle("dim", !cal.lit);
+      calBtn.textContent = cal.busy ? "💀 Composing…" : "💀 Calaverita" + (cal.first ? " for " + cal.first : "");
+      calBtn.title = cal.busy ? "" : CAL_WHY[cal.why] || "";
+      const verse = cal.last && cal.last.verse;
+      calVerse.hidden = !verse;
+      calVerse.textContent = verse || "";
+    }
     function draw(f, v) {
+      drawCalaverita(f.calaverita);
+      if (f.calaverita && f.calaverita.busy) $("visitState").textContent = "calaverita: composing";
       open = !!f.open;
       if (open && wantOpen) { wantOpen = false; clearTimeout(btnTimer); }
       row.hidden = !open;
@@ -2092,6 +2123,14 @@
     };
     btn.addEventListener("click", begin("start"));
     consultaBtn.addEventListener("click", begin("consulta"));
+    calBtn.addEventListener("click", async () => {
+      if (calBtn.disabled || reader.busy()) return;
+      visitRow.flush();
+      calBtn.disabled = true;
+      const out = await post("/fortune", { action: "calaverita", value: reader.name().slice(0, 20) });
+      if (!out.ok) { calBtn.disabled = false; msg(null, "calaverita: " + explain(out, "the calaverita"), 6000, true); }
+      else showTab("visit");
+    });
     $("fortuneSkip").addEventListener("click", () => tap("skip"));
     $("fortuneEnd").addEventListener("click", () => tap("end"));
     // ?fortune=<1..6>: a still at that question (6 = the reading), for screenshots.
@@ -2111,11 +2150,22 @@
       draw(f, { n: 1, stage: 5, of: 4, first: "Ana", house: "Ravenclaw" });
       if (f.stage === "reading") fish.foresee(f.data.signo);
     }
+    // ?calaverita=1&tab=visit: a still with a verse, for screenshots.
+    if (PARAMS.get("calaverita")) {
+      still = true;
+      calBtn.hidden = false;
+      drawCalaverita({ lit: true, first: "Rodrigo", last: { verse: "Estudiaba el buen Rodrigo\ncada puerta antes de entrar,\ny a un negocio con su amigo\nle dio todo sin dudar.\n\nLlegó la Flaca por él\ncon su guadaña y su pluma;\nél leyó todo el papel\ny exigió que lo resuma.\n\nLa Flaca se fue sin nada:\nde Slytherin no se cobra,\ny él sigue en la madrugada\ncontando lo que le sobra." } });
+    }
     return {
       status(page, tab, printer) {
         if (still) return;
         btn.hidden = !page.fortune_enabled;
         consultaBtn.hidden = !page.fortune_enabled;
+        calBtn.hidden = !page.fortune_enabled;
+        if (page.visit && page.visit.fortune) {
+          drawCalaverita(page.visit.fortune.calaverita);
+          if (S.fortune) S.fortune.calaverita = page.visit.fortune.calaverita;   // the Status row reads this
+        }
         const p = printer && !printer.error ? printer : {};
         tRow.hidden = !p.present || !page.fortune_enabled;
         if (p.present && performance.now() - tAt > 2000) ticketPaint(p);   // a record just now is newer

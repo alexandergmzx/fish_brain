@@ -894,6 +894,7 @@ class FishConversation:
             return
         self.llm.remember(t["tagged"], t["raw"])
         self.visit.delivered(t["house"], t["snapshot"], self._clock())
+        self.visit.hear(t.get("user", ""))
         if not self.visit.first_name and t["stage"] <= 2 and t.get("user"):
             # The name said to the greeting, as the hat echoed it: the fortune uses it too
             # (only a typed name did before, 2026-10-31).

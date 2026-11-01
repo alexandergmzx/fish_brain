@@ -41,3 +41,4 @@ Format: **Status** (proposed, accepted, replaced by NNNN) · **Date** · **Conte
 | [0031](0031-bluetooth-speakers-from-the-page.md) | Bluetooth speakers from the page: find, tap, Ready only with a sink; the chosen speaker ahead of the routes, a mouth delay per address, reconnect; dbus-fast, the board hidden, the printer never listed, seat monitoring off (`FISH_BLUETOOTH`) | proposed | 2026-10-31 |
 | [0032](0032-the-consulta.md) | La consulta: one question, one card, a warm reading on Sonnet; the mockery out of the fortune | proposed | 2026-11-01 |
 | [0033](0033-the-fortune-without-a-card-on-sonnet.md) | The fortune without a card, on Sonnet; la consulta under a scripted house | proposed | 2026-11-01 |
+| [0034](0034-the-calaverita.md) | La calaverita: a verse after the House, from a button, on voice and paper; family friendly in this act only; the house's clips when the model can't | proposed | 2026-11-01 |

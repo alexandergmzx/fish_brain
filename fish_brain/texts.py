@@ -66,6 +66,39 @@ def house() -> dict:
     return check_house(parse_lines(folder() / "house.toml"))
 
 
+@lru_cache(maxsize=1)
+def calaverita() -> dict:
+    """calaverita.toml. A rehearsal folder from before it existed keeps working on the package's."""
+    path = folder() / "calaverita.toml"
+    return check_calaverita(parse_lines(path if path.exists() else DIR / "calaverita.toml"))
+
+
+def check_calaverita(d: dict) -> dict:
+    """The rules, the word list, its four pools and two kinds of fallback, naming what is wrong.
+    Whether a fallback is a verse is checked by calaverita.py, which knows the shape."""
+    def bad(what: str):
+        raise ValueError(f"calaverita.toml: {what}")
+
+    def texts_in(value) -> bool:
+        return isinstance(value, list) and bool(value) and all(isinstance(x, str) and x.strip() for x in value)
+    if not (isinstance(d.get("rules"), str) and d["rules"].strip()):
+        bad("rules must be a text")
+    if not (isinstance(d.get("corrige"), str) and "{verso}" in d["corrige"] and "{parejas}" in d["corrige"]):
+        bad("corrige must be a text with {verso} and {parejas}")
+    if not texts_in(d.get("nunca")):
+        bad("nunca must be a list of texts")
+    pools, fallback = d.get("pools"), d.get("fallback")
+    if not (isinstance(pools, dict) and isinstance(fallback, dict)):
+        bad("[pools] and [fallback] are needed")
+    for slot in ("lead", "suspense", "suspense_mas", "cierre"):
+        if not texts_in(pools.get(slot)):
+            bad(f"pools.{slot} must be a list of texts, even of one")
+    for letter in "GHRS":
+        if not texts_in(fallback.get(letter)):
+            bad(f"fallback.{letter} must be a list of verses, even of one")
+    return d
+
+
 def check_house(d: dict) -> dict:
     """Three questions in each set, 2, 2 and 4 options, every text there, naming what is wrong.
     Which house an option serves is its position (show_bank.SHAPE)."""
