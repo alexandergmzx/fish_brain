@@ -295,98 +295,7 @@ def run_visit(llm, cfg, visitor: dict, *, clock=None) -> dict:
                                             else "the visit did not reach the verdict"]}
 
 
-# ---- the calaverita: meter and rhyme, here and never in the act (ADR 0033) ----------------------
-_VOWELS = "aeiouáéíóúüy"
-_STRONG = "aeoáéó"
-
-
-def _nuclei(word: str) -> list[bool]:
-    """The word's syllable nuclei, True where one has the accent mark. Two strong vowels, or a
-    weak one with its mark beside another, are two; "y" counts only as the end of a word."""
-    w = word.lower()
-    out, i = [], 0
-    while i < len(w):
-        ch = w[i]
-        if ch not in _VOWELS or (ch == "y" and i < len(w) - 1 and len(w) > 1):
-            i += 1
-            continue
-        j = i
-        while j < len(w) and w[j] in _VOWELS and (w[j] != "y" or j == len(w) - 1):
-            j += 1
-        group = w[i:j]
-        if group.startswith("u") and i and w[i - 1] in "qg" and len(group) > 1:
-            group = group[1:]                    # que, gui: the u is silent
-        nuclei: list[bool] = []
-        hard = False
-        for c in group:
-            this = c in "aeoáéóíú"
-            if not nuclei or (this and hard):
-                nuclei.append(False)
-                hard = False
-            nuclei[-1] = nuclei[-1] or c in "áéíóú"
-            hard = hard or this
-        out += nuclei
-        i = j
-    return out
-
-
-def _stress(word: str) -> int:
-    """Which syllable from the end carries the stress: 0 aguda, 1 llana, 2 esdrújula."""
-    n = _nuclei(word)
-    if len(n) < 2:
-        return 0
-    if any(n):
-        return len(n) - 1 - max(i for i, m in enumerate(n) if m)
-    return 1 if word.lower()[-1] in "aeiouns" else 0
-
-
-def syllables(line: str) -> int:
-    """A verse's metric count: vowels joined across words, +1 on an aguda, -1 on an esdrújula. A
-    crude scanner, good enough to compare models; only the rehearsal reads it."""
-    words = re.findall(r"[^\W\d_]+", line)
-    if not words:
-        return 0
-    total = sum(len(_nuclei(w)) or 1 for w in words)
-    for a, b in zip(words, words[1:]):
-        if a[-1].lower() in _VOWELS and b.lower().lstrip("h")[:1] in tuple(_VOWELS):
-            total -= 1
-    return total + {0: 1, 1: 0}.get(_stress(words[-1]), -1)
-
-
-def rhyme_key(line: str) -> str:
-    """The verse's rhyme: its last word from the stressed vowel on, with no accents and as Mexico
-    says it (s, z and soft c alike, b and v, ll and y)."""
-    words = re.findall(r"[^\W\d_]+", line.lower())
-    if not words:
-        return ""
-    word = words[-1]
-    back, at = _stress(word), 0
-    spans = [m.start() for m in re.finditer(r"[aeiouáéíóúü]+", word)]
-    if spans:
-        at = spans[max(0, len(spans) - 1 - back)]
-    marked = [i for i, c in enumerate(word) if c in "áéíóú"]
-    if marked:
-        at = marked[-1]                          # traía: from the í, whatever the groups say
-    tail = "".join(c for c in unicodedata.normalize("NFD", word[at:])
-                   if unicodedata.category(c) != "Mn")
-    for a, b in (("ce", "se"), ("ci", "si"), ("z", "s"), ("v", "b"), ("ll", "y")):
-        tail = tail.replace(a, b)
-    if marked:
-        return tail
-    return re.sub(r"^[iu](?=[aeo])", "", tail)    # cuenta and venta rhyme
-
-
-def verse_metrics(stanzas) -> dict:
-    """How close a verse is to the form: lines at eight syllables and within one, stanzas whose
-    first and third, and second and fourth, lines rhyme."""
-    lines = [v for s in stanzas for v in s]
-    counts = [syllables(v) for v in lines]
-    rhymed = sum(len(s) == 4 and rhyme_key(s[0]) == rhyme_key(s[2]) and rhyme_key(s[1]) == rhyme_key(s[3])
-                 for s in stanzas)
-    return {"lines": len(lines), "at8": sum(c == 8 for c in counts),
-            "near8": sum(abs(c - 8) <= 1 for c in counts), "stanzas": len(stanzas), "rhymed": rhymed}
-
-
+# ---- the calaverita's arms (ADR 0033) ----------------------------------------------------------
 def compose_verse(llm, cfg, visitor: dict, rec: dict, *, thinking: str | None) -> dict:
     """One calaverita from a visit's record, as the act asks for it (the same tag, rules, no
     history); never run through the act's clips."""
@@ -401,7 +310,7 @@ def compose_verse(llm, cfg, visitor: dict, rec: dict, *, thinking: str | None) -
     problems = [llm.last_error] if llm.last_error else calaverita.verse_problems(stanzas)
     return {"tag": tag, "raw": raw, "verse": stanzas, "problems": problems,
             "s": getattr(llm, "last_latency_s", 0.0), "usage": getattr(llm, "last_usage", None),
-            **verse_metrics(stanzas)}
+            **calaverita.verse_metrics(stanzas)}
 
 
 def run_calaverita_arms(arms: list[str], takes: int, cfg, visits: list, out: Path | None) -> int:

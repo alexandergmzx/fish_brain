@@ -83,6 +83,8 @@ def check_calaverita(d: dict) -> dict:
         return isinstance(value, list) and bool(value) and all(isinstance(x, str) and x.strip() for x in value)
     if not (isinstance(d.get("rules"), str) and d["rules"].strip()):
         bad("rules must be a text")
+    if not (isinstance(d.get("corrige"), str) and "{verso}" in d["corrige"] and "{parejas}" in d["corrige"]):
+        bad("corrige must be a text with {verso} and {parejas}")
     if not texts_in(d.get("nunca")):
         bad("nunca must be a list of texts")
     pools, fallback = d.get("pools"), d.get("fallback")

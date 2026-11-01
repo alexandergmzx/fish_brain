@@ -73,6 +73,93 @@ def test_the_tag_carries_only_what_the_visit_knows():
     assert "nombre" not in cal.verse_tag("", "Slytherin", "", {}, [])
 
 
+# ---- meter, rhyme and the versions -------------------------------------------------------------
+@pytest.mark.parametrize("line", [
+    "Estudiaba el buen Rodrigo", "cada puerta antes de entrar,", "y a un negocio con su amigo",
+    "le dio todo sin dudar.", "Llegó la Flaca por él", "con su guadaña y su pluma;",
+    "él leyó todo el papel", "y exigió que lo resuma.", "La Flaca se fue sin nada:",
+    "contando lo que le sobra."])
+def test_the_scanner_counts_the_example_at_eight(line):
+    assert cal.syllables(line) == 8
+
+
+def test_what_rhymes():
+    assert cal.pair_rhymes("con su pluma", "que lo resuma.")
+    assert cal.pair_rhymes("la casa", "la taza") and cal.pair_rhymes("la cuenta", "la venta")
+    assert cal.pair_rhymes("traía", "todavía")
+    assert not cal.pair_rhymes("la vaca", "la vida")
+    assert not cal.pair_rhymes("quien gane", "al gane")      # a word with itself
+
+
+def test_the_fallbacks_rhyme():
+    for letter in cal.HOUSE_KEYS:
+        for verse in cal.FALLBACK[letter]:
+            assert cal.bad_pairs(verse) == [] and cal.verse_metrics(verse)["near8"] == 12
+
+
+LIMPING = VERSE.replace("contando lo que le sobra.", "contando lo que le queda.")
+
+
+class Versions:
+    """Answers from a list, the last again; `asked` what it was sent."""
+
+    def __init__(self, *replies, error=None):
+        self.replies, self.asked, self.error = list(replies), [], error
+        self.last_error, self.thinking, self.extra_rules = None, None, ""
+
+    def reset(self):
+        self.extra_rules = ""
+
+    def reply(self, text, remember=True):
+        self.asked.append(text)
+        self.last_error = self.error
+        return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+
+
+def test_compose_stops_at_the_first_full_rhyme_and_keeps_the_best():
+    a, b = Versions(LIMPING), Versions(VERSE)
+    r = cal.compose([a, b], "R", "[T]")
+    assert r["rhymed"] == 3 and r["passes"] == 1 and r["versions"] == 2
+    assert r["stanzas"] == cal.clean_verse(VERSE) and a.extra_rules == "R"
+
+
+def test_compose_sends_the_best_back_with_the_pairs_that_do_not_rhyme():
+    a = Versions(LIMPING, VERSE)
+    r = cal.compose([a], "R", "[T]")
+    assert r["passes"] == 2 and r["rhymed"] == 3
+    assert a.asked[0] == "[T]" and a.asked[1].startswith("[T]\nTu borrador:")
+    assert '"le dio todo sin dudar."' not in a.asked[1].split("no riman")[1]
+    assert '"contando lo que le queda." ' not in a.asked[1] and "le queda" in a.asked[1].split("no riman")[1]
+
+
+def test_compose_gives_up_after_its_passes_or_budget_with_the_best_it_had():
+    a = Versions(LIMPING)
+    r = cal.compose([a], "R", "[T]", passes=3)
+    assert r["passes"] == 3 and r["rhymed"] == 2 and r["stanzas"]
+    t = iter([0.0, 13.0, 13.0])
+    r = cal.compose([Versions(LIMPING)], "R", "[T]", budget_s=12, clock=lambda: next(t))
+    assert r["passes"] == 1
+
+
+def test_compose_stops_when_every_client_fails_and_one_failure_is_not_fatal():
+    bad = Versions("x", error="refusal")
+    r = cal.compose([bad], "R", "[T]")
+    assert r["error"] == "refusal" and r["stanzas"] is None and r["passes"] == 1
+    r = cal.compose([Versions("x", error="boom"), Versions(VERSE)], "R", "[T]")
+    assert r["error"] is None and r["rhymed"] == 3
+
+
+def test_a_verse_that_never_fully_rhymes_is_the_house_clip(make, monkeypatch):
+    p = Printer()
+    c = make(llm=LLM(reply=LIMPING), printer=p)
+    online_mode(c, monkeypatch)
+    f = Fail()
+    monkeypatch.setattr(c.show, "model_failed", f.model_failed)
+    tap(c)
+    assert len(c._llm.asked) == 4 and c.speaker.performed == [] and f.n == 0
+    assert p.submitted[0].verse in cal.FALLBACK["R"]
+
+
 # ---- the words file ---------------------------------------------------------------------------
 def test_every_fallback_is_a_verse_with_no_name_and_rendered_clips_have_names():
     for letter in cal.HOUSE_KEYS:
@@ -427,10 +514,10 @@ def test_sonnet_writes_it_and_the_visits_model_is_never_asked(make, monkeypatch)
     online_mode(c, monkeypatch)
     tap(c)
     tap(c)
-    assert len(sonnet.asked) == 2 and c._llm.asked == []
-    assert len(built) == 1 and built[0].model == "claude-sonnet-5-5"
+    assert len(sonnet.asked) == 6 and c._llm.asked == []     # three versions a tap
+    assert len(built) == 3 and built[0].model == "claude-sonnet-5-5"
     assert built[0].max_completion_tokens == 2000
-    assert sonnet.thinking_seen == [None, None]          # the profile's own
+    assert set(sonnet.thinking_seen) == {None}               # the profile's own
     assert c.speaker.performed
 
 

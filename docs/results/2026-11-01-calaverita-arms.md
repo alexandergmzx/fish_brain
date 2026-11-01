@@ -45,6 +45,218 @@ for i in range(20):
 print("not 12:",long,"of 20")
 ```
 
+## Rhyme first: versions and corrections (his word: "even if it has to make more versions")
+
+Command: `.venv/bin/python tools/calaverita_versions.py --rounds 3`, the act's own `calaverita.compose` on Sonnet, 4 visitors 3 times: 3 versions at once, then the best sent back with the pairs that do not rhyme, up to 4 passes. A word with itself no longer counts as a rhyme. Text only. Before it, single versions: 12 % fully rhymed; 6 at once: 4 of 8 batches had one.
+
+**12 of 12 fully rhymed, 4.4 s median, 9.0 s at most, median 4 versions** (about 2 cents, 12 versions about 6 cents, from the table's cost a verse). Rhyme is judged in writing by the scanner; meter only breaks ties. Not measured: how they sound in Jorge's voice. After this run the rules gained "never a house's name at the end of a verse" (Hufflepuff is said "Jafel paf"), not re-measured.
+
+### Mónica, Hufflepuff: 2.7 s, 1 passes, 3 versions, 3/3 stanzas rhymed
+
+Vivía la buena Mónica  
+con un perro en su colchón,  
+y al marcharse en su crónica  
+dijo: por mi perro, es mi razón.
+
+Llegó la Huesuda en la noche  
+con su túnica y su afán,  
+pero el perro, sin reproche,  
+le escondió el calcetín y el pan.
+
+Mónica ganó en Hufflepuff  
+por leal, fiel y sin queja,  
+y la Flaca se fue en puff,  
+sin calcetín, sin oreja.
+
+### Rodrigo, Slytherin: 2.9 s, 1 passes, 3 versions, 3/3 stanzas rhymed
+
+Le encantaba a don Rodrigo  
+estudiar antes de actuar,  
+y un negocio con un amigo  
+juraba que iba a revisar.
+
+Por fin la Flaca lo alcanzó  
+con su guadaña bien afilada;  
+él dijo que lo estudió  
+y pidió una prórroga pagada.
+
+La Huesuda, ya sin paciencia,  
+lo mandó a Slytherin con prisa,  
+donde ahora con elocuencia  
+vende a la Muerte una camisa.
+
+### Albert, Gryffindor: 9.0 s, 4 passes, 12 versions, 3/3 stanzas rhymed
+
+Andaba el buen Albert muy fino,  
+y dijo con gran ilusión:  
+A mi novia es mi destino,  
+y en cada cita hay discusión.
+
+Llegó la Flaca a su puerta  
+con su guadaña de metal;  
+tocó Albert, con voz muy cierta,  
+pues toco es su ley formal.
+
+Salió él con cara de reto,  
+y la Huesuda, sin aliento,  
+dijo: En Gryffindor, sin secreto,  
+no hay quien me gane el momento.
+
+### (no name), Ravenclaw: 4.0 s, 1 passes, 3 versions, 3/3 stanzas rhymed
+
+Hablaba un ser de ingenio raro  
+del refri que se apagó,  
+y al gato, culpable claro,  
+la cuenta le endosó.
+
+Vino la Flaca a buscarle  
+con su guadaña de hueso;  
+él dijo: Voy a estudiarle  
+el gato, el cable y el queso.
+
+Se quedó en Ravenclaw la ciencia  
+y la Huesuda, sin trato,  
+sigue esperando sentencia  
+del refri, el cable y el gato.
+
+### Mónica, Hufflepuff: 2.9 s, 1 passes, 3 versions, 3/3 stanzas rhymed
+
+Estaba Mónica en su cama  
+con calcetines por montón,  
+que el perro, por pura fama,  
+se los lleva a su rincón.
+
+Llegó la Flaca de noche  
+con su guadaña de plata;  
+Mónica dijo: No hay broche,  
+primero mi perro, ¡ata!
+
+La Huesuda, ya cansada,  
+vio la casa Hufflepuff:  
+Mónica sigue encantada  
+y el perro, firme, en su buff.
+
+### Rodrigo, Slytherin: 3.4 s, 1 passes, 3 versions, 3/3 stanzas rhymed
+
+Rodrigo, tan precavido,  
+estudia hasta la servilleta,  
+y a su amigo, muy decidido,  
+le fía la vida completa.
+
+La Huesuda llegó a cobrar  
+con su lista y su guadaña;  
+él pidió, sin protestar,  
+que le explique cada hazaña.
+
+Ella leyó el contrato entero  
+y se rindió a media hoja:  
+Slytherin no paga primero,  
+y a la Flaca se le antoja.
+
+### Albert, Gryffindor: 2.9 s, 1 passes, 3 versions, 3/3 stanzas rhymed
+
+Albert, el buen enamorado,  
+a su novia lo contó todo  
+y en la puerta, muy educado,  
+tocó antes de entrar, no es lodo.
+
+Vino la Flaca a medianoche  
+con su guadaña y su paciencia;  
+Albert tocó, sin reproche,  
+pidiendo cita y audiencia.
+
+Le dijo ella, ya cansada:  
+Gryffindor no se me escapa,  
+pero toca y toca nada,  
+y me dejó en la solapa.
+
+### (no name), Ravenclaw: 6.1 s, 2 passes, 6 versions, 3/3 stanzas rhymed
+
+Había una criatura sabia  
+que el refri jamás entendió,  
+y al gato, sin pena ni rabia,  
+la culpa de todo le echó.
+
+Llegó la Flaca en su carreta,  
+con su guadaña de metal,  
+y el refri, con cara discreta,  
+se apagó justo en el portal.
+
+La Huesuda al gato interroga  
+y el gato jura que no fue;  
+en Ravenclaw nadie se ahoga:  
+la duda es lo que los salvé.
+
+### Mónica, Hufflepuff: 5.2 s, 2 passes, 6 versions, 3/3 stanzas rhymed
+
+Andaba Mónica ufana,  
+Todo es por mi perro, decía,  
+y entre sus calcetines, mañana  
+y tarde, el can la seguía.
+
+Su perro, que es muy sincero,  
+le deja en la cama, ojo,  
+sus calcetines, y entero  
+su cariño sin enojo.
+
+Hasta ahí llegó la Catrina  
+Pero quedó sin guadaña,  
+Hufflepuff la determina:  
+leal hasta la maraña.
+
+### Rodrigo, Slytherin: 5.3 s, 2 passes, 6 versions, 3/3 stanzas rhymed
+
+Estaba el buen Rodrigo  
+la estudio primero, decía,  
+y un negocio con su amigo  
+con papeles bien leía.
+
+Llegó la Flaca de noche  
+con guadaña y con paciencia;  
+él le pidió, sin reproche,  
+primero ver su licencia.
+
+Cerró el trato la Catrina:  
+a Slytherin lo mandaron,  
+y hoy vende con cara fina  
+los papeles que firmaron.
+
+### Albert, Gryffindor: 4.9 s, 2 passes, 6 versions, 3/3 stanzas rhymed
+
+Andaba Albert por la vida  
+con valor de gran señor:  
+a su novia, ya perdida,  
+le hablaba sin mucho temor.
+
+Pero tocaba la puerta  
+con un miedo que da risa,  
+y la dejaba entreabierta  
+para irse con prisa.
+
+Vino la Flaca a buscarlo  
+y él tocó, muy educado;  
+ella, al verlo, sin dudarlo,  
+dijo: pase, ya ha pasado.
+
+### (no name), Ravenclaw: 5.8 s, 2 passes, 6 versions, 3/3 stanzas rhymed
+
+Había una criatura sabia  
+que el refri no entendía ya,  
+y al gato, con cara de rabia,  
+la culpa le fue a echar allá.
+
+Llegó la Flaca por su rastro  
+con la guadaña bien filosa;  
+la criatura, de buen astro,  
+le dijo: Hay que ver qué cosa.
+
+Y la Huesuda, en el pasillo,  
+hizo un análisis completo:  
+la causa era un gato sencillo  
+y ella en Ravenclaw: un sujeto.
+
+fully rhymed: 12/12; seconds median 4.4, max 9.0; versions median 4
+
 ## claude:disabled
 
 ### visitor 1 take 1: 1.7 s, 10/12 lines within one of 8, 3/3 stanzas rhymed

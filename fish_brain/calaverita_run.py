@@ -16,7 +16,7 @@ from datetime import datetime
 
 from . import calaverita, canned, debug, show, ticket
 from .fortune_run import _drop_wav
-from .visit import begin_model, clean_cue_text, place_word
+from .visit import clean_cue_text, place_word
 
 
 class CalaveritaRun:
@@ -26,7 +26,7 @@ class CalaveritaRun:
         self.cfg = fortune_run.cfg
         self.busy = False
         self._last: dict = {}                 # the last verse, for the page (this visit's only)
-        self._own_llm = None                  # the act's own model, built on first use
+        self._own_llms: list = []             # the act's own model, one client a version
         self._own_stale = None                # its job given up on, still running
 
     # ---- may it start ----------------------------------------------------------------------------
@@ -70,16 +70,20 @@ class CalaveritaRun:
             return ""
         return name if os.environ.get(LLM_PROFILES[name]["api_key_env"], "").strip() else ""
 
-    def _client(self, own: str):
-        """In the worker: a first SDK import must not be silence before the lead."""
+    def _clients(self, own: str) -> list:
+        """In the worker: a first SDK import must not be silence before the lead. The visit's
+        model is one client, so it writes one version at a time."""
         if not own:
-            return self.c.llm
-        if self._own_llm is None:
+            return [self.c.llm]
+        if not self._own_llms:
             from .config import LLMConfig
             from .llm import make_conversation
-            # The cap the rehearsal ran with: thinking shares it.
-            self._own_llm = make_conversation(LLMConfig(profile=own, max_completion_tokens=2000))
-        return self._own_llm
+            # The cap the rehearsal ran with (thinking shares it); a call that hangs must not
+            # eat the passes.
+            self._own_llms = [make_conversation(LLMConfig(profile=own, max_completion_tokens=2000,
+                                                          timeout_s=self.cfg.calaverita_compose_s))
+                              for _ in range(max(1, self.cfg.calaverita_versions))]
+        return self._own_llms
 
     # ---- clips -------------------------------------------------------------------------------------
     def _pick(self, slot: str, names: list[str]) -> str:
@@ -134,7 +138,7 @@ class CalaveritaRun:
                 "tag": calaverita.verse_tag(first, visit.house, place_word(self.c.cfg.place),
                                             used, list(visit.heard)),
                 "own": "", "how": "", "why": "", "said": False, "stanzas": None, "ticket": None,
-                "clips": [], "model_s": None, "tts_s": None, "t0": time.monotonic()}
+                "clips": [], "model_s": None, "tts_s": None, "passes": None, "versions": None, "rhymed": None, "t0": time.monotonic()}
 
     def _compose(self, rec: dict) -> None:
         self.f._probe_printer()
@@ -158,7 +162,7 @@ class CalaveritaRun:
             if err and not err.startswith(("refusal", "empty reply")):
                 self._model_failed(rec, f"error: {err}")
             else:
-                rec["why"] = err or ("no voice" if stanzas else "the verse broke the rules: "
+                rec["why"] = err or ("no voice" if stanzas else box.get("why") or "the verse broke the rules: "
                                      + "; ".join(calaverita.verse_problems(calaverita.stanzas_of(raw))))
                 print(f"[calaverita] the verse gave way to the clips: {rec['why']}", flush=True)
             return self._fallback(rec, [], "clips")
@@ -185,15 +189,20 @@ class CalaveritaRun:
         own = rec["own"]
 
         def work():
-            llm = self._client(own)
+            clients = self._clients(own)
             if box["gone"]:                       # given up on during the import: the rules and
                 return "", None, None, "gone"     # the history are the next act's by now
-            begin_model(llm, rules)
-            llm.thinking = thinking or None
-            raw = llm.reply(tag, remember=False)
-            err = llm.last_error
-            box["reply"], box["model_s"] = True, getattr(llm, "last_latency_s", None)
-            stanzas = None if err else calaverita.clean_verse(raw)
+            t0 = time.monotonic()
+            r = calaverita.compose(clients, rules, tag, thinking=thinking or None,
+                                   passes=self.cfg.calaverita_passes,
+                                   budget_s=self.cfg.calaverita_compose_s,
+                                   gone=lambda: box["gone"])
+            raw, err = r["raw"], r["error"]
+            box.update(reply=True, model_s=round(time.monotonic() - t0, 2), passes=r["passes"],
+                       versions=r["versions"], rhymed=r["rhymed"])
+            stanzas = r["stanzas"] if r["rhymed"] == calaverita.STANZAS else None
+            if r["stanzas"] and not stanzas:
+                box["why"] = f"only {r['rhymed']} of {calaverita.STANZAS} stanzas rhymed in {r['versions']} versions"
             wav = None
             if stanzas:
                 try:
@@ -233,7 +242,8 @@ class CalaveritaRun:
                     self._model_failed(rec, why)
                 return False
             c._wait_on(job.done, min(deadline - now, 0.25))
-        rec["model_s"] = box.get("model_s")
+        rec.update(model_s=box.get("model_s"), passes=box.get("passes"), versions=box.get("versions"),
+                   rhymed=box.get("rhymed"))
         if job.exc is not None:
             self._model_failed(rec, f"error: {type(job.exc).__name__}")
             return False
@@ -302,12 +312,13 @@ class CalaveritaRun:
             verse = calaverita.page_verse(rec["stanzas"]) if rec["stanzas"] else None
             seconds = round(time.monotonic() - rec["t0"], 1)
             print(f"[calaverita] #{rec['n']} how={rec['how']} ({rec['why']}) house={rec['house']} "
-                  f"model={rec['model_s']} tts={rec['tts_s']} ticket={rec['ticket']} {seconds}s",
+                  f"versions={rec['versions']} rhymed={rec['rhymed']} model={rec['model_s']} tts={rec['tts_s']} ticket={rec['ticket']} {seconds}s",
                   flush=True)
             debug.emit("calaverita", n=rec["n"], how=rec["how"], why=rec["why"], first=rec["first"],
                        house=rec["house"], place=rec["place"], profile=rec["own"] or self.c.cfg.llm.profile,
                        tag=rec["tag"], verse=verse,
                        clips=list(rec["clips"]), model_s=rec["model_s"], tts_s=rec["tts_s"],
+                       passes=rec["passes"], versions=rec["versions"], rhymed=rec["rhymed"],
                        ticket=rec["ticket"], seconds=seconds)
             debug.turn_set(calaverita=f"#{rec['n']} {rec['how']}",
                            outcome=f"calaverita: {rec['how']}", times=self.c.speaker.last_timing)

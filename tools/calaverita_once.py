@@ -66,7 +66,7 @@ def main() -> int:
         c.visit.delivered(house)
         c.fortune.mode_now = lambda: ("llm", "forced")
         c._handle_item(FortuneInput("calaverita", ""))
-        print("verse from:", c.fortune.calaverita._own_llm.cfg.model if c.fortune.calaverita._own_llm else "clips")
+        print("verse from:", c.fortune.calaverita._own_llms[0].cfg.model if c.fortune.calaverita._own_llms else "clips")
     return 0
 
 

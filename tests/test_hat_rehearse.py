@@ -296,30 +296,6 @@ def test_the_then_lines_and_the_typed_name_reach_the_markdown():
     assert "- **fecha:** Tres de marzo. (sign → piscis)" in md and "```\n  L A\n```" in md
 
 
-# ---- the calaverita's meter and rhyme ----------------------------------------------------------
-@pytest.mark.parametrize("line", [
-    "Estudiaba el buen Rodrigo", "cada puerta antes de entrar,", "y a un negocio con su amigo",
-    "le dio todo sin dudar.", "Llegó la Flaca por él", "con su guadaña y su pluma;",
-    "él leyó todo el papel", "y exigió que lo resuma.", "La Flaca se fue sin nada:",
-    "contando lo que le sobra."])
-def test_the_scanner_counts_his_example_at_eight(line):
-    assert hat_rehearse.syllables(line) == 8
-
-
-def test_the_rhyme_key_hears_mexico():
-    assert hat_rehearse.rhyme_key("con su pluma") == hat_rehearse.rhyme_key("que lo resuma.")
-    assert hat_rehearse.rhyme_key("sin dudar") == hat_rehearse.rhyme_key("antes de entrar,")
-    assert hat_rehearse.rhyme_key("la cuenta") == hat_rehearse.rhyme_key("la venta")
-    assert hat_rehearse.rhyme_key("la casa") == hat_rehearse.rhyme_key("la taza")
-    assert hat_rehearse.rhyme_key("la vaca") != hat_rehearse.rhyme_key("la vida")
-
-
-def test_the_metrics_of_a_good_verse():
-    from fish_brain import calaverita as cal
-    m = hat_rehearse.verse_metrics(cal.FALLBACK["S"][0])
-    assert m["lines"] == 12 and m["stanzas"] == 3 and m["rhymed"] == 3 and m["near8"] == 12
-
-
 def test_the_arms_write_each_verse_and_a_table(tmp_path, monkeypatch):
     from fish_brain import calaverita as cal, llm as llm_mod
 

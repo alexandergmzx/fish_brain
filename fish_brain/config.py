@@ -900,6 +900,13 @@ class FortuneConfig:
     # arms, docs/results/2026-11-01-calaverita-arms.md); a name that is no profile, like "main",
     # or a missing key = the visit's model. Its thinking, one of THINKING_MODES; "" = the profile's.
     calaverita_s: float = 20.0
+    # Rhyme first (his word, 2026-11-01): this many versions at once, then the best one sent back
+    # with what does not rhyme, for at most this many passes, no new one after this many seconds
+    # (the voice's render still has to fit calaverita_s). Only a verse with every stanza rhymed
+    # is said; otherwise the house's clip.
+    calaverita_versions: int = 3
+    calaverita_passes: int = 4
+    calaverita_compose_s: float = 12.0
     calaverita_profile: str = field(default_factory=lambda: _env("FISH_CALAVERITA_PROFILE", "claude-sonnet"))
     calaverita_thinking: str = field(default_factory=lambda: _env("FISH_CALAVERITA_THINKING", ""))
     calaverita_rules: str = field(default_factory=lambda: texts.calaverita()["rules"].strip())
