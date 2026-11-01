@@ -373,6 +373,10 @@ nothing of them reaches `/status` or `/face`.
   the inbox: the next `visit` event shows the act. A start is refused in the loop, silently for
   the visitor, while the question clips are not cached (`fortune.ready` false: the page greys
   the button). "New visitor" or a typed name while a fortune is open drops it without a line.
+- **The calaverita** (ADR 0033): `fortune.calaverita` is `{lit, why, busy, first, last}`; `why` is
+  `no house`, `too late`, `act open` or `lines not ready`, `last` the visit's last verse
+  `{visit, n, first, house, verse}` or null. `POST /fortune {"action": "calaverita", "value": name}`
+  gets `409 {"why": …}` for the same reasons, `409 {"busy": true}` while the loop is not listening.
 - **Journal lines**: `[fortune] #<n> start (<why>)`, one per answer with what was heard and
   what landed, `[fortune] start refused: lines not ready` and `[fortune] start refused: visit
   open`, and the `[turn]` line of the ending with `fortune: reading (llm|clips)` or
