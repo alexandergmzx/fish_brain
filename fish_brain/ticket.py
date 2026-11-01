@@ -93,8 +93,10 @@ LABEL_MOON = "Luna"
 LABEL_WISH = "Pediste"
 LABEL_MAGIC = "Palabra mágica"
 SAMPLE_NAME = "Prueba"
+TITLE_VERSE = "CALAVERITA"
+OF_HOUSE = "de"
 LABELS = (TITLE, SUBTITLE, FOR, LABEL_NUMBER, LABEL_MOON, LABEL_WISH, LABEL_MAGIC,
-          SAMPLE_NAME)
+          SAMPLE_NAME, TITLE_VERSE, OF_HOUSE)
 
 
 # ---- text -------------------------------------------------------------------------------------
@@ -254,6 +256,8 @@ class Ticket:
     palabra: str = ""
     day: str = ""                   # "28 de octubre de 2026", "" when the clock is not sane
     place: str = ""                 # "en una fiesta", or the operator's own text
+    verse: tuple[tuple[str, ...], ...] = ()   # a calaverita: its stanzas, each its lines
+    casa: str = ""                  # the calaverita's house
 
 
 def date_words(now: datetime | None) -> str:
@@ -307,6 +311,14 @@ def ticket_of(v: dict, said: dict, *, phrases: dict, place=None,
         body=body, numero=str(said.get("numero") or ""), luna=said.get("luna") or "",
         deseo=said.get("deseo") or "", palabra=said.get("palabra") or "",
         day=date_words(now), place=place_said(v.get("place"), place))
+
+
+def verse_ticket(n: int, first: str, casa: str, stanzas, *, place: str = "",
+                 now: datetime | None = None) -> Ticket:
+    """The calaverita's ticket. No I/O."""
+    return Ticket(n=int(n or 0), first=first or "", casa=casa or "",
+                  verse=tuple(tuple(lines) for lines in stanzas),
+                  day=date_words(now), place=place or "")
 
 
 def sample(card: int = 13, *, now: datetime | None = None) -> Ticket:
@@ -369,6 +381,8 @@ def _leader(label: str, value: str, codec: str) -> list[Line]:
 
 def layout(t: Ticket, *, codec: str = CODEC, art_root: Path | str | None = None) -> list:
     """The ticket as blocks, every text line fitted to its font's columns."""
+    if t.verse:
+        return _verse_layout(t, codec)
     out: list = []
     out += _lines(TITLE, codec, big=True, bold=True, align="c")
     out += _lines(SUBTITLE, codec, align="c")
@@ -396,6 +410,32 @@ def layout(t: Ticket, *, codec: str = CODEC, art_root: Path | str | None = None)
         out += _leader(label, value, codec)
     if leaders:
         out.append(Rule())
+    foot = dict(font="b", align="c")
+    out += _lines(t.day, codec, **foot)
+    out += _lines(t.place, codec, **foot)
+    out.append(Feed(TEAR_FEED))
+    return out
+
+
+def _verse_layout(t: Ticket, codec: str) -> list:
+    """The calaverita: each verse keeps its own line (a long one folds), a blank line between
+    stanzas."""
+    out: list = []
+    out += _lines(TITLE_VERSE, codec, big=True, bold=True, align="c")
+    out += _lines(SUBTITLE, codec, align="c")
+    out.append(Rule())
+    if t.first:
+        out += _lines(f"{FOR} {t.first}", codec, bold=True, align="c")
+    if t.casa:
+        out += _lines(f"{OF_HOUSE} {t.casa}", codec, align="c")
+    if t.first or t.casa:
+        out.append(Rule())
+    for i, stanza in enumerate(t.verse):
+        if i:
+            out.append(Line(""))
+        for verse in stanza:
+            out += _lines(verse, codec)
+    out.append(Rule())
     foot = dict(font="b", align="c")
     out += _lines(t.day, codec, **foot)
     out += _lines(t.place, codec, **foot)

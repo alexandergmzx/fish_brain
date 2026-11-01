@@ -322,3 +322,33 @@ def test_the_sample_takes_any_card_and_tells_no_date_without_a_clock():
     t = tk.sample(0)
     assert (t.card, t.card_es, t.first, t.day) == (0, "El Loco", "Prueba", "")
     assert "0 · EL LOCO" in text_of(tk.layout(t))
+
+
+# ---- the calaverita's ticket -------------------------------------------------------------------
+_VERSE = (("Estaba Ana muy tranquila", "viendo pasar la mañana,"),
+          ("llegó la Flaca \x1b[31m en fila", "y se fue con mucha gana."))
+
+
+def test_a_verse_keeps_its_lines_and_stanzas_on_paper():
+    t = tk.verse_ticket(3, "Ana", "Ravenclaw", _VERSE, place="en una fiesta",
+                            now=datetime(2026, 11, 1, 21, 0))
+    text = tk.preview(tk.layout(t))
+    rows = text.splitlines()
+    assert "Estaba Ana muy tranquila" in rows and "viendo pasar la mañana," in rows
+    assert rows[rows.index("viendo pasar la mañana,") + 1] == ""     # the stanza's break
+    assert any("para Ana" in r for r in rows) and any("de Ravenclaw" in r for r in rows)
+    assert "1 de noviembre de 2026" in text and "en una fiesta" in text
+    assert all(len(r) <= 32 for r in rows)
+
+
+def test_a_verse_never_lets_a_control_character_reach_the_printer():
+    t = tk.verse_ticket(3, "Ana", "Ravenclaw", _VERSE)
+    body = b"".join(tk.encode(tk.layout(t)))
+    assert b"\x1b[31m" not in body and "mañana".encode(tk.CODEC) in body
+
+
+def test_a_long_verse_folds_and_the_fortune_ticket_has_no_verse():
+    t = tk.verse_ticket(1, "", "", (("una línea de verso demasiado larga para el papel",),))
+    assert all(tk.columns(b) >= len(b.text) for b in tk.layout(t)
+               if isinstance(b, tk.Line))
+    assert tk.SAMPLE.verse == () and tk.TITLE_VERSE not in tk.preview(tk.layout(tk.SAMPLE))
