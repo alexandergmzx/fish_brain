@@ -160,6 +160,8 @@ class ShowRun:
             return False
         qid = v["qs"][v["i"]]
         q = show_bank.question(qid)
+        if self.c.visit is not None:
+            self.c.visit.hear(text)
         pref, vetoes = show.houses_in(text)
         v["vetoes"] |= vetoes
         if pref:
@@ -188,6 +190,8 @@ class ShowRun:
             return False
         v["answers"][qid] = option
         v["heard"].append((qid, "", "operator", option))
+        if self.c.visit is not None:
+            self.c.visit.hear(option)
         return self._next([show_bank.reaction_name(qid, option)])
 
     def no_answer(self) -> bool:

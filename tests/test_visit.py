@@ -476,3 +476,45 @@ def test_another_act_for_someone_else_forgets_the_name_the_same_visitor_keeps_it
     assert v.first_name == "Ana"
     v.start("", 4.0)                          # a new visitor
     assert v.first_name == ""
+
+
+# ---- the visitor's words and the verdict's time (the calaverita) -------------------------------
+
+def test_the_visit_keeps_what_the_visitor_said_cleaned_and_only_theirs():
+    t = [100.0]
+    v = Visit(stages=2, idle_s=0, clock=lambda: t[0])
+    v.start()
+    v.hear('Dije "hola" [sigue hablando]; ya')
+    v.hear("   ")
+    assert v.heard == ["Dije hola , ya"]
+    for i in range(10):
+        v.hear(f"respuesta {i}")
+    assert len(v.heard) == 6 and v.heard[-1] == "respuesta 9"
+    v.hear("x" * 200)
+    assert len(v.heard[-1]) == 80
+    v.start(keep_cues=True)                     # the same visitor, a hand-over
+    assert v.heard
+    v.next_act(carry=True)
+    assert v.heard
+    v.next_act(carry=False)                     # someone else
+    assert v.heard == []
+    v.hear("otra")
+    v.start()                                   # a new visitor
+    assert v.heard == []
+
+
+def test_since_verdict_is_fixed_from_the_house_and_needs_one():
+    t = [100.0]
+    v = Visit(stages=1, idle_s=0, clock=lambda: t[0])
+    assert v.since_verdict() is None
+    v.start()
+    assert v.since_verdict() is None
+    t[0] = 110.0
+    v.delivered(None)                           # the last stage with no house: no verdict to use
+    assert v.done and v.since_verdict() is None
+    v.start()
+    v.delivered("Ravenclaw", now=120.0)
+    t[0] = 150.0
+    v.touch(150.0)                              # a later line moves last_s, not this
+    assert v.since_verdict() == 30.0
+    assert v.since_verdict(now=720.0) == 600.0
