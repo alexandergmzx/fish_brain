@@ -2128,11 +2128,10 @@
       draw(f, { n: 1, stage: 5, of: 4, first: "Ana", house: "Ravenclaw" });
       if (f.stage === "reading") fish.foresee(f.data.signo);
     }
-    // ?calaverita=1: a still with a verse, for screenshots.
+    // ?calaverita=1&tab=visit: a still with a verse, for screenshots.
     if (PARAMS.get("calaverita")) {
       still = true;
       calBtn.hidden = false;
-      showTab("visit");
       drawCalaverita({ lit: true, first: "Rodrigo", last: { verse: "Estudiaba el buen Rodrigo\ncada puerta antes de entrar,\ny a un negocio con su amigo\nle dio todo sin dudar.\n\nLlegó la Flaca por él\ncon su guadaña y su pluma;\nél leyó todo el papel\ny exigió que lo resuma.\n\nLa Flaca se fue sin nada:\nde Slytherin no se cobra,\ny él sigue en la madrugada\ncontando lo que le sobra." } });
     }
     return {
