@@ -182,7 +182,9 @@ def test_cards_heard(text, expect):
     assert parse_card(text, TAROT) == expect
 
 
-@pytest.mark.parametrize("text", ["", "hola", "la torre y la luna", "el 5 o el 7", "22", "la muerta"])
+@pytest.mark.parametrize("text", ["", "hola", "la torre y la luna", "el 5 o el 7", "22", "la muerta",
+                                  "dos de copas", "Me salió el 2 de copas.", "rey de bastos", "ten of cups",
+                                  "Saqué dos cartas."])
 def test_two_cards_or_none_is_none(text):
     assert parse_card(text, TAROT) is None
 
@@ -666,3 +668,14 @@ def test_a_long_line_keeps_its_opening_and_its_question():
     long = " ".join(["palabra"] * 45)
     assert fortune.ask_result(f"Caes. {long}. ¿Qué deseas?", "deseo", TAROT) == "Caes. ¿Qué deseas?"
     assert fortune.ask_result(f"{long}. Dime, ¿qué deseas?", "deseo", TAROT) == "Dime, ¿qué deseas?"
+
+
+def test_minors_do_not_catch_drinks_or_majors():
+    assert parse_card("la torre", TAROT) == 16
+    assert not fortune.names_minor("me tomé dos copas")
+
+
+def test_the_reading_limits_can_be_wider():
+    long = " ".join(f"Oración número {i} con varias palabras más aquí." for i in range(10))
+    assert len(fortune.clean_reading(long).split()) <= 90
+    assert fortune.clean_reading(long, max_words=160, max_sentences=10) == long
