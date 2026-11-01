@@ -94,9 +94,10 @@ LABEL_WISH = "Pediste"
 LABEL_MAGIC = "Palabra mágica"
 SAMPLE_NAME = "Prueba"
 TITLE_VERSE = "CALAVERITA"
+TITLE_CONSULTA = "LA CONSULTA"
 OF_HOUSE = "de"
 LABELS = (TITLE, SUBTITLE, FOR, LABEL_NUMBER, LABEL_MOON, LABEL_WISH, LABEL_MAGIC,
-          SAMPLE_NAME, TITLE_VERSE, OF_HOUSE)
+          SAMPLE_NAME, TITLE_VERSE, TITLE_CONSULTA, OF_HOUSE)
 
 
 # ---- text -------------------------------------------------------------------------------------
@@ -258,6 +259,7 @@ class Ticket:
     place: str = ""                 # "en una fiesta", or the operator's own text
     verse: tuple[tuple[str, ...], ...] = ()   # a calaverita: its stanzas, each its lines
     casa: str = ""                  # the calaverita's house
+    question: str = ""              # a consulta: what the visitor asked
 
 
 def date_words(now: datetime | None) -> str:
@@ -379,12 +381,21 @@ def _leader(label: str, value: str, codec: str) -> list[Line]:
     return [Line(label)] + [Line(s, align="r") for s in wrap(value, width)]
 
 
+def consulta_ticket(n: int, first: str, deck: dict, card: int, reversed_: bool, question: str, reading: str,
+                    *, place: str = "", now: datetime | None = None) -> Ticket:
+    """The consulta's ticket. No I/O."""
+    drawn = fortune.card_by_n(deck, card)
+    return Ticket(n=int(n or 0), first=first or "", deck=deck.get("id", ""), card=drawn.n,
+                  card_es=drawn.es + (", de cabeza" if reversed_ else ""), body=(reading,),
+                  question=question or "", day=date_words(now), place=place or "")
+
+
 def layout(t: Ticket, *, codec: str = CODEC, art_root: Path | str | None = None) -> list:
     """The ticket as blocks, every text line fitted to its font's columns."""
     if t.verse:
         return _verse_layout(t, codec)
     out: list = []
-    out += _lines(TITLE, codec, big=True, bold=True, align="c")
+    out += _lines(TITLE_CONSULTA if t.question else TITLE, codec, big=True, bold=True, align="c")
     out += _lines(SUBTITLE, codec, align="c")
     out.append(Rule())
     if t.first:
@@ -398,6 +409,9 @@ def layout(t: Ticket, *, codec: str = CODEC, art_root: Path | str | None = None)
         out += _lines(f"{roman(t.card)} · {t.card_es.upper()}", codec, bold=True, align="c")
         out += _lines(t.card_meaning, codec, align="c")
     if t.first or t.card is not None:
+        out.append(Rule())
+    if t.question:
+        out += _lines(t.question, codec, font="b")
         out.append(Rule())
     if t.body:
         for paragraph in t.body:

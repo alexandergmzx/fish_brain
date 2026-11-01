@@ -352,3 +352,12 @@ def test_a_long_verse_folds_and_the_fortune_ticket_has_no_verse():
     assert all(tk.columns(b) >= len(b.text) for b in tk.layout(t)
                if isinstance(b, tk.Line))
     assert tk.SAMPLE.verse == () and tk.TITLE_VERSE not in tk.preview(tk.layout(tk.SAMPLE))
+
+
+def test_the_consulta_prints_its_card_question_and_reading():
+    t = tk.consulta_ticket(4, "Ana", fortune.DECKS["tarot"], 13, True, "¿Me conviene quedarme en mi trabajo?",
+                           "La Muerte muestra a un esqueleto a caballo.", place="en casa", now=datetime(2026, 11, 1, 21, 0))
+    text = tk.preview(tk.layout(t, art_root="/nonexistent"))
+    assert "C O N S U L T A" in text or "LA CONSULTA" in text
+    assert "XIII · LA MUERTE, DE CABEZA" in text and "conviene" in text and "esqueleto" in text
+    assert "1 de noviembre de 2026" in text

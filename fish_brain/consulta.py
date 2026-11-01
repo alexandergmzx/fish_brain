@@ -2,7 +2,7 @@
 prompts/consulta.md, on its own model (FISH_CONSULTA_PROFILE, Sonnet). It lives in the fortune's
 one slot (`FortuneRun.v`, `v["act"] == "consulta"`), so the two acts exclude each other and every
 seam that calls the fortune reaches it. No clip can answer a question: without the model the act
-does not start, and a reading that fails says so. No ticket, no house, no cues.
+does not start, and a reading that fails says so. A reading goes on paper; no house, no cues.
 
     parse_question(text) -> (kind, words)     parse_card_answer(words, deck, data) -> (kind, value)
     tag(question, data, deck, nombre) -> str  clean_reply(raw) -> str | None
@@ -12,7 +12,9 @@ from __future__ import annotations
 import re
 import time
 
-from . import cloud, debug, fortune, fortune_bank, texts
+from datetime import datetime
+
+from . import cloud, debug, fortune, fortune_bank, texts, ticket
 from .fortune import _AGAIN_ONLY, _ASK_AGAIN, _ASK_ALONE, _ASK_NO_MARK, _ASK_SAID, _FILLERS, _LEADS, _RAW_WORD, _fold
 
 QUESTION_MAX = 700          # characters kept, from the end: a long story ends in its question (estimate)
@@ -249,6 +251,7 @@ class Consulta:
                  "clips": [], "reading": None, "pregunta": "", "t0": time.monotonic(), "last_s": self.c._clock(),
                  "quiet_s": QUIET_S}
         run._last.pop("refused", None)
+        run._probe_printer()
         self._took_turn = True
         print(f"[consulta] #{n} start ({why})", flush=True)
         debug.turn_set(fortune=f"#{n} consulta start ({why})")
@@ -405,13 +408,20 @@ class Consulta:
         return self._close(how, [self.run._pick(slot)])
 
     def _close(self, how: str, clips: list) -> bool:
-        """No ticket, no `visit.close` (it would overwrite the cues the fortune relights)."""
+        """No `visit.close` (it would overwrite the cues the fortune relights). The ticket goes
+        as the closing line starts, or now when there is none."""
         run, v = self.run, self.run.v
-        run._say(clips)
+        printer = self.c.printer is not None and how == "reading"
+        if printer and clips:
+            run._say(clips, at=(clips[-1], lambda: self._ticket(v)))
+        else:
+            run._say(clips)
+        if printer:
+            self._ticket(v)
         data = run._said_data(v)
         debug.emit("consulta", n=v["n"], how=how, why=v["mode_why"], data=data, pregunta=v["pregunta"],
                    heard=[list(h) for h in v["heard"]], clips=list(v["clips"]), reading=v["reading"],
-                   first=v["first"], seconds=round(time.monotonic() - v["t0"], 1))
+                   first=v["first"], ticket=v.get("ticket"), seconds=round(time.monotonic() - v["t0"], 1))
         debug.turn_set(fortune=f"#{v['n']} consulta ({how})", outcome=f"consulta: {how}")
         print(f"[consulta] act #{v['n']} {how} data={data}", flush=True)
         run._last = {"act": "consulta", "n": v["n"], "mode": how, "why": v["mode_why"], "data": data}
@@ -419,6 +429,27 @@ class Consulta:
         self._after_until = self.c._clock() + AFTER_S if how == "reading" else None
         self.c._push_visit()
         return True
+
+    def _ticket(self, v: dict) -> None:
+        """Once an act; with tickets off only kept for Reprint. Never the act's problem."""
+        p = self.c.printer
+        if p is None or v.get("ticket") or not v["reading"]:
+            return
+        v["ticket"] = "error"
+        try:
+            t = ticket.consulta_ticket(v["n"], v["first"], v["deck"], v["data"]["carta"], bool(v["data"].get("carta_reves")),
+                                       v["pregunta"], v["reading"], place=ticket.place_said(v["place"], self.c.cfg.place),
+                                       now=datetime.now())
+            if not self.run.cfg.ticket:
+                p.keep(t)
+                v["ticket"] = "kept"
+            elif p.submit(t):
+                v["ticket"] = "queued"
+            else:
+                v["ticket"] = "refused"
+                print(f"[consulta] #{v['n']}: the printer did not take the ticket (Reprint prints it)", flush=True)
+        except Exception as e:
+            print(f"[consulta] #{v['n']}: no ticket: {type(e).__name__}: {e}", flush=True)
 
     def drop(self, why: str) -> None:
         run, v = self.run, self.run.v

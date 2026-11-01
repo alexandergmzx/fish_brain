@@ -21,3 +21,7 @@ A 2023 chat read one Thoth card for one real question, and the person asking was
 ## Not measured
 
 The model and a reading over 63 words through Jorge on the board; `WAIT_S` (20 s), `QUIET_S` (300 s), `AFTER_S` (60 s) and `MAX_WORDS` (180) are estimates. How speech-to-text hears "Eón" or "Ajuste". About 50 s of mouth motion. A reading cannot be stopped once speaking.
+
+## Amendment, 2026-11-01
+
+His word: after the consulta "print the results". Decision 7 changes: a reading goes on paper as the closing line starts, with the card's plate, the question and the reading (`ticket.consulta_ticket`). A failed reading prints nothing.
