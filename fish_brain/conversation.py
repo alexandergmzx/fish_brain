@@ -434,8 +434,10 @@ class FishConversation:
                 return True
             debug.turn_set(trigger="operator", fortune=f"{item.action}")
             return self.fortune.operator(item)
-        if isinstance(item, (NewVisit, Reading)) and self.fortune is not None and self.fortune.open:
-            self.fortune.drop("new visitor")   # silently: whoever comes next is not the act's
+        if isinstance(item, (NewVisit, Reading)) and self.fortune is not None:
+            self.fortune.consulta.forget()
+            if self.fortune.open:
+                self.fortune.drop("new visitor")   # silently: whoever comes next is not the act's
         if isinstance(item, Reading):
             return self._reading_turn(item)
         if isinstance(item, Utterance):
@@ -751,7 +753,7 @@ class FishConversation:
                 self._apologize(self.cfg.canned.no_signal, min_gap_s=30.0)
         finally:
             self._wait = None                      # the welcome and the like are no turn's
-            if self.visit is not None:
+            if self.visit is not None and not (self.fortune is not None and self.fortune.consulta.take_turn()):
                 self.visit.touch(self._clock())    # the hat's last speech, for the idle rule
         # A failing turn that returns at once must not spin: pause, longer if it keeps failing.
         self._errors += 1
@@ -816,9 +818,12 @@ class FishConversation:
         takes the utterance as its answer (True). One that went quiet is dropped and the
         utterance goes on to the visit (False)."""
         f = self.fortune
-        if not f.open:
-            return False
         at = self._heard_at if self._heard_at is not None else self._clock()
+        if not f.open:
+            if f.consulta.after(user, at):
+                self._note_fill(times)
+                return True
+            return False
         if f.went_quiet(at):
             print("[fortune] the open act went quiet: a new visitor", flush=True)
             f.drop("quiet")

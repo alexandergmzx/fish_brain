@@ -128,6 +128,8 @@ def _parse(qid: str, words: str, deck: dict | None, data: dict) -> tuple[str, ob
         if n is not None:
             data.update(carta=n, carta_de="visitante", carta_reves=fortune.said_reversed(words))
             return "card", n
+        if fortune.names_minor(cards) or fortune.several_cards(cards):
+            return "none", None                  # "No, el dos de copas" is not declining a card
         if fortune.any_card(cards):              # "cualquiera" (a not-sure word elsewhere)
             return "draw", None
         if _not_sure(cards):
@@ -311,6 +313,8 @@ class FortuneRun:
             print("[fortune] the state file could not be read: a fresh one", flush=True)
         self.v: dict | None = None            # the open act
         self._last: dict = {}                 # the last reading or drop, for the page
+        from .consulta import Consulta
+        self.consulta = Consulta(self)        # the other act of this slot (ADR 0032)
 
     # ---- which reading ---------------------------------------------------------------------
     def mode_now(self) -> tuple[str, str]:
@@ -388,7 +392,7 @@ class FortuneRun:
             asking = v["stage"] == "ask" and v["i"] < len(v["qs"])
             qid = v["qs"][v["i"]] if asking else None
             heard = [fortune.strip_notes(t) for q, t in v["heard"] if q == qid] if asking else []
-            out.update(n=v["n"], stage=v["stage"], q=min(v["i"] + 1, len(v["qs"])),
+            out.update(act=v.get("act", "fortune"), n=v["n"], stage=v["stage"], q=min(v["i"] + 1, len(v["qs"])),
                        of=len(v["qs"]), qid=qid, tries=v["tries"],
                        asked_back=qid in v["asked_back"],
                        question=fortune_bank.question_text(qid, v["deck"]) if asking else "",
@@ -436,7 +440,7 @@ class FortuneRun:
         """The operator's tap. The loop always goes on."""
         print(f"[fortune] operator {item.action}" + (" (with a name)" if item.value else ""),
               flush=True)
-        if item.action == "start":
+        if item.action in ("start", "consulta"):
             visit, now = self.c.visit, self.c._clock()
             if self.v is not None:
                 print("[fortune] start: an act is already open", flush=True)
@@ -450,11 +454,14 @@ class FortuneRun:
                 if show_run is not None and show_run.open:
                     print("[fortune] the open scripted visit went quiet: let go", flush=True)
                     show_run.v = None
-                self.start("operator", first=item.value)
+                begin = self.consulta.start if item.action == "consulta" else self.start
+                begin("operator", first=item.value)
             return True
         if self.v is None:
             print(f"[fortune] operator {item.action}: no act open", flush=True)
             return True
+        if self.v.get("act") == "consulta":
+            return self.consulta.operator(item)
         if item.action == "skip" and self.v["stage"] == "ask":
             self.v["tries"] = 1                  # no second ask: the bridge and the next one
             self.v["said"] = ""                  # no words to react to: the clip
@@ -476,6 +483,7 @@ class FortuneRun:
             self._last = {**self._last, "refused": "lines not ready"}
             self.c._push_visit()
             return False
+        self.consulta.forget()
         deck = self._deck()
         qs = self._questions(deck)
         place = self.c.cfg.place.place
@@ -514,6 +522,8 @@ class FortuneRun:
         v = self.v
         if v is None or v["stage"] != "ask":
             return False
+        if v.get("act") == "consulta":
+            return self.consulta.answer(text)
         qid = v["qs"][v["i"]]
         text = text or ""
         v["heard"].append((qid, text))
@@ -867,6 +877,8 @@ class FortuneRun:
         """The hat was quiet longer than the show's idle time before the visitor spoke at
         `at`: whoever talks now is a new visitor, and the act is dropped."""
         v, idle = self.v, self.c.cfg.show.idle_s
+        if v is not None and v.get("quiet_s"):
+            idle = v["quiet_s"]
         return v is not None and idle > 0 and at - v["last_s"] > idle
 
     def drop(self, why: str) -> None:
@@ -874,6 +886,8 @@ class FortuneRun:
         v = self.v
         if v is None:
             return
+        if v.get("act") == "consulta":
+            return self.consulta.drop(why)
         self.v = None
         data = self._said_data(v)
         print(f"[fortune] act #{v['n']} dropped ({why}) at question "
@@ -893,6 +907,8 @@ class FortuneRun:
         v = self.v
         if v is None:
             return
+        if v.get("act") == "consulta":
+            return self.consulta.fault(kind)
         try:
             if v["stage"] == "reading":
                 print(f"[fortune] {kind} during the reading: the clips finish it", flush=True)

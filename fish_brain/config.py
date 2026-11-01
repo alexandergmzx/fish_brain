@@ -892,6 +892,10 @@ class FortuneConfig:
     # timeout; without it 1.5 to 2.7 s (docs/results/2026-10-29-roast-readings.md). "" = the
     # profile's own.
     thinking: str = "disabled"
+    # La consulta's model and thinking (ADR 0032): Sonnet holds the length and takes a position
+    # better than Haiku, about 1.6 s slower (docs/results/2026-11-01-consulta-trial.md).
+    consulta_profile: str = field(default_factory=lambda: _env("FISH_CONSULTA_PROFILE", "claude-sonnet"))
+    consulta_thinking: str = "between_tools"
     ticket: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_TICKET", True))   # the ticket at the closing line, when a printer is set
 
 
