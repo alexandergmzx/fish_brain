@@ -20,5 +20,6 @@ def _no_fillers(monkeypatch):
                  "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "FISH_PLACE",
                  "FISH_PLACE_TEXT", "FISH_FORTUNE_DECK", "FISH_FORTUNE_CUP",
                  "FISH_TTS_RATE_FACTOR", "FISH_TTS_PITCH_ST", "FISH_TTS_TEMPO",
-                 "FISH_PRINTER", "FISH_PRINTER_CHANNEL", "FISH_FORTUNE_TICKET"):
+                 "FISH_PRINTER", "FISH_PRINTER_CHANNEL", "FISH_FORTUNE_TICKET",
+                 "FISH_CALAVERITA_THINKING"):
         monkeypatch.delenv(name, raising=False)

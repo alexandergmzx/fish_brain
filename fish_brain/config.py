@@ -215,8 +215,9 @@ def _fortune_phrases() -> dict[str, str]:
     hat), with or without FISH_SHOW: the fish's set stays exactly as before."""
     if "fortune" not in _persona():
         return {}
+    from .calaverita import CALAVERITA_PHRASES
     from .fortune_bank import FORTUNE_PHRASES
-    return dict(FORTUNE_PHRASES)
+    return {**FORTUNE_PHRASES, **CALAVERITA_PHRASES}
 
 
 def _fortune_rules() -> str:
@@ -893,6 +894,12 @@ class FortuneConfig:
     # profile's own.
     thinking: str = "disabled"
     ticket: bool = field(default_factory=lambda: _env_bool("FISH_FORTUNE_TICKET", True))   # the ticket at the closing line, when a printer is set
+    # The calaverita (calaverita_run.py, ADR 0033), an act of this persona that shares carry_s,
+    # ticket and suspense_more_s. calaverita_s: from the end of the lead, the model and the voice
+    # (estimate). Its thinking is one of THINKING_MODES, the rehearsal's pick.
+    calaverita_s: float = 20.0
+    calaverita_thinking: str = field(default_factory=lambda: _env("FISH_CALAVERITA_THINKING", "disabled"))
+    calaverita_rules: str = field(default_factory=lambda: texts.calaverita()["rules"].strip())
 
 
 @dataclass

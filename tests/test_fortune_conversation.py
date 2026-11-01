@@ -853,6 +853,7 @@ def test_echo_and_offline_read_from_the_clips(make, online, monkeypatch):
 def test_the_view_has_the_question_what_was_heard_and_the_data(make):
     c = make()
     view = c.fortune.view()
+    assert view.pop("calaverita")["lit"] is False       # no verdict yet (tests/test_calaverita.py)
     assert view == {"on": True, "ready": True, "open": False, "deck": "tarot", "cup": True,
                     "place": "fiesta", "last": {}}
     start(c)
